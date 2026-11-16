@@ -72,3 +72,23 @@ checkin:
     - "What went well this week?"
     - "What could we do differently?"
     - "What are you grateful for about us?"
+
+# Mood system — per-user emotional state with auto-expiry.
+mood:
+  default_expiry_hours: 2
+  styles:
+    stressed: {dampening_override: 0.9, response_length: short}
+    happy: {dampening_override: 0.3, response_length: normal}
+    angry: {dampening_override: 0.95, response_length: short}
+    reflective: {dampening_override: 0.5, response_length: long}
+
+# Logarithmic dampening — softens LLM output intensity.
+dampening:
+  enabled: true
+  default_base: 0.7
+  max_intensity: 10.0
+  blunt_bypass: true
+
+# Articulation teaching (placeholder for FEAT-003).
+articulation:
+  enabled: true

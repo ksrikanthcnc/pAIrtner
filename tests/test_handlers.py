@@ -71,7 +71,7 @@ async def test_pairing_flow(service: BotService, test_db):
 
     # User B joins
     responses = await service.handle_join(2, "Bob", code)
-    assert len(responses) == 2  # one for joiner, one for partner
+    assert len(responses) >= 2  # join + notify + optional onboarding
 
     # Verify pairing in DB
     a = await get_user(test_db, 1)

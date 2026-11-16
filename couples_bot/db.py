@@ -111,6 +111,35 @@ CREATE TABLE IF NOT EXISTS rate_limit (
     PRIMARY KEY (user_id, window)
 );
 
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id       INTEGER PRIMARY KEY REFERENCES users(tg_id),
+    default_voice TEXT DEFAULT 'casual_en',
+    voice_intensity REAL DEFAULT 0.5,
+    dampening_base REAL DEFAULT 0.7,
+    onboarding_done INTEGER DEFAULT 0,
+    onboarding_step INTEGER DEFAULT 0,
+    relationship_type TEXT,
+    duration_years INTEGER,
+    has_kids INTEGER,
+    age_range TEXT,
+    love_story_brief TEXT,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS user_mood_styles (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(tg_id),
+    mood          TEXT NOT NULL,
+    voice_override TEXT,
+    dampening_override REAL,
+    response_length TEXT DEFAULT 'normal',
+    set_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at    TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_mood_user_expires ON user_mood_styles(user_id, expires_at);
+
 -- Indexes for efficient querying
 CREATE INDEX IF NOT EXISTS idx_facts_owner_visibility
     ON facts(owner_id, visibility);
@@ -945,3 +974,107 @@ async def mark_checkin_complete(
         "UPDATE checkins SET status = 'complete', summary = ? WHERE id = ?",
         (summary, checkin_id),
     )
+
+
+# ---------------------------------------------------------------------------
+# User profiles
+# ---------------------------------------------------------------------------
+
+async def get_user_profile(
+    db_path: str, user_id: int
+) -> dict[str, Any] | None:
+    """Return the user profile row, or ``None`` if not found."""
+    return await _fetch_one(
+        db_path, "SELECT * FROM user_profiles WHERE user_id = ?", (user_id,)
+    )
+
+
+async def ensure_user_profile(
+    db_path: str, user_id: int
+) -> dict[str, Any]:
+    """Get or create a default profile row for *user_id*."""
+    profile = await get_user_profile(db_path, user_id)
+    if profile is None:
+        await _execute(
+            db_path,
+            "INSERT OR IGNORE INTO user_profiles (user_id) VALUES (?)",
+            (user_id,),
+        )
+        profile = await get_user_profile(db_path, user_id)
+    return profile  # type: ignore[return-value]
+
+
+async def update_user_profile(
+    db_path: str, user_id: int, **fields: Any
+) -> None:
+    """Update one or more columns on a user's profile.
+
+    Creates the profile row if it doesn't exist yet.
+    """
+    await ensure_user_profile(db_path, user_id)
+    if not fields:
+        return
+    set_parts = ", ".join(f"{k} = ?" for k in fields)
+    values = list(fields.values()) + [user_id]
+    await _execute(
+        db_path,
+        f"UPDATE user_profiles SET {set_parts}, updated_at = CURRENT_TIMESTAMP "
+        f"WHERE user_id = ?",
+        tuple(values),
+    )
+
+
+# ---------------------------------------------------------------------------
+# User mood styles
+# ---------------------------------------------------------------------------
+
+async def set_user_mood(
+    db_path: str,
+    user_id: int,
+    mood: str,
+    expires_at: str,
+    **overrides: Any,
+) -> int:
+    """Insert a new mood row and return its id.
+
+    *overrides* can include ``voice_override``, ``dampening_override``,
+    ``response_length``.
+    """
+    cols = ["user_id", "mood", "expires_at"]
+    vals: list[Any] = [user_id, mood, expires_at]
+    for key in ("voice_override", "dampening_override", "response_length"):
+        if key in overrides:
+            cols.append(key)
+            vals.append(overrides[key])
+    placeholders = ", ".join("?" for _ in cols)
+    col_str = ", ".join(cols)
+    return await _execute(
+        db_path,
+        f"INSERT INTO user_mood_styles ({col_str}) VALUES ({placeholders})",
+        tuple(vals),
+    )
+
+
+async def get_active_mood(
+    db_path: str, user_id: int
+) -> dict[str, Any] | None:
+    """Return the latest non-expired mood row, or ``None``."""
+    now = _now_iso()
+    return await _fetch_one(
+        db_path,
+        "SELECT * FROM user_mood_styles "
+        "WHERE user_id = ? AND expires_at > ? "
+        "ORDER BY set_at DESC LIMIT 1",
+        (user_id, now),
+    )
+
+
+async def clear_expired_moods(db_path: str) -> int:
+    """Delete all expired mood rows. Returns count deleted."""
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "DELETE FROM user_mood_styles WHERE expires_at <= ?", (now,)
+        )
+        await db.commit()
+        return cur.rowcount

@@ -17,6 +17,11 @@ from couples_bot.config import Config, is_user_allowed
 from couples_bot.crypto import decrypt_value
 from couples_bot.i18n import t
 from couples_bot.llm import LLMClient
+from couples_bot.onboarding import (
+    get_onboarding_question,
+    process_onboarding_answer,
+    should_start_onboarding,
+)
 from couples_bot.prompts import UserContext
 from couples_bot.sanitize import detect_crisis, sanitize_input
 
@@ -222,6 +227,19 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
             t(plang, "join_partner_notify", partner_name=uname),
             target_user_id=partner_id,
         ))
+
+        # Trigger onboarding for both partners
+        for uid, ulang in [(user_id, lang), (partner_id, plang)]:
+            if await should_start_onboarding(self.db_path, uid):
+                await db_mod.ensure_user_profile(self.db_path, uid)
+                q = await get_onboarding_question(self.db_path, uid, ulang)
+                if q:
+                    welcome = t(ulang, "onboard_welcome")
+                    responses.append(BotResponse(
+                        f"{welcome}\n\n{q[0]}",
+                        target_user_id=uid if uid != user_id else None,
+                    ))
+
         return responses
 
     # ── /help ────────────────────────────────────────────────────────────
@@ -295,6 +313,29 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
             return [BotResponse(t(lang, "emergency_response"))]
 
         tags, clean = parse_tags(text)
+
+        # Onboarding intercept — if user has an active onboarding, route there
+        profile = await db_mod.get_user_profile(self.db_path, user_id)
+        if profile and not profile["onboarding_done"] and profile["onboarding_step"] > 0:
+            lang = await self._get_lang(user_id)
+            consumed, next_q = await process_onboarding_answer(
+                self.db_path, user_id, text, lang,
+            )
+            if consumed:
+                return [BotResponse(next_q)] if next_q else []
+        # Also handle /skip during onboarding (step 0 but question was sent)
+        if (
+            profile
+            and not profile["onboarding_done"]
+            and profile["onboarding_step"] == 0
+            and text.strip().lower() == "/skip"
+        ):
+            lang = await self._get_lang(user_id)
+            consumed, msg = await process_onboarding_answer(
+                self.db_path, user_id, text, lang,
+            )
+            if consumed:
+                return [BotResponse(msg)] if msg else []
 
         # Sanitize input — strip injection patterns before LLM processing
         clean, stripped = sanitize_input(clean)
@@ -378,5 +419,11 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
             return await self._cb_batch_item_edit(user_id, callback_data, lang)
         if callback_data.startswith("bix:"):
             return await self._cb_batch_item_discard(user_id, callback_data, lang)
+
+        # Style / voice callbacks
+        if callback_data.startswith("sv:"):
+            return await self._cb_style_voice(user_id, callback_data, lang)
+        if callback_data.startswith("si:"):
+            return await self._cb_style_intensity(user_id, callback_data, lang)
 
         return [BotResponse(t(lang, "error_generic"))]

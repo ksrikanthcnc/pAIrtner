@@ -9,12 +9,15 @@ from __future__ import annotations
 import uuid
 
 from couples_bot import db as db_mod
+from couples_bot.dampening import resolve_dampening
 from couples_bot.i18n import t
 from couples_bot.prompts import (
     build_blunt_prompt,
     build_chat_prompt,
     build_keep_prompt,
+    build_system_prompt,
     build_tell_prompt,
+    load_voice,
 )
 
 from .models import BotResponse
@@ -23,13 +26,30 @@ from .models import BotResponse
 class TagsMixin:
     """Mixin providing tag-based message handlers for BotService."""
 
+    async def _get_enriched_style(
+        self, user_id: int, has_blunt_tag: bool = False
+    ) -> tuple[str | None, str | None]:
+        """Load the user's voice file and resolve dampening.
+
+        Returns ``(voice_text, dampening_instruction)``.
+        """
+        profile = await db_mod.get_user_profile(self.db_path, user_id)
+        voice_name = (profile or {}).get("default_voice") or self.config.default_voice
+        voice_text = load_voice(self.config.voices_dir, voice_name)
+
+        _, dampening_instruction = await resolve_dampening(
+            self.db_path, user_id, self.config, has_blunt_tag=has_blunt_tag,
+        )
+        return voice_text, dampening_instruction
+
     async def _handle_keep(
         self, user_id: int, text: str
     ) -> list[BotResponse]:
         """Process a ``#keep`` message — extract and save facts only."""
         lang = await self._get_lang(user_id)
         ctx = await self._build_ctx(user_id)
-        system, content = build_keep_prompt(ctx, text)
+        voice_text, damp_instr = await self._get_enriched_style(user_id)
+        system, content = build_keep_prompt(ctx, text, voice_text=voice_text, dampening_instruction=damp_instr)
 
         api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", text)
@@ -55,7 +75,8 @@ class TagsMixin:
             return [BotResponse(t(lang, "not_paired"))]
 
         ctx = await self._build_ctx(user_id)
-        system, content = build_tell_prompt(ctx, text)
+        voice_text, damp_instr = await self._get_enriched_style(user_id)
+        system, content = build_tell_prompt(ctx, text, voice_text=voice_text, dampening_instruction=damp_instr)
 
         api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", text)
@@ -87,7 +108,8 @@ class TagsMixin:
         """Process a ``#deep`` message — chat using the heavy model."""
         lang = await self._get_lang(user_id)
         ctx = await self._build_ctx(user_id)
-        system, content = build_chat_prompt(ctx, text)
+        voice_text, damp_instr = await self._get_enriched_style(user_id)
+        system, content = build_chat_prompt(ctx, text, voice_text=voice_text, dampening_instruction=damp_instr)
 
         model = self.config.model_heavy[0] if self.config.model_heavy else None
         api_key = await self._get_couple_api_key(user_id)
@@ -115,7 +137,8 @@ class TagsMixin:
         """Process a ``#blunt`` / ``#honest`` message — direct, unfiltered feedback."""
         lang = await self._get_lang(user_id)
         ctx = await self._build_ctx(user_id)
-        system, content = build_blunt_prompt(ctx, text)
+        voice_text, damp_instr = await self._get_enriched_style(user_id, has_blunt_tag=True)
+        system, content = build_blunt_prompt(ctx, text, voice_text=voice_text, dampening_instruction=damp_instr)
 
         api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", text)
@@ -137,7 +160,8 @@ class TagsMixin:
         """Process a plain message (no tag) — chat, then optionally offer relay."""
         lang = await self._get_lang(user_id)
         ctx = await self._build_ctx(user_id)
-        system, content = build_chat_prompt(ctx, text)
+        voice_text, damp_instr = await self._get_enriched_style(user_id)
+        system, content = build_chat_prompt(ctx, text, voice_text=voice_text, dampening_instruction=damp_instr)
 
         api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", text)

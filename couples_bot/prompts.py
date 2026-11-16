@@ -177,26 +177,39 @@ def _format_history(messages: list[tuple[str, str]], limit: int = 6) -> str:
 def build_system_prompt(
     voice_text: str | None = None,
     task_text: str | None = None,
+    dampening_instruction: str | None = None,
 ) -> str:
     """Base system prompt shared across prompt types.
 
-    Optionally appends voice and task instructions when provided.
+    Optionally appends voice, task, and dampening instructions.
     """
     persona = _get_persona()
     parts = [persona, _ROLE, _NOT_THERAPY, _TONE, _JSON_FORMAT]
-    if voice_text:
-        parts.append(f"## Voice\n{voice_text}")
+    if dampening_instruction or voice_text:
+        style_parts: list[str] = []
+        if dampening_instruction:
+            style_parts.append(dampening_instruction)
+        if voice_text:
+            style_parts.append(voice_text)
+        parts.append("## Communication Style\n" + "\n".join(style_parts))
     if task_text:
         parts.append(f"## Task Instructions\n{task_text}")
     return "\n\n".join(parts)
 
 
-def build_chat_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
+def build_chat_prompt(
+    ctx: UserContext,
+    message: str,
+    voice_text: str | None = None,
+    dampening_instruction: str | None = None,
+) -> tuple[str, str]:
     """Build prompt for a regular chat message.
 
     Returns (system_prompt, user_content).
     """
-    system = build_system_prompt()
+    system = build_system_prompt(
+        voice_text=voice_text, dampening_instruction=dampening_instruction,
+    )
 
     parts: list[str] = []
     parts.append(_format_facts("Your private notes", ctx.private_facts))
@@ -207,12 +220,25 @@ def build_chat_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
     return system, "".join(parts)
 
 
-def build_tell_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
+def build_tell_prompt(
+    ctx: UserContext,
+    message: str,
+    voice_text: str | None = None,
+    dampening_instruction: str | None = None,
+) -> tuple[str, str]:
     """Build prompt for /tell or #send — relay drafting.
 
     Returns (system_prompt, user_content).
     """
     persona = _get_persona()
+    style_section = ""
+    if dampening_instruction or voice_text:
+        style_parts: list[str] = []
+        if dampening_instruction:
+            style_parts.append(dampening_instruction)
+        if voice_text:
+            style_parts.append(voice_text)
+        style_section = "\n\n## Communication Style\n" + "\n".join(style_parts)
     system = (
         f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
         "The user wants to send a message to their partner. "
@@ -221,6 +247,7 @@ def build_tell_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
         f"{_JSON_FORMAT}\n"
         "IMPORTANT: relay_draft is REQUIRED for this request — "
         "always provide a softened version of the message."
+        f"{style_section}"
     )
 
     parts: list[str] = []
@@ -261,18 +288,32 @@ def build_mediate_prompt(shared_facts: list[str]) -> tuple[str, str]:
     return system, "".join(parts)
 
 
-def build_keep_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
+def build_keep_prompt(
+    ctx: UserContext,
+    message: str,
+    voice_text: str | None = None,
+    dampening_instruction: str | None = None,
+) -> tuple[str, str]:
     """Build prompt for #keep — fact extraction only.
 
     Returns (system_prompt, user_content).
     """
     persona = _get_persona()
+    style_section = ""
+    if dampening_instruction or voice_text:
+        style_parts: list[str] = []
+        if dampening_instruction:
+            style_parts.append(dampening_instruction)
+        if voice_text:
+            style_parts.append(voice_text)
+        style_section = "\n\n## Communication Style\n" + "\n".join(style_parts)
     system = (
         f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
         "The user wants to save some information. Extract key facts "
         "from their message. Do NOT draft a relay.\n\n"
         f"{_JSON_FORMAT}\n"
         "IMPORTANT: relay_draft MUST be null for #keep messages."
+        f"{style_section}"
     )
 
     parts: list[str] = []
@@ -343,7 +384,12 @@ def build_checkin_summary_prompt(
     return system, "\n".join(parts)
 
 
-def build_blunt_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
+def build_blunt_prompt(
+    ctx: UserContext,
+    message: str,
+    voice_text: str | None = None,
+    dampening_instruction: str | None = None,
+) -> tuple[str, str]:
     """Build prompt for #blunt / #honest — direct, unfiltered feedback.
 
     The response is for the sender's own reflection only.
@@ -351,6 +397,14 @@ def build_blunt_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
     Returns (system_prompt, user_content).
     """
     persona = _get_persona()
+    style_section = ""
+    if dampening_instruction or voice_text:
+        style_parts: list[str] = []
+        if dampening_instruction:
+            style_parts.append(dampening_instruction)
+        if voice_text:
+            style_parts.append(voice_text)
+        style_section = "\n\n## Communication Style\n" + "\n".join(style_parts)
     system = (
         f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n"
         "The user has requested BLUNT MODE. Give your direct, honest "
@@ -360,6 +414,7 @@ def build_blunt_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
         f"{_JSON_FORMAT}\n"
         "IMPORTANT: relay_draft should be null for blunt responses "
         "(unless #send is also present, but that is handled separately)."
+        f"{style_section}"
     )
 
     parts: list[str] = []

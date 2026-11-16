@@ -761,3 +761,124 @@ async def test_add_fact_without_category(test_db):
     facts = await get_facts(test_db, 10)
     fact = [f for f in facts if f["id"] == fid][0]
     assert fact["category"] is None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002-intelligence: user_profiles CRUD
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ensure_user_profile_creates(test_db):
+    """ensure_user_profile creates a default row."""
+    from couples_bot.db import ensure_user_profile, get_user_profile
+
+    await create_user(test_db, 10, "X")
+    profile = await ensure_user_profile(test_db, 10)
+    assert profile is not None
+    assert profile["user_id"] == 10
+    assert profile["default_voice"] == "casual_en"
+    assert abs(profile["voice_intensity"] - 0.5) < 0.01
+    assert abs(profile["dampening_base"] - 0.7) < 0.01
+    assert profile["onboarding_done"] == 0
+    assert profile["onboarding_step"] == 0
+
+    # Calling again returns same row
+    profile2 = await ensure_user_profile(test_db, 10)
+    assert profile2["user_id"] == profile["user_id"]
+
+
+@pytest.mark.asyncio
+async def test_update_user_profile(test_db):
+    """update_user_profile modifies specific fields."""
+    from couples_bot.db import ensure_user_profile, get_user_profile, update_user_profile
+
+    await create_user(test_db, 10, "X")
+    await ensure_user_profile(test_db, 10)
+
+    await update_user_profile(test_db, 10, default_voice="telugu", voice_intensity=0.8)
+
+    profile = await get_user_profile(test_db, 10)
+    assert profile["default_voice"] == "telugu"
+    assert abs(profile["voice_intensity"] - 0.8) < 0.01
+
+
+@pytest.mark.asyncio
+async def test_update_user_profile_creates_if_missing(test_db):
+    """update_user_profile auto-creates the profile row."""
+    from couples_bot.db import get_user_profile, update_user_profile
+
+    await create_user(test_db, 10, "X")
+    await update_user_profile(test_db, 10, relationship_type="married")
+
+    profile = await get_user_profile(test_db, 10)
+    assert profile["relationship_type"] == "married"
+
+
+@pytest.mark.asyncio
+async def test_get_user_profile_missing(test_db):
+    """get_user_profile returns None for nonexistent user."""
+    from couples_bot.db import get_user_profile
+
+    profile = await get_user_profile(test_db, 999)
+    assert profile is None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002-intelligence: user_mood_styles CRUD
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_set_and_get_active_mood(test_db):
+    """set_user_mood + get_active_mood round trip."""
+    from datetime import datetime, timedelta, timezone
+
+    from couples_bot.db import get_active_mood, set_user_mood
+
+    await create_user(test_db, 10, "X")
+    expires = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+
+    mid = await set_user_mood(
+        test_db, 10, "stressed", expires,
+        dampening_override=0.9, response_length="short",
+    )
+    assert mid is not None
+
+    mood = await get_active_mood(test_db, 10)
+    assert mood is not None
+    assert mood["mood"] == "stressed"
+    assert mood["dampening_override"] == 0.9
+    assert mood["response_length"] == "short"
+
+
+@pytest.mark.asyncio
+async def test_get_active_mood_expired(test_db):
+    """Expired moods are not returned."""
+    from datetime import datetime, timedelta, timezone
+
+    from couples_bot.db import get_active_mood, set_user_mood
+
+    await create_user(test_db, 10, "X")
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    await set_user_mood(test_db, 10, "angry", past)
+
+    assert await get_active_mood(test_db, 10) is None
+
+
+@pytest.mark.asyncio
+async def test_clear_expired_moods(test_db):
+    """clear_expired_moods deletes old rows."""
+    from datetime import datetime, timedelta, timezone
+
+    from couples_bot.db import clear_expired_moods, set_user_mood
+
+    await create_user(test_db, 10, "X")
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+
+    await set_user_mood(test_db, 10, "angry", past)
+    await set_user_mood(test_db, 10, "happy", future)
+
+    deleted = await clear_expired_moods(test_db)
+    assert deleted == 1

@@ -104,11 +104,14 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/forget &lt;id|all&gt; — Delete your facts\n"
             "/export — Download your facts as a file\n"
             "/history — View recent sent and received messages\n"
+            "/style — Change your voice and intensity\n"
+            "/mood &lt;mood&gt; — Set your mood (stressed|happy|angry|reflective)\n"
             "/setup — Configure your couple's Gemini API key\n"
             "/status — Check your relationship dashboard\n"
             "/pause — Pause relay delivery\n"
             "/resume — Resume relay delivery\n"
             "/lang &lt;en|te&gt; — Switch language\n"
+            "/skip — Skip onboarding questions\n"
             "/help — Show this message\n\n"
             "<b>Tags (in regular messages):</b>\n"
             "#keep — Save only, no relay\n"
@@ -161,6 +164,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "status_not_paired": "You're not paired yet. Use /start to get a pairing code.",
         "status_paused_note": "⏸️ Your delivery is currently paused.\n",
         "status_partner_paused_note": "⏸️ Your partner has paused delivery.\n",
+        "status_voice": "🎨 Voice: {voice} (intensity {intensity})\n",
+        "status_mood": "🎭 Mood: {mood}\n",
+        "status_dampening": "📉 Dampening: {level:.2f}\n",
 
         # Pause / Resume
         "paused_confirm": "⏸️ Delivery paused. Approved messages will be held until you /resume.",
@@ -238,6 +244,36 @@ _STRINGS: dict[str, dict[str, str]] = {
         "checkin_waiting_partner": "✅ Got your answers! Waiting for your partner to respond.",
         "checkin_summary_header": "🔄 <b>Weekly Check-in Summary</b>",
         "checkin_both_answered": "✅ Your check-in response has been recorded.",
+
+        # Onboarding interview
+        "onboard_welcome": (
+            "🎉 Great, you're paired! Let me get to know you a little. "
+            "Answer a few quick questions (or send /skip to skip)."
+        ),
+        "onboard_q_relationship_type": "What's your relationship type? (married / dating / other)",
+        "onboard_q_duration": "How many years have you been together? (just the number)",
+        "onboard_q_kids": "Do you have kids? (yes / no)",
+        "onboard_q_age_range": "What's your age range? (e.g. 25-30)",
+        "onboard_q_appreciate": "Name one thing you appreciate most about your partner.",
+        "onboard_q_wish": "What's one wish you have for the relationship?",
+        "onboard_complete": (
+            "✅ Got it, thanks for sharing! I'll keep this in mind as we chat. "
+            "Send any message to start talking."
+        ),
+        "onboard_skip": "👍 No worries, skipped! You can always update your profile later.",
+
+        # Style / Voice
+        "style_header": "🎨 <b>Your Communication Style</b>\n\n",
+        "style_current": "Voice: <b>{voice}</b> | Intensity: <b>{intensity}</b>",
+        "style_voice_set": "✅ Voice updated to <b>{voice}</b>.",
+        "style_intensity_set": "✅ Intensity updated to <b>{intensity}</b>.",
+
+        # Mood
+        "mood_set": "🎭 Mood set to <b>{mood}</b>. Expires in ~{hours}h.",
+        "mood_current": "🎭 Current mood: <b>{mood}</b> (expires {expires}).",
+        "mood_none": "No active mood set. Use /mood <stressed|happy|angry|reflective>.",
+        "mood_expired": "Your previous mood has expired.",
+        "mood_usage": "Usage: /mood [stressed|happy|angry|reflective]",
     },
 
     "te": {
@@ -322,11 +358,14 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/forget — మీ విషయాలు తొలగించండి\n"
             "/export — మీ విషయాలు డౌన్‌లోడ్ చేయండి\n"
             "/history — ఇటీవల పంపిన/అందుకున్న సందేశాలు\n"
+            "/style — మీ వాయిస్ మరియు ఇంటెన్సిటీ మార్చండి\n"
+            "/mood — మీ మూడ్ సెట్ చేయండి\n"
             "/setup — మీ Gemini API కీ సెట్ చేయండి\n"
             "/status — మీ స్థితి చూడండి\n"
             "/pause — డెలివరీ ఆపు\n"
             "/resume — డెలివరీ కొనసాగించు\n"
             "/lang — భాష మార్చండి\n"
+            "/skip — ఆన్‌బోర్డింగ్ ప్రశ్నలు దాటండి\n"
             "/help — ఈ సందేశం చూపించండి"
         ),
 
@@ -370,6 +409,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "status_not_paired": "మీరు ఇంకా జత చేయబడలేదు. /start వాడండి.",
         "status_paused_note": "⏸️ మీ డెలివరీ ప్రస్తుతం ఆపబడింది.\n",
         "status_partner_paused_note": "⏸️ మీ భాగస్వామి డెలివరీ ఆపారు.\n",
+        "status_voice": "🎨 వాయిస్: {voice} (ఇంటెన్సిటీ {intensity})\n",
+        "status_mood": "🎭 మూడ్: {mood}\n",
+        "status_dampening": "📉 డాంపెనింగ్: {level:.2f}\n",
 
         # Pause / Resume
         "paused_confirm": "⏸️ డెలివరీ ఆపబడింది. ఆమోదించిన సందేశాలు /resume వరకు ఉంటాయి.",
@@ -447,6 +489,36 @@ _STRINGS: dict[str, dict[str, str]] = {
         "checkin_waiting_partner": "✅ మీ సమాధానాలు అందాయి! మీ భాగస్వామి కోసం వేచి ఉన్నాము.",
         "checkin_summary_header": "🔄 <b>వారపు చెక్-ఇన్ సారాంశం</b>",
         "checkin_both_answered": "✅ మీ చెక్-ఇన్ సమాధానం నమోదు అయింది.",
+
+        # Onboarding interview
+        "onboard_welcome": (
+            "🎉 బాగుంది, మీరు జత చేయబడ్డారు! మిమ్మల్ని కొంచెం తెలుసుకుంటాను. "
+            "కొన్ని ప్రశ్నలకు సమాధానం ఇవ్వండి (లేదా /skip పంపండి)."
+        ),
+        "onboard_q_relationship_type": "మీ సంబంధం ఏ రకం? (married / dating / other)",
+        "onboard_q_duration": "ఎన్ని సంవత్సరాలుగా కలిసి ఉన్నారు? (సంఖ్య మాత్రమే)",
+        "onboard_q_kids": "పిల్లలు ఉన్నారా? (yes / no)",
+        "onboard_q_age_range": "మీ వయస్సు శ్రేణి? (ఉదా. 25-30)",
+        "onboard_q_appreciate": "మీ భాగస్వామిలో మీకు ఎక్కువగా నచ్చే ఒక విషయం చెప్పండి.",
+        "onboard_q_wish": "సంబంధం కోసం మీ ఒక కోరిక ఏమిటి?",
+        "onboard_complete": (
+            "✅ ధన్యవాదాలు! మన చాట్‌లో ఇది గుర్తుంచుకుంటాను. "
+            "మాట్లాడటం మొదలుపెట్టడానికి ఏదైనా సందేశం పంపండి."
+        ),
+        "onboard_skip": "👍 పర్వాలేదు, దాటేశాం! తర్వాత ఎప్పుడైనా ప్రొఫైల్ అప్‌డేట్ చేయవచ్చు.",
+
+        # Style / Voice
+        "style_header": "🎨 <b>మీ కమ్యూనికేషన్ స్టైల్</b>\n\n",
+        "style_current": "వాయిస్: <b>{voice}</b> | ఇంటెన్సిటీ: <b>{intensity}</b>",
+        "style_voice_set": "✅ వాయిస్ <b>{voice}</b> కి అప్‌డేట్ అయింది.",
+        "style_intensity_set": "✅ ఇంటెన్సిటీ <b>{intensity}</b> కి అప్‌డేట్ అయింది.",
+
+        # Mood
+        "mood_set": "🎭 మూడ్ <b>{mood}</b> కి సెట్ అయింది. ~{hours}గంటల్లో ఎక్స్‌పైర్ అవుతుంది.",
+        "mood_current": "🎭 ప్రస్తుత మూడ్: <b>{mood}</b> ({expires} లో ఎక్స్‌పైర్).",
+        "mood_none": "యాక్టివ్ మూడ్ లేదు. /mood <stressed|happy|angry|reflective> వాడండి.",
+        "mood_expired": "మీ మునుపటి మూడ్ ఎక్స్‌పైర్ అయింది.",
+        "mood_usage": "వాడకం: /mood [stressed|happy|angry|reflective]",
     },
 }
 

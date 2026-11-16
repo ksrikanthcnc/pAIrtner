@@ -82,6 +82,20 @@ class Config:
     )
     cooldown_behavior: str = "accumulate"
 
+    # User intelligence (FEAT-002)
+    mood_default_expiry_hours: int = 2
+    mood_styles: dict = field(default_factory=lambda: {
+        "stressed": {"dampening_override": 0.9, "response_length": "short"},
+        "happy": {"dampening_override": 0.3, "response_length": "normal"},
+        "angry": {"dampening_override": 0.95, "response_length": "short"},
+        "reflective": {"dampening_override": 0.5, "response_length": "long"},
+    })
+    dampening_enabled: bool = True
+    dampening_default_base: float = 0.7
+    dampening_max_intensity: float = 10.0
+    dampening_blunt_bypass: bool = True
+    articulation_enabled: bool = True
+
     # New tunables (FEAT-003) — background tasks
     backup_enabled: bool = True
     backup_directory: str = "backups"
@@ -230,6 +244,42 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         cooldown_behavior=os.getenv(
             "COOLDOWN_BEHAVIOR",
             yaml_cfg.get("cooldown", {}).get("behavior", "accumulate"),
+        ),
+        mood_default_expiry_hours=int(
+            os.getenv(
+                "MOOD_DEFAULT_EXPIRY_HOURS",
+                str(yaml_cfg.get("mood", {}).get("default_expiry_hours", 2)),
+            )
+        ),
+        mood_styles=yaml_cfg.get("mood", {}).get("styles", {
+            "stressed": {"dampening_override": 0.9, "response_length": "short"},
+            "happy": {"dampening_override": 0.3, "response_length": "normal"},
+            "angry": {"dampening_override": 0.95, "response_length": "short"},
+            "reflective": {"dampening_override": 0.5, "response_length": "long"},
+        }),
+        dampening_enabled=_parse_bool(
+            os.environ.get("DAMPENING_ENABLED"),
+            yaml_cfg.get("dampening", {}).get("enabled", True),
+        ),
+        dampening_default_base=float(
+            os.getenv(
+                "DAMPENING_DEFAULT_BASE",
+                str(yaml_cfg.get("dampening", {}).get("default_base", 0.7)),
+            )
+        ),
+        dampening_max_intensity=float(
+            os.getenv(
+                "DAMPENING_MAX_INTENSITY",
+                str(yaml_cfg.get("dampening", {}).get("max_intensity", 10.0)),
+            )
+        ),
+        dampening_blunt_bypass=_parse_bool(
+            os.environ.get("DAMPENING_BLUNT_BYPASS"),
+            yaml_cfg.get("dampening", {}).get("blunt_bypass", True),
+        ),
+        articulation_enabled=_parse_bool(
+            os.environ.get("ARTICULATION_ENABLED"),
+            yaml_cfg.get("articulation", {}).get("enabled", True),
         ),
         backup_enabled=_parse_bool(
             os.environ.get("BACKUP_ENABLED"),

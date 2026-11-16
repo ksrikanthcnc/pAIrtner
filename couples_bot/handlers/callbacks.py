@@ -15,6 +15,15 @@ from couples_bot.i18n import t
 from .models import BotResponse, InlineButton
 
 
+# Voice name → display label mapping (shared with commands.py)
+_VOICE_LABELS: dict[str, str] = {
+    "casual_en": "Casual English",
+    "telugu": "Telugu",
+    "hindi": "Hindi",
+    "formal_en": "Formal English",
+}
+
+
 class CallbacksMixin:
     """Mixin providing callback-query handlers for BotService."""
 
@@ -369,3 +378,27 @@ class CallbacksMixin:
             t(lang, "edit_updated", draft=text),
             buttons=buttons,
         )]
+
+    # ── style / voice callbacks ──────────────────────────────────────────
+
+    async def _cb_style_voice(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Update the user's default voice."""
+        voice = data.split(":")[1]
+        await db_mod.update_user_profile(self.db_path, user_id, default_voice=voice)
+        display = _VOICE_LABELS.get(voice, voice)
+        return [BotResponse(t(lang, "style_voice_set", voice=display))]
+
+    async def _cb_style_intensity(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Update the user's voice intensity."""
+        try:
+            intensity = float(data.split(":")[1])
+        except (ValueError, IndexError):
+            return [BotResponse(t(lang, "error_generic"))]
+        await db_mod.update_user_profile(
+            self.db_path, user_id, voice_intensity=intensity,
+        )
+        return [BotResponse(t(lang, "style_intensity_set", intensity=intensity))]

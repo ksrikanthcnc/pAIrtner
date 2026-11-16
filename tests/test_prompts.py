@@ -84,7 +84,7 @@ class TestBuildSystemPrompt:
         voice_text = "Be very casual and friendly."
         result = build_system_prompt(voice_text=voice_text)
         assert "Be very casual and friendly." in result
-        assert "## Voice" in result
+        assert "## Communication Style" in result
 
     def test_build_system_prompt_with_task(self):
         task_text = "Rewrite the message gently."

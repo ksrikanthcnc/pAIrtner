@@ -168,3 +168,15 @@ class TestConfigDefaults:
         assert cfg.voices_dir == "prompts/voices"
         assert cfg.default_voice == "casual_en"
         assert cfg.default_voice_intensity == 0.5
+
+    def test_feat002_config_fields_defaults(self):
+        """mood, dampening, articulation config defaults."""
+        cfg = Config(telegram_token="t")
+        assert cfg.mood_default_expiry_hours == 2
+        assert isinstance(cfg.mood_styles, dict)
+        assert "stressed" in cfg.mood_styles
+        assert cfg.dampening_enabled is True
+        assert cfg.dampening_default_base == 0.7
+        assert cfg.dampening_max_intensity == 10.0
+        assert cfg.dampening_blunt_bypass is True
+        assert cfg.articulation_enabled is True

@@ -7,7 +7,7 @@ via the :class:`CommandsMixin` base class.
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from couples_bot import db as db_mod
 from couples_bot.config import is_user_allowed
@@ -15,7 +15,7 @@ from couples_bot.crypto import decrypt_value, encrypt_value, mask_key
 from couples_bot.i18n import t
 from couples_bot.prompts import build_mediate_prompt, build_tell_prompt
 
-from .models import BotResponse, format_fact_date, format_relative_time, parse_tags
+from .models import BotResponse, InlineButton, format_fact_date, format_relative_time, parse_tags
 
 # Category key → i18n key mapping
 _CATEGORY_I18N: dict[str | None, str] = {
@@ -263,6 +263,23 @@ class CommandsMixin:
             time=format_relative_time(last_active),
         ))
 
+        # Voice, mood, dampening
+        profile = await db_mod.get_user_profile(self.db_path, user_id)
+        if profile:
+            voice = profile.get("default_voice") or "casual_en"
+            intensity = profile.get("voice_intensity", 0.5)
+            parts.append(t(lang, "status_voice", voice=voice, intensity=intensity))
+
+        active_mood = await db_mod.get_active_mood(self.db_path, user_id)
+        if active_mood:
+            parts.append(t(lang, "status_mood", mood=active_mood["mood"]))
+
+        from couples_bot.dampening import resolve_dampening as _resolve
+        damp_level, _ = await _resolve(
+            self.db_path, user_id, self.config, has_blunt_tag=False,
+        )
+        parts.append(t(lang, "status_dampening", level=damp_level))
+
         if user.get("paused"):
             parts.append(t(lang, "status_paused_note"))
         if partner and partner.get("paused"):
@@ -427,3 +444,92 @@ class CommandsMixin:
             t(lang, "export_caption", count=len(facts)),
             document=("my_facts.txt", content),
         )]
+
+    # ── /style ───────────────────────────────────────────────────────────
+
+    async def handle_style(
+        self, user_id: int, arg: str | None
+    ) -> list[BotResponse]:
+        """Show or change the user's voice and intensity settings."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+        profile = await db_mod.ensure_user_profile(self.db_path, user_id)
+
+        if arg and arg.strip():
+            # Direct set: /style casual_en or /style 0.5
+            # handled via callbacks instead; show usage
+            pass
+
+        # Show current + inline buttons
+        voice = profile.get("default_voice") or "casual_en"
+        intensity = profile.get("voice_intensity", 0.5)
+
+        voice_labels = {
+            "casual_en": "Casual English",
+            "telugu": "Telugu",
+            "hindi": "Hindi",
+            "formal_en": "Formal English",
+        }
+        voice_display = voice_labels.get(voice, voice)
+
+        text = (
+            t(lang, "style_header")
+            + t(lang, "style_current", voice=voice_display, intensity=intensity)
+        )
+
+        voice_buttons = [
+            InlineButton("🗣️ Casual EN", "sv:casual_en"),
+            InlineButton("🗣️ Telugu", "sv:telugu"),
+            InlineButton("🗣️ Hindi", "sv:hindi"),
+            InlineButton("🗣️ Formal EN", "sv:formal_en"),
+        ]
+        intensity_buttons = [
+            InlineButton("Light 0.3", "si:0.3"),
+            InlineButton("Medium 0.5", "si:0.5"),
+            InlineButton("Deep 0.8", "si:0.8"),
+        ]
+
+        return [BotResponse(text, buttons=[voice_buttons, intensity_buttons])]
+
+    # ── /mood ────────────────────────────────────────────────────────────
+
+    async def handle_mood(
+        self, user_id: int, arg: str | None
+    ) -> list[BotResponse]:
+        """Show or set the user's current mood."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+
+        if not arg or not arg.strip():
+            # Show current mood
+            active = await db_mod.get_active_mood(self.db_path, user_id)
+            if not active:
+                return [BotResponse(t(lang, "mood_none"))]
+            expires = active.get("expires_at", "")
+            return [BotResponse(t(
+                lang, "mood_current",
+                mood=active["mood"], expires=expires,
+            ))]
+
+        mood = arg.strip().lower()
+        valid_moods = set(self.config.mood_styles.keys())
+        if mood not in valid_moods:
+            return [BotResponse(t(lang, "mood_usage"))]
+
+        hours = self.config.mood_default_expiry_hours
+        expires_at = (
+            datetime.now(timezone.utc) + timedelta(hours=hours)
+        ).isoformat()
+
+        style = self.config.mood_styles.get(mood, {})
+        await db_mod.set_user_mood(
+            self.db_path, user_id, mood, expires_at,
+            dampening_override=style.get("dampening_override"),
+            response_length=style.get("response_length", "normal"),
+        )
+
+        return [BotResponse(t(lang, "mood_set", mood=mood, hours=hours))]
