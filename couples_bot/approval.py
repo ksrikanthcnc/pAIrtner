@@ -41,9 +41,24 @@ async def delivery_loop(
             rows = await db_mod.get_deliverable(db_path)
             for row in rows:
                 try:
-                    text = row.get("edited_draft") or row["draft"]
                     receiver_id = row["receiver_id"]
                     sender_id = row["sender_id"]
+
+                    # Skip delivery if either party is paused
+                    receiver = await db_mod.get_user(db_path, receiver_id)
+                    sender = await db_mod.get_user(db_path, sender_id)
+                    if (receiver and receiver.get("paused")) or (
+                        sender and sender.get("paused")
+                    ):
+                        logger.debug(
+                            "Skipping pending %d — paused (sender=%s, receiver=%s)",
+                            row["id"],
+                            bool(sender and sender.get("paused")),
+                            bool(receiver and receiver.get("paused")),
+                        )
+                        continue
+
+                    text = row.get("edited_draft") or row["draft"]
 
                     # Look up sender to determine partner's lang
                     receiver = await db_mod.get_user(db_path, receiver_id)

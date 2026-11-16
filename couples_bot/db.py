@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
     name        TEXT,
     partner_id  INTEGER REFERENCES users(tg_id),
     lang        TEXT DEFAULT 'en',
+    paused      INTEGER DEFAULT 0,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -76,6 +77,15 @@ async def init_db(db_path: str) -> None:
     """Create tables and indexes if they don't exist."""
     async with aiosqlite.connect(db_path) as db:
         await db.executescript(_SCHEMA_SQL)
+
+        # Migration: add 'paused' column to users if missing (existing DBs)
+        async with db.execute("PRAGMA table_info(users)") as cur:
+            columns = {row[1] for row in await cur.fetchall()}
+        if "paused" not in columns:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN paused INTEGER DEFAULT 0"
+            )
+
         await db.commit()
 
 
@@ -367,6 +377,55 @@ async def get_usage_count(db_path: str, model: str) -> int:
         (today, model),
     )
     return row["count"] if row else 0
+
+
+async def get_usage_today(db_path: str) -> int:
+    """Sum of all model counts from the usage table for today's date."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    row = await _fetch_one(
+        db_path,
+        "SELECT COALESCE(SUM(count), 0) AS total FROM usage WHERE date = ?",
+        (today,),
+    )
+    return row["total"] if row else 0
+
+
+# ---------------------------------------------------------------------------
+# Pause / status helpers
+# ---------------------------------------------------------------------------
+
+async def set_user_paused(
+    db_path: str, user_id: int, paused: bool
+) -> None:
+    """Set or clear the paused flag on a user."""
+    await _execute(
+        db_path,
+        "UPDATE users SET paused = ? WHERE tg_id = ?",
+        (1 if paused else 0, user_id),
+    )
+
+
+async def get_pending_count(db_path: str, user_id: int) -> int:
+    """Count pending rows awaiting approval or delivery for a given sender."""
+    row = await _fetch_one(
+        db_path,
+        "SELECT COUNT(*) AS cnt FROM pending "
+        "WHERE sender_id = ? AND status IN ('awaiting_approval', 'approved')",
+        (user_id,),
+    )
+    return row["cnt"] if row else 0
+
+
+async def get_partner_last_active(
+    db_path: str, partner_id: int
+) -> str | None:
+    """Return the most recent message timestamp for *partner_id*, or None."""
+    row = await _fetch_one(
+        db_path,
+        "SELECT MAX(created_at) AS last_active FROM messages WHERE user_id = ?",
+        (partner_id,),
+    )
+    return row["last_active"] if row and row["last_active"] else None
 
 
 # ---------------------------------------------------------------------------

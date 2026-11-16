@@ -64,6 +64,44 @@ def parse_tags(text: str) -> tuple[set[str], str]:
 
 
 # ---------------------------------------------------------------------------
+# Date / time formatting helpers
+# ---------------------------------------------------------------------------
+
+
+def _format_fact_date(created_at: str | None) -> str:
+    """Format a fact's created_at timestamp into a short date like 'Jun 15'."""
+    if not created_at:
+        return "?"
+    try:
+        dt = datetime.fromisoformat(created_at)
+        return dt.strftime("%b %d")
+    except (ValueError, TypeError):
+        return "?"
+
+
+def _format_relative_time(timestamp_str: str | None) -> str:
+    """Format a timestamp into relative time like '2h ago'."""
+    if not timestamp_str:
+        return "never"
+    try:
+        dt = datetime.fromisoformat(timestamp_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        diff = now - dt
+        seconds = diff.total_seconds()
+        if seconds < 60:
+            return "just now"
+        if seconds < 3600:
+            return f"{int(seconds // 60)}m ago"
+        if seconds < 86400:
+            return f"{int(seconds // 3600)}h ago"
+        return f"{diff.days}d ago"
+    except (ValueError, TypeError):
+        return "unknown"
+
+
+# ---------------------------------------------------------------------------
 # Service
 # ---------------------------------------------------------------------------
 
@@ -298,15 +336,93 @@ class BotService:
 
         if private_facts:
             parts.append(t(lang, "whatdoyouknow_private"))
-            for i, f in enumerate(private_facts, 1):
-                parts.append(t(lang, "fact_item", idx=i, text=f["text"], id=f["id"]))
+            for f in private_facts:
+                date = _format_fact_date(f.get("created_at"))
+                parts.append(t(
+                    lang, "fact_item",
+                    id=f["id"], date=date, text=f["text"], visibility="private",
+                ))
 
         if shared_facts:
             parts.append(t(lang, "whatdoyouknow_shared"))
-            for i, f in enumerate(shared_facts, 1):
-                parts.append(t(lang, "fact_item", idx=i, text=f["text"], id=f["id"]))
+            for f in shared_facts:
+                date = _format_fact_date(f.get("created_at"))
+                parts.append(t(
+                    lang, "fact_item",
+                    id=f["id"], date=date, text=f["text"], visibility="shared",
+                ))
 
         return [BotResponse("".join(parts))]
+
+    # ── /status ──────────────────────────────────────────────────────────
+
+    async def handle_status(self, user_id: int) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        user = await db_mod.ensure_user(self.db_path, user_id)
+        lang = user.get("lang") or "en"
+
+        if not user.get("partner_id"):
+            return [BotResponse(t(lang, "status_not_paired"))]
+
+        partner = await db_mod.get_user(self.db_path, user["partner_id"])
+        partner_name = (partner or {}).get("name") or "partner"
+
+        private_facts = await db_mod.get_facts(self.db_path, user_id, "private")
+        shared_facts = await db_mod.get_facts(self.db_path, user_id, "shared")
+        pending_count = await db_mod.get_pending_count(self.db_path, user_id)
+        usage_today = await db_mod.get_usage_today(self.db_path)
+        last_active = await db_mod.get_partner_last_active(
+            self.db_path, user["partner_id"]
+        )
+
+        parts = [t(lang, "status_header")]
+        parts.append(t(lang, "status_partner", partner_name=partner_name))
+        parts.append(t(
+            lang, "status_facts",
+            private=len(private_facts), shared=len(shared_facts),
+        ))
+        parts.append(t(lang, "status_pending", count=pending_count))
+        parts.append(t(lang, "status_usage", count=usage_today))
+        parts.append(t(
+            lang, "status_partner_active",
+            time=_format_relative_time(last_active),
+        ))
+
+        if user.get("paused"):
+            parts.append(t(lang, "status_paused_note"))
+        if partner and partner.get("paused"):
+            parts.append(t(lang, "status_partner_paused_note"))
+
+        return [BotResponse("".join(parts))]
+
+    # ── /pause ───────────────────────────────────────────────────────────
+
+    async def handle_pause(self, user_id: int) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        user = await db_mod.ensure_user(self.db_path, user_id)
+        lang = user.get("lang") or "en"
+
+        if not user.get("partner_id"):
+            return [BotResponse(t(lang, "not_paired"))]
+
+        await db_mod.set_user_paused(self.db_path, user_id, True)
+        return [BotResponse(t(lang, "paused_confirm"))]
+
+    # ── /resume ──────────────────────────────────────────────────────────
+
+    async def handle_resume(self, user_id: int) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        user = await db_mod.ensure_user(self.db_path, user_id)
+        lang = user.get("lang") or "en"
+
+        await db_mod.set_user_paused(self.db_path, user_id, False)
+        return [BotResponse(t(lang, "resumed_confirm"))]
 
     # ── /forget ──────────────────────────────────────────────────────────
 
@@ -495,11 +611,15 @@ class BotService:
             self.db_path, user_id, user["partner_id"], draft
         )
 
+        text_msg = t(lang, "tell_draft_header") + draft
+
+        # Check if partner is paused — inform sender
+        partner = await db_mod.get_user(self.db_path, user["partner_id"])
+        if partner and partner.get("paused"):
+            text_msg += "\n\n" + t(lang, "partner_paused_notice")
+
         buttons = self._approval_buttons(pending_id, lang, skip_cooldown)
-        return [BotResponse(
-            t(lang, "tell_draft_header") + draft,
-            buttons=buttons,
-        )]
+        return [BotResponse(text_msg, buttons=buttons)]
 
     async def _handle_deep(
         self, user_id: int, text: str
@@ -586,6 +706,15 @@ class BotService:
         await db_mod.update_pending_status(
             self.db_path, pending_id, "approved", send_after
         )
+
+        # Check if delivery is paused for either party
+        receiver = await db_mod.get_user(self.db_path, pending["receiver_id"])
+        sender_user = await db_mod.get_user(self.db_path, user_id)
+        if (receiver and receiver.get("paused")) or (
+            sender_user and sender_user.get("paused")
+        ):
+            msg += "\n\n" + t(lang, "delivery_paused_notice")
+
         return [BotResponse(msg)]
 
     async def _cb_edit(

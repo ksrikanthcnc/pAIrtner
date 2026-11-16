@@ -159,6 +159,33 @@ async def _cmd_lang(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _send_response(ctx.bot, update.effective_chat.id, r)
 
 
+async def _cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    responses = await _service.handle_status(user.id)
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
+async def _cmd_pause(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    responses = await _service.handle_pause(user.id)
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
+async def _cmd_resume(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    responses = await _service.handle_resume(user.id)
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
 async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not is_user_allowed(_config, user.id):
@@ -230,6 +257,9 @@ def main() -> None:
     app.add_handler(CommandHandler("forget", _cmd_forget))
     app.add_handler(CommandHandler("export", _cmd_export))
     app.add_handler(CommandHandler("lang", _cmd_lang))
+    app.add_handler(CommandHandler("status", _cmd_status))
+    app.add_handler(CommandHandler("pause", _cmd_pause))
+    app.add_handler(CommandHandler("resume", _cmd_resume))
     app.add_handler(CommandHandler("help", _cmd_help))
     app.add_handler(CallbackQueryHandler(_on_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))

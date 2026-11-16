@@ -63,7 +63,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "whatdoyouknow_private": "🔒 <b>Private:</b>\n",
         "whatdoyouknow_shared": "🔓 <b>Shared:</b>\n",
         "whatdoyouknow_empty": "I don't have any notes about you yet. Just chat with me!",
-        "fact_item": "  {idx}. {text} <i>(id: {id})</i>\n",
+        "fact_item": "  {id}. [{date}] {text} <i>({visibility})</i>\n",
         "fact_saved": "✅ Noted! Saved {count} new fact(s).",
         "keep_saved": "✅ Saved! I'll remember that.",
 
@@ -92,6 +92,9 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/whatdoyouknow — See what I remember about you\n"
             "/forget &lt;id|all&gt; — Delete your facts\n"
             "/export — Download your facts as a file\n"
+            "/status — Check your relationship dashboard\n"
+            "/pause — Pause relay delivery\n"
+            "/resume — Resume relay delivery\n"
             "/lang &lt;en|te&gt; — Switch language\n"
             "/help — Show this message\n\n"
             "<b>Tags (in regular messages):</b>\n"
@@ -134,6 +137,30 @@ _STRINGS: dict[str, dict[str, str]] = {
             "⚠️ Heads up: we've used {count}/{cap} heavy model calls today. "
             "Remaining calls will use the standard model."
         ),
+
+        # Status
+        "status_header": "📊 <b>Your Status</b>\n\n",
+        "status_partner": "👫 Partner: {partner_name}\n",
+        "status_facts": "📋 Facts: {private} private, {shared} shared\n",
+        "status_pending": "📬 Pending relays: {count}\n",
+        "status_usage": "📈 API calls today: {count}\n",
+        "status_partner_active": "🕐 Partner last active: {time}\n",
+        "status_not_paired": "You're not paired yet. Use /start to get a pairing code.",
+        "status_paused_note": "⏸️ Your delivery is currently paused.\n",
+        "status_partner_paused_note": "⏸️ Your partner has paused delivery.\n",
+
+        # Pause / Resume
+        "paused_confirm": "⏸️ Delivery paused. Approved messages will be held until you /resume.",
+        "resumed_confirm": "▶️ Delivery resumed! Pending messages will be delivered on schedule.",
+        "partner_paused_notice": (
+            "ℹ️ Note: Your partner has paused delivery. The message is "
+            "approved and will be delivered when they resume."
+        ),
+        "delivery_paused_notice": (
+            "ℹ️ Note: Delivery is currently paused. Your message is "
+            "approved and will be delivered when resumed."
+        ),
+
         "no_user": "Please run /start first to set up.",
     },
 
@@ -181,7 +208,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "whatdoyouknow_private": "🔒 <b>ప్రైవేట్:</b>\n",
         "whatdoyouknow_shared": "🔓 <b>షేర్డ్:</b>\n",
         "whatdoyouknow_empty": "మీ గురించి ఇంకా ఏమీ లేదు. నాతో మాట్లాడండి!",
-        "fact_item": "  {idx}. {text} <i>(id: {id})</i>\n",
+        "fact_item": "  {id}. [{date}] {text} <i>({visibility})</i>\n",
         "fact_saved": "✅ {count} కొత్త విషయాలు సేవ్ అయ్యాయి.",
         "keep_saved": "✅ సేవ్ అయింది!",
 
@@ -207,6 +234,9 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/whatdoyouknow — నేను ఏమి గుర్తుంచుకుంటున్నాను\n"
             "/forget — మీ విషయాలు తొలగించండి\n"
             "/export — మీ విషయాలు డౌన్‌లోడ్ చేయండి\n"
+            "/status — మీ స్థితి చూడండి\n"
+            "/pause — డెలివరీ ఆపు\n"
+            "/resume — డెలివరీ కొనసాగించు\n"
             "/lang — భాష మార్చండి\n"
             "/help — ఈ సందేశం చూపించండి"
         ),
@@ -240,6 +270,30 @@ _STRINGS: dict[str, dict[str, str]] = {
         "error_generic": "ఏదో తప్పు జరిగింది. మళ్ళీ ప్రయత్నించండి.",
         "not_paired": "ముందు భాగస్వామితో జత చేయండి. /start వాడండి.",
         "usage_warning": "⚠️ ఈ రోజు {count}/{cap} హెవీ కాల్స్ వాడబడ్డాయి.",
+
+        # Status
+        "status_header": "📊 <b>మీ స్థితి</b>\n\n",
+        "status_partner": "👫 భాగస్వామి: {partner_name}\n",
+        "status_facts": "📋 విషయాలు: {private} ప్రైవేట్, {shared} షేర్డ్\n",
+        "status_pending": "📬 పెండింగ్ రిలేలు: {count}\n",
+        "status_usage": "📈 ఈ రోజు API కాల్స్: {count}\n",
+        "status_partner_active": "🕐 భాగస్వామి చివరి యాక్టివ్: {time}\n",
+        "status_not_paired": "మీరు ఇంకా జత చేయబడలేదు. /start వాడండి.",
+        "status_paused_note": "⏸️ మీ డెలివరీ ప్రస్తుతం ఆపబడింది.\n",
+        "status_partner_paused_note": "⏸️ మీ భాగస్వామి డెలివరీ ఆపారు.\n",
+
+        # Pause / Resume
+        "paused_confirm": "⏸️ డెలివరీ ఆపబడింది. ఆమోదించిన సందేశాలు /resume వరకు ఉంటాయి.",
+        "resumed_confirm": "▶️ డెలివరీ పునఃప్రారంభించబడింది!",
+        "partner_paused_notice": (
+            "ℹ️ మీ భాగస్వామి డెలివరీ ఆపారు. మెసేజ్ ఆమోదించబడింది, "
+            "వారు resume చేసిన తర్వాత డెలివరీ అవుతుంది."
+        ),
+        "delivery_paused_notice": (
+            "ℹ️ డెలివరీ ప్రస్తుతం ఆపబడింది. మెసేజ్ ఆమోదించబడింది, "
+            "resume చేసిన తర్వాత డెలివరీ అవుతుంది."
+        ),
+
         "no_user": "ముందు /start నొక్కండి.",
     },
 }

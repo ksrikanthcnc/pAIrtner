@@ -12,6 +12,7 @@ from couples_bot.db import (
     get_pending,
     get_user,
     set_partner,
+    set_user_paused,
     update_pending_status,
 )
 from couples_bot.handlers import BotService, parse_tags
@@ -395,3 +396,236 @@ async def test_lang_creates_user_if_not_exists(service: BotService, test_db):
     # User should now exist in DB
     user = await get_user(test_db, user_id)
     assert user is not None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002: /whatdoyouknow with timestamps
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_whatdoyouknow_shows_timestamps(service: BotService, test_db, paired_users):
+    """Facts should display with [date] timestamps and visibility labels."""
+    a_id, _ = paired_users
+    responses = await service.handle_whatdoyouknow(a_id)
+    text = responses[0].text
+    # Must contain timestamp brackets
+    assert "[" in text and "]" in text
+    # Must contain visibility labels
+    assert "(private)" in text
+    assert "(shared)" in text
+    # Fact content still present
+    assert "Alice feels stressed" in text
+    assert "morning walks" in text
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002: /status
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_status_paired(service: BotService, test_db, paired_users):
+    """/status for a paired user shows partner, facts, pending, usage."""
+    a_id, b_id = paired_users
+    responses = await service.handle_status(a_id)
+    assert len(responses) == 1
+    text = responses[0].text
+    assert "Bob" in text  # partner name
+    assert "private" in text.lower()
+    assert "shared" in text.lower()
+    assert "pending" in text.lower() or "📬" in text
+    assert "API" in text or "usage" in text.lower() or "📈" in text
+
+
+@pytest.mark.asyncio
+async def test_status_not_paired(service: BotService, test_db):
+    """/status when not paired returns the not-paired message."""
+    user_id = 5555
+    responses = await service.handle_status(user_id)
+    assert len(responses) == 1
+    assert "not paired" in responses[0].text.lower() or "/start" in responses[0].text
+
+
+@pytest.mark.asyncio
+async def test_status_shows_paused_note(service: BotService, test_db, paired_users):
+    """/status shows a paused note when the user is paused."""
+    a_id, _ = paired_users
+    await set_user_paused(test_db, a_id, True)
+    responses = await service.handle_status(a_id)
+    text = responses[0].text
+    assert "paused" in text.lower() or "⏸️" in text
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002: /pause and /resume
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_pause_sets_flag(service: BotService, test_db, paired_users):
+    """/pause sets the paused flag on the user."""
+    a_id, _ = paired_users
+    responses = await service.handle_pause(a_id)
+    assert len(responses) == 1
+    assert "paused" in responses[0].text.lower() or "⏸️" in responses[0].text
+
+    user = await get_user(test_db, a_id)
+    assert user["paused"] == 1
+
+
+@pytest.mark.asyncio
+async def test_resume_clears_flag(service: BotService, test_db, paired_users):
+    """/resume clears the paused flag."""
+    a_id, _ = paired_users
+    await set_user_paused(test_db, a_id, True)
+
+    responses = await service.handle_resume(a_id)
+    assert len(responses) == 1
+    assert "resumed" in responses[0].text.lower() or "▶️" in responses[0].text
+
+    user = await get_user(test_db, a_id)
+    assert user["paused"] == 0
+
+
+@pytest.mark.asyncio
+async def test_pause_requires_partner(service: BotService, test_db):
+    """/pause when not paired returns not-paired message."""
+    user_id = 7777
+    responses = await service.handle_pause(user_id)
+    assert len(responses) == 1
+    assert "pair" in responses[0].text.lower() or "/start" in responses[0].text
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002: delivery loop skips paused users
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_delivery_loop_skips_paused_receiver(test_db, paired_users):
+    """delivery_loop should skip delivery when receiver is paused."""
+    import asyncio
+
+    from couples_bot.approval import delivery_loop
+    from couples_bot.db import create_pending, set_user_paused, update_pending_status
+
+    a_id, b_id = paired_users
+
+    # Create an approved pending ready to deliver
+    pid = await create_pending(test_db, a_id, b_id, "Test message")
+    await update_pending_status(test_db, pid, "approved", "2020-01-01T00:00:00")
+
+    # Pause the receiver
+    await set_user_paused(test_db, b_id, True)
+
+    sent: list[tuple[int, str]] = []
+
+    async def mock_send(uid: int, text: str) -> None:
+        sent.append((uid, text))
+
+    # Run delivery loop briefly
+    task = asyncio.create_task(delivery_loop(test_db, mock_send, poll_interval=0.01))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    # Nothing should have been sent
+    assert len(sent) == 0
+
+    # Pending should still be approved (not sent)
+    pending = await get_pending(test_db, pid)
+    assert pending["status"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_delivery_loop_skips_paused_sender(test_db, paired_users):
+    """delivery_loop should skip delivery when sender is paused."""
+    import asyncio
+
+    from couples_bot.approval import delivery_loop
+    from couples_bot.db import create_pending, set_user_paused, update_pending_status
+
+    a_id, b_id = paired_users
+
+    pid = await create_pending(test_db, a_id, b_id, "Test message")
+    await update_pending_status(test_db, pid, "approved", "2020-01-01T00:00:00")
+
+    # Pause the sender
+    await set_user_paused(test_db, a_id, True)
+
+    sent: list[tuple[int, str]] = []
+
+    async def mock_send(uid: int, text: str) -> None:
+        sent.append((uid, text))
+
+    task = asyncio.create_task(delivery_loop(test_db, mock_send, poll_interval=0.01))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    assert len(sent) == 0
+    pending = await get_pending(test_db, pid)
+    assert pending["status"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_delivery_resumes_after_unpause(test_db, paired_users):
+    """After unpausing, delivery loop delivers the held message."""
+    import asyncio
+
+    from couples_bot.approval import delivery_loop
+    from couples_bot.db import create_pending, set_user_paused, update_pending_status
+
+    a_id, b_id = paired_users
+
+    pid = await create_pending(test_db, a_id, b_id, "Held message")
+    await update_pending_status(test_db, pid, "approved", "2020-01-01T00:00:00")
+
+    # Pause then unpause
+    await set_user_paused(test_db, b_id, True)
+    await set_user_paused(test_db, b_id, False)
+
+    sent: list[tuple[int, str]] = []
+
+    async def mock_send(uid: int, text: str) -> None:
+        sent.append((uid, text))
+
+    task = asyncio.create_task(delivery_loop(test_db, mock_send, poll_interval=0.01))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    # Message should have been delivered
+    assert len(sent) >= 1
+    pending = await get_pending(test_db, pid)
+    assert pending["status"] == "sent"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002: pause notice on approval
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_approve_shows_pause_notice(service: BotService, test_db, paired_users):
+    """Approving a relay when partner is paused shows a delivery-paused notice."""
+    a_id, b_id = paired_users
+
+    service.llm = MockLLMClient([
+        {"reply": "Ok", "new_facts": [], "relay_draft": "Draft"}
+    ])
+
+    responses = await service.handle_tell(a_id, "Tell them")
+    approve_btn = responses[0].buttons[0][0]
+
+    # Pause the receiver
+    await set_user_paused(test_db, b_id, True)
+
+    responses = await service.handle_callback(a_id, approve_btn.callback_data)
+    text = responses[0].text
+    assert "paused" in text.lower() or "ℹ️" in text
