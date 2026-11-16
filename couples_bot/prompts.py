@@ -28,6 +28,18 @@ class UserContext:
     lang: str = "en"
 
 
+@dataclass
+class SmartContext:
+    """Curated context produced by FTS5 search when fact count exceeds the
+    configured threshold.  Replaces the flat facts lists in prompt building.
+    """
+
+    recent_facts: list[str] = field(default_factory=list)
+    relevant_facts: list[str] = field(default_factory=list)
+    monthly_summaries: list[str] = field(default_factory=list)
+    total_fact_count: int = 0
+
+
 # ---------------------------------------------------------------------------
 # Persona loading
 # ---------------------------------------------------------------------------
@@ -251,6 +263,99 @@ def _format_history(messages: list[tuple[str, str]], limit: int = 6) -> str:
     return "\n## Recent conversation\n" + "\n".join(lines) + "\n"
 
 
+def _format_smart_context(smart_ctx: SmartContext, recent_days: int = 7) -> str:
+    """Format a :class:`SmartContext` into structured prompt sections.
+
+    Replaces the flat ``## Your private notes`` / ``## Shared notes``
+    sections when the smart-context window is active.
+    """
+    parts: list[str] = []
+
+    if smart_ctx.recent_facts:
+        items = "\n".join(f"- {f}" for f in smart_ctx.recent_facts)
+        parts.append(f"\n## Recent notes (last {recent_days} days)\n{items}\n")
+
+    if smart_ctx.relevant_facts:
+        items = "\n".join(f"- {f}" for f in smart_ctx.relevant_facts)
+        parts.append(f"\n## Relevant notes\n{items}\n")
+
+    if smart_ctx.monthly_summaries:
+        items = "\n".join(f"- {s}" for s in smart_ctx.monthly_summaries)
+        parts.append(f"\n## Monthly summaries\n{items}\n")
+
+    return "".join(parts)
+
+
+async def build_smart_context(
+    db_path: str,
+    user_id: int,
+    message: str,
+    config,
+    llm=None,
+    prompts_dir: str | None = None,
+) -> SmartContext | None:
+    """Build a :class:`SmartContext` using FTS5 when fact count exceeds threshold.
+
+    Returns ``None`` when the user's fact count is below
+    ``config.search_fts_threshold`` — the caller should fall back to the
+    regular :class:`UserContext` facts in that case.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from couples_bot.db import get_fact_summaries, get_facts_since
+    from couples_bot.search import get_fact_count, search_facts
+
+    total = await get_fact_count(db_path, user_id)
+
+    if total < config.search_fts_threshold:
+        return None
+
+    # Recent N-day facts
+    since = (
+        datetime.now(timezone.utc) - timedelta(days=config.context_recent_days)
+    ).isoformat()
+    recent_rows = await get_facts_since(db_path, user_id, since)
+    recent_facts = [f["text"] for f in recent_rows]
+
+    # FTS5 search for relevant facts
+    try:
+        relevant_rows = await search_facts(
+            db_path, user_id, message,
+            limit=config.context_max_relevant_facts,
+        )
+        # De-duplicate against recent facts
+        recent_ids = {f["id"] for f in recent_rows}
+        relevant_facts = [
+            f["text"] for f in relevant_rows if f["id"] not in recent_ids
+        ]
+    except Exception:
+        relevant_facts = []
+
+    # Monthly summaries
+    summaries = await get_fact_summaries(db_path, user_id)
+    monthly_summaries = [
+        f"{s['year_month']}: {s['summary_text']}" for s in summaries
+    ]
+
+    # Optionally trigger on-demand summary generation for missing months
+    if llm and prompts_dir:
+        from couples_bot.summarizer import check_and_summarize
+
+        await check_and_summarize(db_path, llm, user_id, prompts_dir)
+        # Re-fetch after generation
+        summaries = await get_fact_summaries(db_path, user_id)
+        monthly_summaries = [
+            f"{s['year_month']}: {s['summary_text']}" for s in summaries
+        ]
+
+    return SmartContext(
+        recent_facts=recent_facts,
+        relevant_facts=relevant_facts,
+        monthly_summaries=monthly_summaries,
+        total_fact_count=total,
+    )
+
+
 def build_system_prompt(
     voice_text: str | None = None,
     task_text: str | None = None,
@@ -281,6 +386,7 @@ def build_chat_prompt(
     dampening_instruction: str | None = None,
     partner_summary: str | None = None,
     goals_text: str | None = None,
+    smart_ctx: SmartContext | None = None,
 ) -> tuple[str, str]:
     """Build prompt for a regular chat message.
 
@@ -293,8 +399,11 @@ def build_chat_prompt(
         system += "\n" + goals_text
 
     parts: list[str] = []
-    parts.append(_format_facts("Your private notes", ctx.private_facts))
-    parts.append(_format_facts("Shared notes", ctx.shared_facts))
+    if smart_ctx:
+        parts.append(_format_smart_context(smart_ctx))
+    else:
+        parts.append(_format_facts("Your private notes", ctx.private_facts))
+        parts.append(_format_facts("Shared notes", ctx.shared_facts))
     if partner_summary:
         parts.append(partner_summary)
     parts.append(_format_history(ctx.recent_messages))
@@ -310,6 +419,7 @@ def build_tell_prompt(
     dampening_instruction: str | None = None,
     partner_summary: str | None = None,
     goals_text: str | None = None,
+    smart_ctx: SmartContext | None = None,
 ) -> tuple[str, str]:
     """Build prompt for /tell or #send — relay drafting.
 
@@ -340,8 +450,11 @@ def build_tell_prompt(
     )
 
     parts: list[str] = []
-    parts.append(_format_facts("Your private notes", ctx.private_facts))
-    parts.append(_format_facts("Shared notes", ctx.shared_facts))
+    if smart_ctx:
+        parts.append(_format_smart_context(smart_ctx))
+    else:
+        parts.append(_format_facts("Your private notes", ctx.private_facts))
+        parts.append(_format_facts("Shared notes", ctx.shared_facts))
     if partner_summary:
         parts.append(partner_summary)
     parts.append(f"\n## Message to relay to partner\n{message}")
@@ -384,6 +497,7 @@ def build_keep_prompt(
     message: str,
     voice_text: str | None = None,
     dampening_instruction: str | None = None,
+    smart_ctx: SmartContext | None = None,
 ) -> tuple[str, str]:
     """Build prompt for #keep — fact extraction only.
 
@@ -408,7 +522,10 @@ def build_keep_prompt(
     )
 
     parts: list[str] = []
-    parts.append(_format_facts("Your private notes", ctx.private_facts))
+    if smart_ctx:
+        parts.append(_format_smart_context(smart_ctx))
+    else:
+        parts.append(_format_facts("Your private notes", ctx.private_facts))
     parts.append(f"\n## Message to save\n{message}")
 
     return system, "".join(parts)
@@ -483,6 +600,7 @@ def build_blunt_prompt(
     message: str,
     voice_text: str | None = None,
     dampening_instruction: str | None = None,
+    smart_ctx: SmartContext | None = None,
 ) -> tuple[str, str]:
     """Build prompt for #blunt / #honest — direct, unfiltered feedback.
 
@@ -512,8 +630,11 @@ def build_blunt_prompt(
     )
 
     parts: list[str] = []
-    parts.append(_format_facts("Your private notes", ctx.private_facts))
-    parts.append(_format_facts("Shared notes", ctx.shared_facts))
+    if smart_ctx:
+        parts.append(_format_smart_context(smart_ctx))
+    else:
+        parts.append(_format_facts("Your private notes", ctx.private_facts))
+        parts.append(_format_facts("Shared notes", ctx.shared_facts))
     parts.append(_format_history(ctx.recent_messages))
     parts.append(f"\n## Current message (blunt feedback requested)\n{message}")
 

@@ -116,6 +116,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/export — Download your facts as a file\n"
             "/export therapy — Download a therapy report\n"
             "/remember — Revisit a positive shared memory\n"
+            "/search &lt;query&gt; — Search your facts\n"
             "/goal &lt;text&gt; — Set a personal goal\n"
             "/together &lt;text&gt; — Set a shared goal with your partner\n"
             "/goals — View your active goals\n\n"
@@ -357,6 +358,12 @@ _STRINGS: dict[str, dict[str, str]] = {
         "remember_empty": "No shared memories yet. Chat with me and share some moments together!",
         "remember_item": "✨ {text}",
 
+        # Search (FEAT-001 batch5)
+        "search_no_query": "Usage: /search <query>",
+        "search_no_results": "🔍 No results found. Try different keywords.",
+        "search_results_header": "🔍 <b>Search Results</b> ({count} found)\n\n",
+        "search_result_item": "  {id}. [{date}] {snippet} <i>({category})</i>\n",
+
         # Nudges (FEAT-001 batch4)
         "nudge_appreciation": "💛 What's one thing you appreciate about {partner_name} right now?",
         "nudge_generic": "💬 How are things going? Anything on your mind?",
@@ -495,6 +502,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/export — మీ విషయాలు డౌన్‌లోడ్ చేయండి\n"
             "/export therapy — థెరపీ రిపోర్ట్ డౌన్‌లోడ్ చేయండి\n"
             "/remember — మంచి జ్ఞాపకాన్ని చూడండి\n"
+            "/search — మీ విషయాల్లో శోధించండి\n"
             "/goal — వ్యక్తిగత లక్ష్యం సెట్ చేయండి\n"
             "/together — భాగస్వామ్య లక్ష్యం సెట్ చేయండి\n"
             "/goals — మీ లక్ష్యాలు చూడండి\n\n"
@@ -725,6 +733,12 @@ _STRINGS: dict[str, dict[str, str]] = {
         "remember_header": "💭 <b>ఒక భాగస్వామ్య జ్ఞాపకం</b>",
         "remember_empty": "ఇంకా భాగస్వామ్య జ్ఞాపకాలు లేవు. నాతో మాట్లాడి కొన్ని క్షణాలు పంచుకోండి!",
         "remember_item": "✨ {text}",
+
+        # Search (FEAT-001 batch5)
+        "search_no_query": "వాడకం: /search <ప్రశ్న>",
+        "search_no_results": "🔍 ఫలితాలు కనుగొనబడలేదు. వేరే కీవర్డ్‌లు ప్రయత్నించండి.",
+        "search_results_header": "🔍 <b>శోధన ఫలితాలు</b> ({count} కనుగొనబడ్డాయి)\n\n",
+        "search_result_item": "  {id}. [{date}] {snippet} <i>({category})</i>\n",
 
         # Nudges (FEAT-001 batch4)
         "nudge_appreciation": "💛 మీ {partner_name} గురించి ఇప్పుడు మీకు నచ్చే ఒక విషయం ఏమిటి?",

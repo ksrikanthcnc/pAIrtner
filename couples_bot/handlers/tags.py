@@ -19,6 +19,7 @@ from couples_bot.prompts import (
     build_goals_section,
     build_keep_prompt,
     build_partner_summary_block,
+    build_smart_context,
     build_system_prompt,
     build_tell_prompt,
     load_voice,
@@ -80,7 +81,13 @@ class TagsMixin:
         lang = await self._get_lang(user_id)
         ctx = await self._build_ctx(user_id)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
-        system, content = build_keep_prompt(ctx, text, voice_text=voice_text, dampening_instruction=damp_instr)
+        smart_ctx = await build_smart_context(
+            self.db_path, user_id, text, self.config,
+        )
+        system, content = build_keep_prompt(
+            ctx, text, voice_text=voice_text,
+            dampening_instruction=damp_instr, smart_ctx=smart_ctx,
+        )
 
         api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", text)
@@ -114,11 +121,15 @@ class TagsMixin:
         voice_text, damp_instr = await self._get_enriched_style(user_id)
         partner_summary = await self._get_partner_summary(user_id)
         goals_text = await self._get_goals_text(user_id)
+        smart_ctx = await build_smart_context(
+            self.db_path, user_id, text, self.config,
+        )
         system, content = build_tell_prompt(
             ctx, text, voice_text=voice_text,
             dampening_instruction=damp_instr,
             partner_summary=partner_summary,
             goals_text=goals_text,
+            smart_ctx=smart_ctx,
         )
 
         api_key = await self._get_couple_api_key(user_id)
@@ -230,11 +241,15 @@ class TagsMixin:
         voice_text, damp_instr = await self._get_enriched_style(user_id)
         partner_summary = await self._get_partner_summary(user_id)
         goals_text = await self._get_goals_text(user_id)
+        smart_ctx = await build_smart_context(
+            self.db_path, user_id, text, self.config,
+        )
         system, content = build_chat_prompt(
             ctx, text, voice_text=voice_text,
             dampening_instruction=damp_instr,
             partner_summary=partner_summary,
             goals_text=goals_text,
+            smart_ctx=smart_ctx,
         )
 
         model = self.config.model_heavy[0] if self.config.model_heavy else None
@@ -268,7 +283,13 @@ class TagsMixin:
         lang = await self._get_lang(user_id)
         ctx = await self._build_ctx(user_id)
         voice_text, damp_instr = await self._get_enriched_style(user_id, has_blunt_tag=True)
-        system, content = build_blunt_prompt(ctx, text, voice_text=voice_text, dampening_instruction=damp_instr)
+        smart_ctx = await build_smart_context(
+            self.db_path, user_id, text, self.config,
+        )
+        system, content = build_blunt_prompt(
+            ctx, text, voice_text=voice_text,
+            dampening_instruction=damp_instr, smart_ctx=smart_ctx,
+        )
 
         api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", text)
@@ -298,11 +319,15 @@ class TagsMixin:
         voice_text, damp_instr = await self._get_enriched_style(user_id)
         partner_summary = await self._get_partner_summary(user_id)
         goals_text = await self._get_goals_text(user_id)
+        smart_ctx = await build_smart_context(
+            self.db_path, user_id, text, self.config,
+        )
         system, content = build_chat_prompt(
             ctx, text, voice_text=voice_text,
             dampening_instruction=damp_instr,
             partner_summary=partner_summary,
             goals_text=goals_text,
+            smart_ctx=smart_ctx,
         )
 
         api_key = await self._get_couple_api_key(user_id)

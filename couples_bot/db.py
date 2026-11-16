@@ -251,6 +251,18 @@ CREATE TABLE IF NOT EXISTS timeline_events (
 
 CREATE INDEX IF NOT EXISTS idx_timeline_couple_created
     ON timeline_events(couple_id, created_at);
+
+CREATE TABLE IF NOT EXISTS fact_summaries (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(tg_id),
+    year_month  TEXT NOT NULL,
+    summary_text TEXT NOT NULL,
+    fact_count  INTEGER NOT NULL DEFAULT 0,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fact_summaries_user_month
+    ON fact_summaries(user_id, year_month);
 """
 
 
@@ -320,6 +332,10 @@ async def init_db(db_path: str) -> None:
             )
 
         await db.commit()
+
+    # Initialise FTS5 search index (late import avoids circular dependency)
+    from couples_bot.search import init_fts
+    await init_fts(db_path)
 
 
 # ---------------------------------------------------------------------------
@@ -1347,6 +1363,73 @@ async def get_fact_by_id(
     """Return a single fact by its id."""
     return await _fetch_one(
         db_path, "SELECT * FROM facts WHERE id = ?", (fact_id,)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fact summaries (monthly compressed context)
+# ---------------------------------------------------------------------------
+
+async def add_fact_summary(
+    db_path: str,
+    user_id: int,
+    year_month: str,
+    summary_text: str,
+    fact_count: int,
+) -> int:
+    """Insert or replace a monthly fact summary; return its id."""
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "INSERT INTO fact_summaries (user_id, year_month, summary_text, fact_count) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(user_id, year_month) DO UPDATE SET "
+            "  summary_text = excluded.summary_text, "
+            "  fact_count = excluded.fact_count, "
+            "  created_at = CURRENT_TIMESTAMP",
+            (user_id, year_month, summary_text, fact_count),
+        )
+        await db.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+
+async def get_fact_summaries(
+    db_path: str, user_id: int, limit: int = 12
+) -> list[dict[str, Any]]:
+    """Return the most recent *limit* monthly summaries for a user."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM fact_summaries WHERE user_id = ? "
+        "ORDER BY year_month DESC LIMIT ?",
+        (user_id, limit),
+    )
+
+
+async def get_facts_since(
+    db_path: str, user_id: int, since_date: str
+) -> list[dict[str, Any]]:
+    """Get non-archived facts created after *since_date*.
+
+    Includes the user's own facts plus partner's shared facts.
+    """
+    user = await get_user(db_path, user_id)
+    partner_id = (user or {}).get("partner_id")
+
+    if partner_id:
+        return await _fetch_all(
+            db_path,
+            "SELECT * FROM facts "
+            "WHERE archived_at IS NULL AND created_at >= ? "
+            "AND (owner_id = ? OR (owner_id = ? AND visibility = 'shared')) "
+            "ORDER BY created_at DESC",
+            (since_date, user_id, partner_id),
+        )
+
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM facts "
+        "WHERE owner_id = ? AND archived_at IS NULL AND created_at >= ? "
+        "ORDER BY created_at DESC",
+        (user_id, since_date),
     )
 
 

@@ -138,3 +138,12 @@ read_receipts:
 # Therapy export — structured therapy-ready reports.
 therapy_export:
   enabled: true
+
+# FTS5 full-text search — threshold for switching to smart context.
+search:
+  fts_threshold: 100
+
+# Smart context window — controls how facts are pulled for prompts.
+context:
+  recent_days: 7
+  max_relevant_facts: 20

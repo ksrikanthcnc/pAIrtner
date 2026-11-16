@@ -15,6 +15,7 @@ from couples_bot.crypto import decrypt_value, encrypt_value, mask_key
 from couples_bot.i18n import t
 from couples_bot.profile_updater import process_llm_extras
 from couples_bot.prompts import build_mediate_prompt, build_tell_prompt
+from couples_bot.search import search_facts
 
 from .models import BotResponse, InlineButton, format_fact_date, format_relative_time, parse_tags
 
@@ -786,6 +787,38 @@ class CommandsMixin:
         header = t(lang, "remember_header")
         item = t(lang, "remember_item", text=fact["text"])
         return [BotResponse(f"{header}\n{item}")]
+
+    # ── /search ──────────────────────────────────────────────────────────
+
+    async def handle_search(
+        self, user_id: int, query: str | None
+    ) -> list[BotResponse]:
+        """Search the user's facts using FTS5 full-text search."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+
+        if not query or not query.strip():
+            return [BotResponse(t(lang, "search_no_query"))]
+
+        results = await search_facts(self.db_path, user_id, query.strip())
+        if not results:
+            return [BotResponse(t(lang, "search_no_results"))]
+
+        parts = [t(lang, "search_results_header", count=len(results))]
+        for fact in results:
+            category = fact.get("category") or "other"
+            date = format_relative_time(fact.get("created_at"))
+            snippet = fact["text"][:120]
+            if len(fact["text"]) > 120:
+                snippet += "…"
+            parts.append(t(
+                lang, "search_result_item",
+                id=fact["id"], snippet=snippet, date=date, category=category,
+            ))
+
+        return [BotResponse("".join(parts))]
 
     # ── /conflicts ───────────────────────────────────────────────────────
 

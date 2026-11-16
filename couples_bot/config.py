@@ -151,6 +151,11 @@ class Config:
     # Therapy export (FEAT-004 batch4)
     therapy_export_enabled: bool = True
 
+    # FTS5 search + smart context (FEAT-001 batch5)
+    search_fts_threshold: int = 100
+    context_recent_days: int = 7
+    context_max_relevant_facts: int = 20
+
 
 def is_user_allowed(config: Config, user_id: int) -> bool:
     """Check if a user is allowed.  Empty allowlist = open mode (everyone)."""
@@ -455,5 +460,23 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         therapy_export_enabled=_parse_bool(
             os.environ.get("THERAPY_EXPORT_ENABLED"),
             yaml_cfg.get("therapy_export", {}).get("enabled", True),
+        ),
+        search_fts_threshold=int(
+            os.getenv(
+                "SEARCH_FTS_THRESHOLD",
+                str(yaml_cfg.get("search", {}).get("fts_threshold", 100)),
+            )
+        ),
+        context_recent_days=int(
+            os.getenv(
+                "CONTEXT_RECENT_DAYS",
+                str(yaml_cfg.get("context", {}).get("recent_days", 7)),
+            )
+        ),
+        context_max_relevant_facts=int(
+            os.getenv(
+                "CONTEXT_MAX_RELEVANT_FACTS",
+                str(yaml_cfg.get("context", {}).get("max_relevant_facts", 20)),
+            )
         ),
     )

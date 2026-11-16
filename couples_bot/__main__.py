@@ -294,6 +294,16 @@ async def _cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _send_response(ctx.bot, update.effective_chat.id, r)
 
 
+async def _cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    query = " ".join(ctx.args) if ctx.args else None
+    responses = await _service.handle_search(user.id, query)
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
 async def _cmd_conflicts(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not is_user_allowed(_config, user.id):
@@ -463,6 +473,7 @@ def main() -> None:
     app.add_handler(CommandHandler("settings", _cmd_settings))
     app.add_handler(CommandHandler("skip", _cmd_skip))
     app.add_handler(CommandHandler("remember", _cmd_remember))
+    app.add_handler(CommandHandler("search", _cmd_search))
     app.add_handler(CommandHandler("conflicts", _cmd_conflicts))
     app.add_handler(CommandHandler("timeline", _cmd_timeline))
     app.add_handler(CommandHandler("help", _cmd_help))
