@@ -285,3 +285,85 @@ Call 2 (normal):
 | Tailscale + local | Free | Own chat app, no public port |
 | Fly.io | ~$3/mo | Easy Docker deploy |
 | Ollama on Mac | Free | Local LLM, fully private |
+
+## Deployment — Win Plex-Stack
+
+Standalone Docker in `/mnt/e/media/docker/pairtner/` (separate from plex stack).
+
+### Access
+- SSH: `ssh kalya@192.168.1.7` (LAN) or `ssh kalya@100.123.91.124` (Tailscale)
+- Portainer: `http://192.168.1.7:9000` (container visible as pairtner-pairtner-1)
+- Container name: `pairtner-pairtner-1`
+
+### SSH+WSL quoting
+SSH lands in Windows CMD, not WSL. Single quotes, `?`, `&`, `$` get eaten.
+For anything beyond trivial commands, write a .sh script → SCP to `E:/media/docker/pairtner/` → run via `wsl -e bash /mnt/e/media/docker/pairtner/<script>.sh`.
+
+### Sync from Mac
+```bash
+rsync -avz --rsync-path="wsl -d Ubuntu-26.04 -u root -e rsync" \
+  --exclude='.venv' --exclude='__pycache__' --exclude='.env' --exclude='*.db' \
+  --exclude='agents' --exclude='.agents' --exclude='tmp-kiro' --exclude='comms' \
+  --exclude='.worktrees' --exclude='.pytest_cache' --exclude='backups' --exclude='uv.lock' \
+  ~/work/tasks/personal/couples-bot/ \
+  kalya@192.168.1.7:/mnt/e/media/docker/pairtner/
+# Then sync uv.lock separately (needed for Docker build):
+scp ~/work/tasks/personal/couples-bot/uv.lock "kalya@192.168.1.7:E:/media/docker/pairtner/uv.lock"
+```
+
+### Rebuild and restart
+```bash
+ssh kalya@192.168.1.7 "wsl -d Ubuntu-26.04 -u root -e docker compose -f /mnt/e/media/docker/pairtner/docker-compose.yml up -d --no-deps --build"
+```
+
+### Check logs
+Write a script (quoting hell):
+```bash
+# /tmp/logs.sh
+#!/bin/bash
+docker logs pairtner-pairtner-1 --tail 30 2>&1
+```
+```bash
+scp /tmp/logs.sh "kalya@192.168.1.7:E:/media/docker/pairtner/logs.sh"
+ssh kalya@192.168.1.7 "wsl -d Ubuntu-26.04 -u root -e bash /mnt/e/media/docker/pairtner/logs.sh"
+```
+
+### Stop / Start
+```bash
+ssh kalya@192.168.1.7 "wsl -d Ubuntu-26.04 -u root -e docker compose -f /mnt/e/media/docker/pairtner/docker-compose.yml stop"
+ssh kalya@192.168.1.7 "wsl -d Ubuntu-26.04 -u root -e docker compose -f /mnt/e/media/docker/pairtner/docker-compose.yml start"
+```
+
+### Paths
+- Project: `E:\media\docker\pairtner\` (Win) / `/mnt/e/media/docker/pairtner/` (WSL)
+- DB: `E:\media\docker\pairtner\couples_bot.db`
+- Backups: `E:\media\docker\pairtner\backups\`
+- Secrets: `E:\media\docker\pairtner\.env`
+- Config: `E:\media\docker\pairtner\settings.yaml`
+
+### Notes
+- Docker creates DB as directory if file doesn't exist → `touch couples_bot.db` first
+- uv.lock must be included (Docker COPY needs it)
+- Container uses long polling — no inbound ports needed for Telegram
+- Portainer GUI at :9000 for visual management
+
+## Relationship Model — Beyond Couples
+
+The core is mediated communication for ANY relationship, not just couples.
+
+```sql
+circles (id, type, name, created_at)
+circle_members (circle_id, user_id, role, joined_at)
+```
+
+Types: couple, parent-child, siblings, friends, coworkers, custom.
+Persona adapts per circle type. Groups of 2+ supported.
+Current 2-person model works as-is; circles table is the extension point.
+
+## PWA (Progressive Web App)
+
+WebSocket adapter already built. Next: simple frontend served from same Docker container.
+- HTML + JS + service worker + manifest.json
+- Mobile-first responsive
+- Installable on phone home screen ("Add to Home Screen")
+- Access via LAN or Tailscale — no app store, no hosting costs

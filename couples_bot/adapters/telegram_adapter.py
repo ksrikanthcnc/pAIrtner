@@ -76,6 +76,7 @@ class TelegramAdapter(BaseAdapter):
         app.add_handler(CommandHandler("search", self._cmd_search))
         app.add_handler(CommandHandler("conflicts", self._cmd_conflicts))
         app.add_handler(CommandHandler("timeline", self._cmd_timeline))
+        app.add_handler(CommandHandler("usage", self._cmd_usage))
         app.add_handler(CommandHandler("help", self._cmd_help))
         app.add_handler(CallbackQueryHandler(self._on_callback))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._on_message))
@@ -478,6 +479,15 @@ class TelegramAdapter(BaseAdapter):
             return
         arg = " ".join(ctx.args) if ctx.args else None
         responses = await self.service.handle_timeline(user.id, arg)
+        for r in responses:
+            await self._send_response(ctx.bot, update.effective_chat.id, r)
+
+    async def _cmd_usage(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        user = update.effective_user
+        if not is_user_allowed(self.config, user.id):
+            return
+        arg = " ".join(ctx.args) if ctx.args else None
+        responses = await self.service.handle_usage(user.id, arg)
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 

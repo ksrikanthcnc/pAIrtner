@@ -908,6 +908,41 @@ class CommandsMixin:
 
         return [BotResponse("".join(parts))]
 
+    # ── /usage ───────────────────────────────────────────────────────────
+
+    async def handle_usage(
+        self, user_id: int, arg: str | None
+    ) -> list[BotResponse]:
+        """Show LLM API usage stats — today and last 7 days."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+        days = 7
+        if arg and arg.strip().isdigit():
+            days = min(int(arg.strip()), 30)
+
+        today_total = await db_mod.get_usage_today(self.db_path)
+        detailed = await db_mod.get_usage_detailed(self.db_path, days)
+
+        parts = [f"📊 API Usage\n\nToday: {today_total} calls\n"]
+        if detailed:
+            parts.append(f"\nLast {days} days:\n")
+            current_date = None
+            for row in detailed:
+                if row["date"] != current_date:
+                    current_date = row["date"]
+                    parts.append(f"\n{current_date}:\n")
+                parts.append(f"  {row['model']}: {row['count']}\n")
+        else:
+            parts.append("\nNo usage recorded yet.\n")
+
+        # Show caps
+        cap = getattr(self.config, "heavy_daily_cap", 10)
+        parts.append(f"\nHeavy model daily cap: {cap}")
+
+        return [BotResponse("".join(parts))]
+
     # ── /timeline ────────────────────────────────────────────────────────
 
     async def handle_timeline(

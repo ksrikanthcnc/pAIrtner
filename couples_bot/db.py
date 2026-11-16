@@ -672,6 +672,16 @@ async def get_usage_today(db_path: str) -> int:
     return row["total"] if row else 0
 
 
+async def get_usage_detailed(db_path: str, days: int = 7) -> list[dict]:
+    """Return per-model usage for the last *days* days, most recent first."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    return await _fetch_all(
+        db_path,
+        "SELECT date, model, count FROM usage WHERE date >= ? ORDER BY date DESC, model",
+        (cutoff,),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pause / status helpers
 # ---------------------------------------------------------------------------
