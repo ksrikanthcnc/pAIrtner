@@ -77,38 +77,7 @@ def main() -> None:
     else:
         adapter_cls = get_adapter(adapter_name)
         adapter = adapter_cls(service, config)
-        if adapter_name == "telegram":
-            # TelegramAdapter.start() calls run_polling() which manages its own loop
-            adapter.start = _sync_wrap(adapter)
-            adapter.start()
-        else:
-            asyncio.run(adapter.start())
-
-
-def _sync_wrap(adapter):
-    """Return a callable that starts the Telegram adapter synchronously.
-
-    python-telegram-bot's ``run_polling()`` manages its own event loop,
-    so we return the raw (sync) ``start`` — which internally calls
-    ``Application.run_polling()``.
-    """
-    original_start = adapter.start
-
-    def _start():
-        # run_polling() is called inside TelegramAdapter.start() and
-        # blocks until the bot is stopped.  It creates its own event loop
-        # via Application.run_polling().
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(original_start())
-        except KeyboardInterrupt:
-            pass
-        finally:
-            loop.close()
-
-    return _start
+        asyncio.run(adapter.start())
 
 
 async def _run_both(service: BotService, config) -> None:

@@ -291,6 +291,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "vibe_set_usage": "Usage: /vibe set <trait> <value>\nTraits: register, sentence_length, emoji_use, humor, directness",
         "vibe_set_success": "✅ Trait updated: {trait} = <b>{value}</b>",
         "vibe_set_invalid_trait": "❌ Unknown trait. Valid: register, sentence_length, emoji_use, humor, directness.",
+        "vibe_set_invalid_value": "❌ Invalid value for {trait}. Valid: {values}.",
 
         # Mood
         "mood_set": "🎭 Mood set to <b>{mood}</b>. Expires in ~{hours}h.",
@@ -677,6 +678,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "vibe_set_usage": "వాడకం: /vibe set <trait> <value>\nTraits: register, sentence_length, emoji_use, humor, directness",
         "vibe_set_success": "✅ ట్రైట్ అప్‌డేట్: {trait} = <b>{value}</b>",
         "vibe_set_invalid_trait": "❌ తెలియని ట్రైట్. చెల్లుబాటు: register, sentence_length, emoji_use, humor, directness.",
+        "vibe_set_invalid_value": "❌ {trait} కు చెల్లని విలువ. చెల్లుబాటు: {values}.",
 
         # Mood
         "mood_set": "🎭 మూడ్ <b>{mood}</b> కి సెట్ అయింది. ~{hours}గంటల్లో ఎక్స్‌పైర్ అవుతుంది.",

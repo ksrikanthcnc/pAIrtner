@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from io import BytesIO
 
@@ -30,11 +31,17 @@ class TelegramAdapter(BaseAdapter):
     def __init__(self, service, config) -> None:
         super().__init__(service, config)
         self._app: Application | None = None
+        self._stop_event: asyncio.Event | None = None
 
     # ── public interface ─────────────────────────────────────────────────
 
     async def start(self) -> None:
-        """Build the Telegram Application, register handlers, run polling."""
+        """Build the Telegram Application, register handlers, start polling.
+
+        Uses the async PTB API (initialize / start / start_polling) so the
+        adapter cooperates with the caller's event loop.  This allows
+        ``asyncio.gather()`` to run Telegram alongside other adapters.
+        """
         app = (
             Application.builder()
             .token(self.config.telegram_token)
@@ -74,13 +81,24 @@ class TelegramAdapter(BaseAdapter):
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._on_message))
 
         logger.info("pAIrtner starting long-polling…")
-        app.run_polling()
+
+        # Async PTB lifecycle — no run_polling(), no nested event loops
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling()
+
+        self._stop_event = asyncio.Event()
+        try:
+            await self._stop_event.wait()
+        finally:
+            await app.updater.stop()
+            await app.stop()
+            await app.shutdown()
 
     async def stop(self) -> None:
         await self._cancel_background_tasks()
-        if self._app:
-            await self._app.stop()
-            await self._app.shutdown()
+        if self._stop_event:
+            self._stop_event.set()
 
     async def send_message(
         self,

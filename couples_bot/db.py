@@ -2038,8 +2038,13 @@ async def get_auth_token(
 async def validate_auth_token(
     db_path: str, user_id: int, token: str
 ) -> bool:
-    """Check if a token matches the stored token for *user_id*."""
+    """Check if a token matches the stored token for *user_id*.
+
+    Uses constant-time comparison to prevent timing attacks.
+    """
+    import secrets as _secrets
+
     stored = await get_auth_token(db_path, user_id)
     if stored is None:
         return False
-    return stored == token
+    return _secrets.compare_digest(stored, token)

@@ -565,6 +565,9 @@ class CommandsMixin:
             }
             if trait not in valid_traits:
                 return [BotResponse(t(lang, "vibe_set_invalid_trait"))]
+            if value not in valid_traits[trait]:
+                allowed = ", ".join(valid_traits[trait])
+                return [BotResponse(t(lang, "vibe_set_invalid_value", trait=trait, values=allowed))]
             # Load existing or create empty
             raw = profile.get("learned_voice")
             try:
