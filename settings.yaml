@@ -1,6 +1,9 @@
 # pAIrtner Bot — tunables
 # Secrets (API keys, tokens, encryption keys) belong in .env, NOT here.
 
+# Bot personality file — loaded at startup as the system instruction base.
+persona_file: persona.md
+
 # Message delivery cooldown in minutes.
 # After a relay is approved, it waits this long before being sent.
 cooldown_minutes: 15

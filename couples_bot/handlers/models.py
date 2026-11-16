@@ -40,7 +40,7 @@ class BotResponse:
 # Tag parsing
 # ---------------------------------------------------------------------------
 
-_TAGS = {"#keep", "#send", "#deep", "#now"}
+_TAGS = {"#keep", "#send", "#deep", "#now", "#blunt", "#honest"}
 
 
 def parse_tags(text: str) -> tuple[set[str], str]:

@@ -21,6 +21,7 @@ from couples_bot.config import Config, is_user_allowed, load_config
 from couples_bot.db import init_db
 from couples_bot.handlers import BotResponse, BotService
 from couples_bot.llm import create_llm_client
+from couples_bot.prompts import load_persona
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -258,6 +259,10 @@ def main() -> None:
     config = load_config()
     _config = config
     logger.info("Config loaded — provider: %s, default model: %s", config.llm_provider, config.model_default)
+
+    # Load persona (warm the cache; fallback used if file missing)
+    load_persona(config.persona_file)
+    logger.info("Persona loaded from %s", config.persona_file)
 
     # Init DB synchronously before the event loop starts
     asyncio.run(init_db(config.db_path))

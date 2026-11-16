@@ -9,7 +9,10 @@ PRIVACY RULES (violations are bugs):
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -22,6 +25,42 @@ class UserContext:
     shared_facts: list[str] = field(default_factory=list)
     recent_messages: list[tuple[str, str]] = field(default_factory=list)
     lang: str = "en"
+
+
+# ---------------------------------------------------------------------------
+# Persona loading
+# ---------------------------------------------------------------------------
+
+_persona_text: str | None = None
+
+_FALLBACK_PERSONA = (
+    "You are pAIrtner, a warm, non-judgmental friend who helps couples "
+    "communicate better. You listen without taking sides, soften hard "
+    "messages while preserving the substance, and respect privacy. "
+    "You are not a therapist — direct users to professional help when "
+    "needed. Never fabricate partner facts, never impersonate a partner, "
+    "and never forward raw messages without rewriting them gently."
+)
+
+
+def load_persona(path: str) -> str:
+    """Read the persona file, cache it, and return the content.
+
+    Falls back to ``_FALLBACK_PERSONA`` if the file is missing or unreadable.
+    """
+    global _persona_text
+    try:
+        with open(path) as f:
+            _persona_text = f.read().strip()
+    except (FileNotFoundError, OSError):
+        logger.warning("Persona file %r not found — using fallback persona", path)
+        _persona_text = None
+    return _persona_text or _FALLBACK_PERSONA
+
+
+def _get_persona() -> str:
+    """Return the cached persona text or fallback."""
+    return _persona_text or _FALLBACK_PERSONA
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +131,8 @@ def _format_history(messages: list[tuple[str, str]], limit: int = 6) -> str:
 
 def build_system_prompt() -> str:
     """Base system prompt shared across prompt types."""
-    return f"{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n{_JSON_FORMAT}"
+    persona = _get_persona()
+    return f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n{_JSON_FORMAT}"
 
 
 def build_chat_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
@@ -116,8 +156,9 @@ def build_tell_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
 
     Returns (system_prompt, user_content).
     """
+    persona = _get_persona()
     system = (
-        f"{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
+        f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
         "The user wants to send a message to their partner. "
         "Your job is to rewrite it so it's kind, gentle, and "
         "non-confrontational while preserving the substance.\n\n"
@@ -141,8 +182,9 @@ def build_mediate_prompt(shared_facts: list[str]) -> tuple[str, str]:
 
     Returns (system_prompt, user_content).
     """
+    persona = _get_persona()
     system = (
-        f"{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
+        f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
         "The user is asking for a neutral, balanced perspective on their "
         "relationship situation. Use ONLY the shared context below — "
         "do NOT reference anything private.\n\n"
@@ -168,8 +210,9 @@ def build_keep_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
 
     Returns (system_prompt, user_content).
     """
+    persona = _get_persona()
     system = (
-        f"{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
+        f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
         "The user wants to save some information. Extract key facts "
         "from their message. Do NOT draft a relay.\n\n"
         f"{_JSON_FORMAT}\n"
@@ -179,5 +222,33 @@ def build_keep_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
     parts: list[str] = []
     parts.append(_format_facts("Your private notes", ctx.private_facts))
     parts.append(f"\n## Message to save\n{message}")
+
+    return system, "".join(parts)
+
+
+def build_blunt_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
+    """Build prompt for #blunt / #honest — direct, unfiltered feedback.
+
+    The response is for the sender's own reflection only.
+
+    Returns (system_prompt, user_content).
+    """
+    persona = _get_persona()
+    system = (
+        f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n"
+        "The user has requested BLUNT MODE. Give your direct, honest "
+        "assessment. No sugar coating, no hedging. Be blunt but "
+        "constructive — honest doesn't mean cruel. This is for the "
+        "sender's own reflection and growth.\n\n"
+        f"{_JSON_FORMAT}\n"
+        "IMPORTANT: relay_draft should be null for blunt responses "
+        "(unless #send is also present, but that is handled separately)."
+    )
+
+    parts: list[str] = []
+    parts.append(_format_facts("Your private notes", ctx.private_facts))
+    parts.append(_format_facts("Shared notes", ctx.shared_facts))
+    parts.append(_format_history(ctx.recent_messages))
+    parts.append(f"\n## Current message (blunt feedback requested)\n{message}")
 
     return system, "".join(parts)

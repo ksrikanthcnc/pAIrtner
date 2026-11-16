@@ -6,6 +6,7 @@ in ``__main__`` converts these into Telegram-specific API calls.
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 from typing import Any
@@ -16,11 +17,14 @@ from couples_bot.crypto import decrypt_value
 from couples_bot.i18n import t
 from couples_bot.llm import LLMClient
 from couples_bot.prompts import UserContext
+from couples_bot.sanitize import sanitize_input
 
 from .callbacks import CallbacksMixin
 from .commands import CommandsMixin
 from .models import BotResponse, InlineButton, parse_tags
 from .tags import TagsMixin
+
+logger = logging.getLogger(__name__)
 
 
 class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
@@ -279,8 +283,23 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
 
         tags, clean = parse_tags(text)
 
+        # Sanitize input — strip injection patterns before LLM processing
+        clean, stripped = sanitize_input(clean)
+        if stripped:
+            logger.warning(
+                "Sanitized input from user %d: stripped patterns %s",
+                user_id, stripped,
+            )
+
         if "#keep" in tags:
             return await self._handle_keep(user_id, clean)
+        if "#blunt" in tags or "#honest" in tags:
+            if "#send" in tags:
+                # Blunt reply for sender + gentle relay draft for partner
+                blunt_resp = await self._handle_blunt(user_id, clean)
+                send_resp = await self._handle_send(user_id, clean, "#now" in tags)
+                return blunt_resp + send_resp
+            return await self._handle_blunt(user_id, clean)
         if "#send" in tags:
             return await self._handle_send(user_id, clean, "#now" in tags)
         if "#deep" in tags:

@@ -68,6 +68,7 @@ class Config:
     rate_limit_per_day: int = 200
     delivery_check_interval_seconds: int = 30
     review_before_send: bool = True
+    persona_file: str = "persona.md"
 
 
 def is_user_allowed(config: Config, user_id: int) -> bool:
@@ -171,5 +172,8 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         review_before_send=_parse_bool(
             os.environ.get("REVIEW_BEFORE_SEND"),
             yaml_cfg.get("review_before_send", True),
+        ),
+        persona_file=os.getenv(
+            "PERSONA_FILE", yaml_cfg.get("persona_file", "persona.md")
         ),
     )

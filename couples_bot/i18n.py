@@ -197,6 +197,9 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Take a breather — I'll be here when you're ready."
         ),
         "rate_limit_day": "Daily message limit reached. See you tomorrow!",
+
+        # Blunt mode
+        "blunt_disclaimer": "🔥 Blunt mode — here's my honest take:",
     },
 
     "te": {
@@ -365,6 +368,9 @@ _STRINGS: dict[str, dict[str, str]] = {
             "కొంచెం విశ్రాంతి తీసుకోండి — నేను ఇక్కడే ఉంటాను."
         ),
         "rate_limit_day": "రోజువారీ సందేశ పరిమితి చేరుకుంది. రేపు కలుద్దాం!",
+
+        # Blunt mode
+        "blunt_disclaimer": "🔥 బ్లంట్ మోడ్ — నా నిజాయితీ అభిప్రాయం:",
     },
 }
 
