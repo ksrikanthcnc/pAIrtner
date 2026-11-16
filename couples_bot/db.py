@@ -89,6 +89,20 @@ CREATE TABLE IF NOT EXISTS pending_batch_items (
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS checkins (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    couple_id        TEXT NOT NULL,
+    week_start       TEXT NOT NULL,
+    partner_a_id     INTEGER NOT NULL,
+    partner_a_answers TEXT,
+    partner_b_id     INTEGER NOT NULL,
+    partner_b_answers TEXT,
+    summary          TEXT,
+    status           TEXT NOT NULL DEFAULT 'pending'
+                     CHECK(status IN ('pending','partial','complete')),
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS rate_limit (
     user_id   INTEGER NOT NULL,
     window    TEXT NOT NULL,
@@ -835,3 +849,99 @@ async def increment_rate_counter(
             "WHERE user_id = ? AND window = ?",
             (user_id, window),
         )
+
+
+# ---------------------------------------------------------------------------
+# Couples (cross-pair queries)
+# ---------------------------------------------------------------------------
+
+async def get_all_couples(db_path: str) -> list[tuple[int, int]]:
+    """Return all paired user tuples, deduplicated in canonical order."""
+    rows = await _fetch_all(
+        db_path,
+        "SELECT tg_id, partner_id FROM users WHERE partner_id IS NOT NULL",
+    )
+    seen: set[tuple[int, int]] = set()
+    result: list[tuple[int, int]] = []
+    for row in rows:
+        pair = (min(row["tg_id"], row["partner_id"]),
+                max(row["tg_id"], row["partner_id"]))
+        if pair not in seen:
+            seen.add(pair)
+            result.append(pair)
+    return result
+
+
+async def get_sent_relays_since(
+    db_path: str, user_id: int, since: str
+) -> list[dict[str, Any]]:
+    """Get relays sent by or to *user_id* since a timestamp."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM pending "
+        "WHERE (sender_id = ? OR receiver_id = ?) "
+        "AND status = 'sent' AND sent_at >= ? "
+        "ORDER BY sent_at",
+        (user_id, user_id, since),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Checkins (weekly check-in state tracking)
+# ---------------------------------------------------------------------------
+
+async def create_checkin(
+    db_path: str,
+    couple_id: str,
+    week_start: str,
+    partner_a_id: int,
+    partner_b_id: int,
+) -> int:
+    """Create a new check-in record; return its id."""
+    return await _execute(
+        db_path,
+        "INSERT INTO checkins (couple_id, week_start, partner_a_id, partner_b_id) "
+        "VALUES (?, ?, ?, ?)",
+        (couple_id, week_start, partner_a_id, partner_b_id),
+    )
+
+
+async def get_active_checkin(
+    db_path: str, couple_id: str
+) -> dict[str, Any] | None:
+    """Return the currently active (non-complete) check-in for a couple."""
+    return await _fetch_one(
+        db_path,
+        "SELECT * FROM checkins "
+        "WHERE couple_id = ? AND status IN ('pending', 'partial') "
+        "ORDER BY created_at DESC LIMIT 1",
+        (couple_id,),
+    )
+
+
+async def update_checkin_answers(
+    db_path: str,
+    checkin_id: int,
+    partner: str,
+    answers: str,
+) -> None:
+    """Store answers for partner 'a' or 'b' and update status."""
+    col = "partner_a_answers" if partner == "a" else "partner_b_answers"
+    await _execute(
+        db_path,
+        f"UPDATE checkins SET {col} = ?, status = 'partial' WHERE id = ?",
+        (answers, checkin_id),
+    )
+
+
+async def mark_checkin_complete(
+    db_path: str,
+    checkin_id: int,
+    summary: str,
+) -> None:
+    """Mark a check-in as complete with the generated summary."""
+    await _execute(
+        db_path,
+        "UPDATE checkins SET status = 'complete', summary = ? WHERE id = ?",
+        (summary, checkin_id),
+    )

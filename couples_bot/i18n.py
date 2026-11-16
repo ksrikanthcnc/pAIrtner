@@ -216,6 +216,17 @@ _STRINGS: dict[str, dict[str, str]] = {
         "cat_work": "💼 Work",
         "cat_health": "🏥 Health",
         "cat_other": "📌 Other",
+
+        # Digest
+        "digest_header": "📋 <b>Daily Digest</b>",
+        "digest_no_activity": "No new activity today.",
+
+        # Check-in
+        "checkin_questions_header": "🔄 <b>Weekly Check-in</b>\nTake a moment to reflect on your week together:",
+        "checkin_question_item": "{index}. {question}",
+        "checkin_waiting_partner": "✅ Got your answers! Waiting for your partner to respond.",
+        "checkin_summary_header": "🔄 <b>Weekly Check-in Summary</b>",
+        "checkin_both_answered": "✅ Your check-in response has been recorded.",
     },
 
     "te": {
@@ -403,6 +414,17 @@ _STRINGS: dict[str, dict[str, str]] = {
         "cat_work": "💼 పని",
         "cat_health": "🏥 ఆరోగ్యం",
         "cat_other": "📌 ఇతర",
+
+        # Digest
+        "digest_header": "📋 <b>రోజువారీ సారాంశం</b>",
+        "digest_no_activity": "ఈ రోజు కొత్త కార్యకలాపం లేదు.",
+
+        # Check-in
+        "checkin_questions_header": "🔄 <b>వారపు చెక్-ఇన్</b>\nమీ వారం గురించి ఆలోచించండి:",
+        "checkin_question_item": "{index}. {question}",
+        "checkin_waiting_partner": "✅ మీ సమాధానాలు అందాయి! మీ భాగస్వామి కోసం వేచి ఉన్నాము.",
+        "checkin_summary_header": "🔄 <b>వారపు చెక్-ఇన్ సారాంశం</b>",
+        "checkin_both_answered": "✅ మీ చెక్-ఇన్ సమాధానం నమోదు అయింది.",
     },
 }
 

@@ -42,3 +42,26 @@ fact_categories:
   - work
   - health
   - other
+
+# Automated daily backup of the SQLite database.
+backup:
+  enabled: true
+  directory: backups
+  daily_count: 7
+  weekly_count: 4
+
+# Daily digest — evening summary sent to both partners.
+digest:
+  enabled: true
+  time: "20:00"
+  timezone: "Asia/Kolkata"
+
+# Weekly check-in — reflection questions for both partners.
+checkin:
+  enabled: true
+  day: "sunday"
+  time: "18:00"
+  questions:
+    - "What went well this week?"
+    - "What could we do differently?"
+    - "What are you grateful for about us?"

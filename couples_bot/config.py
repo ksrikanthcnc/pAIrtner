@@ -78,6 +78,25 @@ class Config:
     )
     cooldown_behavior: str = "accumulate"
 
+    # New tunables (FEAT-003) — background tasks
+    backup_enabled: bool = True
+    backup_directory: str = "backups"
+    backup_daily_count: int = 7
+    backup_weekly_count: int = 4
+    digest_enabled: bool = True
+    digest_time: str = "20:00"
+    digest_timezone: str = "Asia/Kolkata"
+    checkin_enabled: bool = True
+    checkin_day: str = "sunday"
+    checkin_time: str = "18:00"
+    checkin_questions: list[str] = field(
+        default_factory=lambda: [
+            "What went well this week?",
+            "What could we do differently?",
+            "What are you grateful for about us?",
+        ]
+    )
+
 
 def is_user_allowed(config: Config, user_id: int) -> bool:
     """Check if a user is allowed.  Empty allowlist = open mode (everyone)."""
@@ -192,4 +211,53 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
             "COOLDOWN_BEHAVIOR",
             yaml_cfg.get("cooldown", {}).get("behavior", "accumulate"),
         ),
+        backup_enabled=_parse_bool(
+            os.environ.get("BACKUP_ENABLED"),
+            yaml_cfg.get("backup", {}).get("enabled", True),
+        ),
+        backup_directory=os.getenv(
+            "BACKUP_DIRECTORY",
+            yaml_cfg.get("backup", {}).get("directory", "backups"),
+        ),
+        backup_daily_count=int(
+            os.getenv(
+                "BACKUP_DAILY_COUNT",
+                str(yaml_cfg.get("backup", {}).get("daily_count", 7)),
+            )
+        ),
+        backup_weekly_count=int(
+            os.getenv(
+                "BACKUP_WEEKLY_COUNT",
+                str(yaml_cfg.get("backup", {}).get("weekly_count", 4)),
+            )
+        ),
+        digest_enabled=_parse_bool(
+            os.environ.get("DIGEST_ENABLED"),
+            yaml_cfg.get("digest", {}).get("enabled", True),
+        ),
+        digest_time=os.getenv(
+            "DIGEST_TIME",
+            yaml_cfg.get("digest", {}).get("time", "20:00"),
+        ),
+        digest_timezone=os.getenv(
+            "DIGEST_TIMEZONE",
+            yaml_cfg.get("digest", {}).get("timezone", "Asia/Kolkata"),
+        ),
+        checkin_enabled=_parse_bool(
+            os.environ.get("CHECKIN_ENABLED"),
+            yaml_cfg.get("checkin", {}).get("enabled", True),
+        ),
+        checkin_day=os.getenv(
+            "CHECKIN_DAY",
+            yaml_cfg.get("checkin", {}).get("day", "sunday"),
+        ),
+        checkin_time=os.getenv(
+            "CHECKIN_TIME",
+            yaml_cfg.get("checkin", {}).get("time", "18:00"),
+        ),
+        checkin_questions=yaml_cfg.get("checkin", {}).get("questions", [
+            "What went well this week?",
+            "What could we do differently?",
+            "What are you grateful for about us?",
+        ]),
     )

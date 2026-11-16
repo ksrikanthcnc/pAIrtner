@@ -18,8 +18,11 @@ from telegram.ext import (
 )
 
 from couples_bot.approval import delivery_loop
+from couples_bot.backup import backup_loop
+from couples_bot.checkin import checkin_loop
 from couples_bot.config import Config, is_user_allowed, load_config
 from couples_bot.db import init_db
+from couples_bot.digest import digest_loop
 from couples_bot.handlers import BotResponse, BotService
 from couples_bot.llm import create_llm_client
 from couples_bot.prompts import load_persona
@@ -261,6 +264,37 @@ async def _post_init(app: Application) -> None:
         review_before_send=_config.review_before_send,
     ))
     logger.info("Delivery loop started")
+
+    if _config.backup_enabled:
+        app.create_task(backup_loop(
+            _config.db_path,
+            _config.backup_directory,
+            daily_count=_config.backup_daily_count,
+            weekly_count=_config.backup_weekly_count,
+        ))
+        logger.info("Backup loop started")
+
+    if _config.digest_enabled:
+        app.create_task(digest_loop(
+            _service.db_path,
+            _service.llm,
+            _send,
+            digest_time=_config.digest_time,
+            digest_tz=_config.digest_timezone,
+        ))
+        logger.info("Digest loop started")
+
+    if _config.checkin_enabled:
+        app.create_task(checkin_loop(
+            _service.db_path,
+            _service.llm,
+            _send,
+            checkin_day=_config.checkin_day,
+            checkin_time=_config.checkin_time,
+            checkin_tz=_config.digest_timezone,
+            checkin_questions=_config.checkin_questions,
+        ))
+        logger.info("Check-in loop started")
 
 
 # ---------------------------------------------------------------------------

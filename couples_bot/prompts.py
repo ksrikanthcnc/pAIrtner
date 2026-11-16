@@ -228,6 +228,67 @@ def build_keep_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
     return system, "".join(parts)
 
 
+def build_digest_prompt(
+    shared_facts: list[str], sent_relays: list[str]
+) -> tuple[str, str]:
+    """Build prompt for the daily digest — neutral day summary.
+
+    Returns (system_prompt, user_content).
+    """
+    persona = _get_persona()
+    system = (
+        f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
+        "Generate a brief, neutral daily summary of today's shared activity. "
+        "Keep it warm and balanced. Do not take sides. Do not use JSON — "
+        "reply with plain text only."
+    )
+
+    parts: list[str] = []
+    if shared_facts:
+        items = "\n".join(f"- {f}" for f in shared_facts)
+        parts.append(f"## New shared facts today\n{items}\n")
+    if sent_relays:
+        items = "\n".join(f"- {r}" for r in sent_relays)
+        parts.append(f"## Messages exchanged today\n{items}\n")
+    parts.append(
+        "\nPlease summarise today's activity in a warm, balanced way."
+    )
+
+    return system, "\n".join(parts)
+
+
+def build_checkin_summary_prompt(
+    partner_a_answers: str,
+    partner_b_answers: str,
+    shared_facts: list[str],
+) -> tuple[str, str]:
+    """Build prompt for the weekly check-in summary — blame-free.
+
+    Returns (system_prompt, user_content).
+    """
+    persona = _get_persona()
+    system = (
+        f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
+        "Generate a warm, blame-free summary of both partners' reflections. "
+        "Never reveal which partner said what specifically. Focus on common "
+        "themes and positive momentum. Do not use JSON — reply with plain "
+        "text only."
+    )
+
+    parts: list[str] = []
+    parts.append(f"## Partner A reflections\n{partner_a_answers}\n")
+    parts.append(f"## Partner B reflections\n{partner_b_answers}\n")
+    if shared_facts:
+        items = "\n".join(f"- {f}" for f in shared_facts)
+        parts.append(f"## Shared context\n{items}\n")
+    parts.append(
+        "\nPlease provide a warm, blame-free summary focusing on common "
+        "themes and growth opportunities."
+    )
+
+    return system, "\n".join(parts)
+
+
 def build_blunt_prompt(ctx: UserContext, message: str) -> tuple[str, str]:
     """Build prompt for #blunt / #honest — direct, unfiltered feedback.
 
