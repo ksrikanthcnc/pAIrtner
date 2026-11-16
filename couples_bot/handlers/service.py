@@ -428,28 +428,15 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
 
         tags, clean = parse_tags(text)
 
-        # Onboarding intercept — if user has an active onboarding, route there
+        # Onboarding intercept — if user has active onboarding, route there
         profile = await db_mod.get_user_profile(self.db_path, user_id)
-        if profile and not profile["onboarding_done"] and profile["onboarding_step"] > 0:
+        if profile and not profile["onboarding_done"]:
             lang = await self._get_lang(user_id)
             consumed, next_q = await process_onboarding_answer(
                 self.db_path, user_id, text, lang,
             )
             if consumed:
                 return [BotResponse(next_q)] if next_q else []
-        # Also handle /skip during onboarding (step 0 but question was sent)
-        if (
-            profile
-            and not profile["onboarding_done"]
-            and profile["onboarding_step"] == 0
-            and text.strip().lower() == "/skip"
-        ):
-            lang = await self._get_lang(user_id)
-            consumed, msg = await process_onboarding_answer(
-                self.db_path, user_id, text, lang,
-            )
-            if consumed:
-                return [BotResponse(msg)] if msg else []
 
         # Sanitize input — strip injection patterns before LLM processing
         clean, stripped = sanitize_input(clean)

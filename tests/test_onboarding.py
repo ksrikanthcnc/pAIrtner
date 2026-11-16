@@ -19,6 +19,18 @@ from couples_bot.onboarding import (
 )
 
 
+@pytest.fixture
+async def onboard_users(test_db):
+    """Paired users with onboarding NOT done."""
+    a_id, b_id = 2001, 2002
+    from couples_bot.db import create_user, set_partner
+    await create_user(test_db, a_id, "OnbAlice")
+    await create_user(test_db, b_id, "OnbBob")
+    await set_partner(test_db, a_id, b_id)
+    return a_id, b_id
+
+
+
 @pytest.mark.asyncio
 async def test_should_start_onboarding_unpaired(test_db):
     """Unpaired users should not start onboarding."""
@@ -27,35 +39,35 @@ async def test_should_start_onboarding_unpaired(test_db):
 
 
 @pytest.mark.asyncio
-async def test_should_start_onboarding_paired_no_profile(test_db, paired_users):
+async def test_should_start_onboarding_paired_no_profile(test_db, onboard_users):
     """Paired user with no profile should start onboarding."""
-    a_id, _ = paired_users
+    a_id, _ = onboard_users
     # No profile row yet → should start
     assert await should_start_onboarding(test_db, a_id) is True
 
 
 @pytest.mark.asyncio
-async def test_should_start_onboarding_already_done(test_db, paired_users):
+async def test_should_start_onboarding_already_done(test_db, onboard_users):
     """Onboarding done → should not start."""
-    a_id, _ = paired_users
+    a_id, _ = onboard_users
     await ensure_user_profile(test_db, a_id)
     await update_user_profile(test_db, a_id, onboarding_done=1)
     assert await should_start_onboarding(test_db, a_id) is False
 
 
 @pytest.mark.asyncio
-async def test_should_start_onboarding_in_progress(test_db, paired_users):
+async def test_should_start_onboarding_in_progress(test_db, onboard_users):
     """Onboarding in progress (step > 0) → should_start returns False."""
-    a_id, _ = paired_users
+    a_id, _ = onboard_users
     await ensure_user_profile(test_db, a_id)
     await update_user_profile(test_db, a_id, onboarding_step=2)
     assert await should_start_onboarding(test_db, a_id) is False
 
 
 @pytest.mark.asyncio
-async def test_get_onboarding_question_first(test_db, paired_users):
+async def test_get_onboarding_question_first(test_db, onboard_users):
     """First question returned for a fresh profile."""
-    a_id, _ = paired_users
+    a_id, _ = onboard_users
     await ensure_user_profile(test_db, a_id)
     q = await get_onboarding_question(test_db, a_id)
     assert q is not None
@@ -65,18 +77,18 @@ async def test_get_onboarding_question_first(test_db, paired_users):
 
 
 @pytest.mark.asyncio
-async def test_get_onboarding_question_done(test_db, paired_users):
+async def test_get_onboarding_question_done(test_db, onboard_users):
     """Returns None when onboarding is done."""
-    a_id, _ = paired_users
+    a_id, _ = onboard_users
     await ensure_user_profile(test_db, a_id)
     await update_user_profile(test_db, a_id, onboarding_done=1)
     assert await get_onboarding_question(test_db, a_id) is None
 
 
 @pytest.mark.asyncio
-async def test_full_onboarding_flow(test_db, paired_users):
+async def test_full_onboarding_flow(test_db, onboard_users):
     """Walk through all 6 onboarding questions."""
-    a_id, _ = paired_users
+    a_id, _ = onboard_users
     await ensure_user_profile(test_db, a_id)
 
     answers = ["married", "5", "yes", "28-32", "Her kindness", "Better communication"]
@@ -102,9 +114,9 @@ async def test_full_onboarding_flow(test_db, paired_users):
 
 
 @pytest.mark.asyncio
-async def test_skip_onboarding(test_db, paired_users):
+async def test_skip_onboarding(test_db, onboard_users):
     """User can /skip at any point to end onboarding."""
-    a_id, _ = paired_users
+    a_id, _ = onboard_users
     await ensure_user_profile(test_db, a_id)
 
     # Answer first question
@@ -122,9 +134,9 @@ async def test_skip_onboarding(test_db, paired_users):
 
 
 @pytest.mark.asyncio
-async def test_skip_onboarding_from_start(test_db, paired_users):
+async def test_skip_onboarding_from_start(test_db, onboard_users):
     """User can /skip even before answering any question."""
-    a_id, _ = paired_users
+    a_id, _ = onboard_users
     await ensure_user_profile(test_db, a_id)
 
     consumed, msg = await process_onboarding_answer(test_db, a_id, "/skip")
@@ -136,9 +148,9 @@ async def test_skip_onboarding_from_start(test_db, paired_users):
 
 
 @pytest.mark.asyncio
-async def test_resume_interrupted_onboarding(test_db, paired_users):
+async def test_resume_interrupted_onboarding(test_db, onboard_users):
     """Interrupted onboarding resumes from the right step."""
-    a_id, _ = paired_users
+    a_id, _ = onboard_users
     await ensure_user_profile(test_db, a_id)
 
     # Answer first two questions
@@ -157,9 +169,9 @@ async def test_resume_interrupted_onboarding(test_db, paired_users):
 
 
 @pytest.mark.asyncio
-async def test_invalid_duration_reasks(test_db, paired_users):
+async def test_invalid_duration_reasks(test_db, onboard_users):
     """Invalid duration input re-asks the same question."""
-    a_id, _ = paired_users
+    a_id, _ = onboard_users
     await ensure_user_profile(test_db, a_id)
 
     # Q1: relationship type

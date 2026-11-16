@@ -73,6 +73,13 @@ async def paired_users(test_db) -> tuple[int, int]:
     await create_user(test_db, b_id, "Bob")
     await set_partner(test_db, a_id, b_id)
 
+    # Mark onboarding complete so tests aren't intercepted by onboarding flow
+    from couples_bot.db import ensure_user_profile, update_user_profile
+    await ensure_user_profile(test_db, a_id)
+    await update_user_profile(test_db, a_id, onboarding_done=1)
+    await ensure_user_profile(test_db, b_id)
+    await update_user_profile(test_db, b_id, onboarding_done=1)
+
     # Alice's facts
     await add_fact(test_db, a_id, "Alice feels stressed about work", "private")
     await add_fact(test_db, a_id, "Alice likes morning walks", "private")

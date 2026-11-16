@@ -22,7 +22,7 @@ async def ab_db(tmp_path) -> str:
     await db_mod.set_partner(db_path, 1001, 1002)
     # Set dampening base to 0.5 (mid-range for A/B trigger)
     await db_mod.ensure_user_profile(db_path, 1001)
-    await db_mod.update_user_profile(db_path, 1001, dampening_base=0.5)
+    await db_mod.update_user_profile(db_path, 1001, dampening_base=0.5, onboarding_done=1)
     return db_path
 
 
