@@ -156,6 +156,10 @@ class Config:
     context_recent_days: int = 7
     context_max_relevant_facts: int = 20
 
+    # Voice auto-adaptation (FEAT-002 batch5)
+    voice_auto_learn: bool = True
+    voice_learn_after_messages: int = 10
+
 
 def is_user_allowed(config: Config, user_id: int) -> bool:
     """Check if a user is allowed.  Empty allowlist = open mode (everyone)."""
@@ -477,6 +481,16 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
             os.getenv(
                 "CONTEXT_MAX_RELEVANT_FACTS",
                 str(yaml_cfg.get("context", {}).get("max_relevant_facts", 20)),
+            )
+        ),
+        voice_auto_learn=_parse_bool(
+            os.environ.get("VOICE_AUTO_LEARN"),
+            yaml_cfg.get("voice", {}).get("auto_learn", True),
+        ),
+        voice_learn_after_messages=int(
+            os.getenv(
+                "VOICE_LEARN_AFTER_MESSAGES",
+                str(yaml_cfg.get("voice", {}).get("learn_after_messages", 10)),
             )
         ),
     )

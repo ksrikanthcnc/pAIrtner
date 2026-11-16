@@ -126,3 +126,14 @@ async def _process(
             await db_mod.record_interaction(
                 db_path, couple_id, user_id, "positive", source="llm",
             )
+
+    # (g) Voice traits → store learned voice profile
+    voice_traits = llm_response.get("voice_traits")
+    if isinstance(voice_traits, dict) and voice_traits:
+        import json as _json
+        await db_mod.update_learned_voice(
+            db_path, user_id, _json.dumps(voice_traits),
+        )
+
+    # (h) Always increment message count for voice maturity tracking
+    await db_mod.increment_message_count(db_path, user_id)

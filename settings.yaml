@@ -147,3 +147,8 @@ search:
 context:
   recent_days: 7
   max_relevant_facts: 20
+
+# Voice auto-adaptation — learned voice profile from user writing style.
+voice:
+  auto_learn: true
+  learn_after_messages: 10

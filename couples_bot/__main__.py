@@ -226,6 +226,16 @@ async def _cmd_style(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _send_response(ctx.bot, update.effective_chat.id, r)
 
 
+async def _cmd_vibe(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    arg = " ".join(ctx.args) if ctx.args else None
+    responses = await _service.handle_vibe(user.id, arg)
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
 async def _cmd_mood(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not is_user_allowed(_config, user.id):
@@ -466,6 +476,7 @@ def main() -> None:
     app.add_handler(CommandHandler("pause", _cmd_pause))
     app.add_handler(CommandHandler("resume", _cmd_resume))
     app.add_handler(CommandHandler("style", _cmd_style))
+    app.add_handler(CommandHandler("vibe", _cmd_vibe))
     app.add_handler(CommandHandler("mood", _cmd_mood))
     app.add_handler(CommandHandler("goal", _cmd_goal))
     app.add_handler(CommandHandler("together", _cmd_together))

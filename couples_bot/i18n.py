@@ -122,7 +122,8 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/goals — View your active goals\n\n"
             "<b>Personalization</b>\n"
             "/settings — Open settings menu\n"
-            "/style — Change your voice and intensity\n"
+            "/vibe — View your learned voice profile\n"
+            "/style — Alias for /vibe\n"
             "/mood &lt;mood&gt; — Set your mood (stressed|happy|angry|reflective)\n"
             "/setup — Configure Gemini API keys\n"
             "/skip — Skip onboarding questions\n\n"
@@ -281,6 +282,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         "style_current": "Voice: <b>{voice}</b> | Intensity: <b>{intensity}</b>",
         "style_voice_set": "✅ Voice updated to <b>{voice}</b>.",
         "style_intensity_set": "✅ Intensity updated to <b>{intensity}</b>.",
+
+        # Vibe (learned voice profile)
+        "vibe_header": "🎨 <b>Your Vibe Profile</b>\n\n",
+        "vibe_not_mature": "📊 Messages analyzed: {count}/{threshold} — still learning your style.\n",
+        "vibe_mature": "✅ Profile active ({count} messages analyzed)\n",
+        "vibe_trait_line": "  • {trait}: <b>{value}</b>\n",
+        "vibe_set_usage": "Usage: /vibe set <trait> <value>\nTraits: register, sentence_length, emoji_use, humor, directness",
+        "vibe_set_success": "✅ Trait updated: {trait} = <b>{value}</b>",
+        "vibe_set_invalid_trait": "❌ Unknown trait. Valid: register, sentence_length, emoji_use, humor, directness.",
 
         # Mood
         "mood_set": "🎭 Mood set to <b>{mood}</b>. Expires in ~{hours}h.",
@@ -508,7 +518,8 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/goals — మీ లక్ష్యాలు చూడండి\n\n"
             "<b>వ్యక్తిగతీకరణ</b>\n"
             "/settings — సెట్టింగ్స్ మెనూ\n"
-            "/style — మీ వాయిస్ మరియు ఇంటెన్సిటీ మార్చండి\n"
+            "/vibe — మీ నేర్చుకున్న వాయిస్ ప్రొఫైల్ చూడండి\n"
+            "/style — /vibe కి అలియాస్\n"
             "/mood — మీ మూడ్ సెట్ చేయండి\n"
             "/setup — Gemini API కీలు సెట్ చేయండి\n"
             "/skip — ఆన్‌బోర్డింగ్ ప్రశ్నలు దాటండి"
@@ -657,6 +668,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         "style_current": "వాయిస్: <b>{voice}</b> | ఇంటెన్సిటీ: <b>{intensity}</b>",
         "style_voice_set": "✅ వాయిస్ <b>{voice}</b> కి అప్‌డేట్ అయింది.",
         "style_intensity_set": "✅ ఇంటెన్సిటీ <b>{intensity}</b> కి అప్‌డేట్ అయింది.",
+
+        # Vibe (learned voice profile)
+        "vibe_header": "🎨 <b>మీ వైబ్ ప్రొఫైల్</b>\n\n",
+        "vibe_not_mature": "📊 విశ్లేషించిన సందేశాలు: {count}/{threshold} — మీ స్టైల్ ఇంకా నేర్చుకుంటోంది.\n",
+        "vibe_mature": "✅ ప్రొఫైల్ యాక్టివ్ ({count} సందేశాలు విశ్లేషించబడ్డాయి)\n",
+        "vibe_trait_line": "  • {trait}: <b>{value}</b>\n",
+        "vibe_set_usage": "వాడకం: /vibe set <trait> <value>\nTraits: register, sentence_length, emoji_use, humor, directness",
+        "vibe_set_success": "✅ ట్రైట్ అప్‌డేట్: {trait} = <b>{value}</b>",
+        "vibe_set_invalid_trait": "❌ తెలియని ట్రైట్. చెల్లుబాటు: register, sentence_length, emoji_use, humor, directness.",
 
         # Mood
         "mood_set": "🎭 మూడ్ <b>{mood}</b> కి సెట్ అయింది. ~{hours}గంటల్లో ఎక్స్‌పైర్ అవుతుంది.",

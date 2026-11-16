@@ -129,6 +129,8 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     has_kids INTEGER,
     age_range TEXT,
     love_story_brief TEXT,
+    learned_voice TEXT,
+    message_count INTEGER DEFAULT 0,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -329,6 +331,18 @@ async def init_db(db_path: str) -> None:
         if "acknowledged_at" not in pending_columns:
             await db.execute(
                 "ALTER TABLE pending ADD COLUMN acknowledged_at TIMESTAMP"
+            )
+
+        # Migration: add learned_voice and message_count to user_profiles if missing
+        async with db.execute("PRAGMA table_info(user_profiles)") as cur:
+            profile_columns = {row[1] for row in await cur.fetchall()}
+        if "learned_voice" not in profile_columns:
+            await db.execute(
+                "ALTER TABLE user_profiles ADD COLUMN learned_voice TEXT"
+            )
+        if "message_count" not in profile_columns:
+            await db.execute(
+                "ALTER TABLE user_profiles ADD COLUMN message_count INTEGER DEFAULT 0"
             )
 
         await db.commit()
@@ -1181,6 +1195,38 @@ async def update_user_profile(
         f"UPDATE user_profiles SET {set_parts}, updated_at = CURRENT_TIMESTAMP "
         f"WHERE user_id = ?",
         tuple(values),
+    )
+
+
+async def increment_message_count(db_path: str, user_id: int) -> None:
+    """Increment the message_count on a user's profile."""
+    await ensure_user_profile(db_path, user_id)
+    await _execute(
+        db_path,
+        "UPDATE user_profiles SET message_count = message_count + 1, "
+        "updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+        (user_id,),
+    )
+
+
+async def get_message_count(db_path: str, user_id: int) -> int:
+    """Return the message_count for a user, or 0 if no profile exists."""
+    profile = await get_user_profile(db_path, user_id)
+    if profile is None:
+        return 0
+    return profile.get("message_count") or 0
+
+
+async def update_learned_voice(
+    db_path: str, user_id: int, voice_json: str
+) -> None:
+    """Store a JSON string representing learned voice traits."""
+    await ensure_user_profile(db_path, user_id)
+    await _execute(
+        db_path,
+        "UPDATE user_profiles SET learned_voice = ?, "
+        "updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+        (voice_json, user_id),
     )
 
 

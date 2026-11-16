@@ -36,11 +36,39 @@ class TagsMixin:
     ) -> tuple[str | None, str | None]:
         """Load the user's voice file and resolve dampening.
 
+        When voice auto-learning is enabled and the user has sent enough
+        messages, the learned voice traits are prepended to the static
+        voice text so the LLM adapts to the user's communication style.
+
         Returns ``(voice_text, dampening_instruction)``.
         """
+        import json as _json
+
         profile = await db_mod.get_user_profile(self.db_path, user_id)
         voice_name = (profile or {}).get("default_voice") or self.config.default_voice
         voice_text = load_voice(self.config.voices_dir, voice_name)
+
+        # Check for mature learned voice profile
+        if (
+            getattr(self.config, "voice_auto_learn", True)
+            and profile
+            and profile.get("learned_voice")
+            and (profile.get("message_count") or 0) >= getattr(
+                self.config, "voice_learn_after_messages", 10
+            )
+        ):
+            try:
+                traits = _json.loads(profile["learned_voice"])
+                if isinstance(traits, dict) and traits:
+                    parts = ", ".join(
+                        f"{k}={v}" for k, v in traits.items()
+                    )
+                    learned_instruction = (
+                        f"Match this user's communication style: {parts}"
+                    )
+                    voice_text = learned_instruction + "\n\n" + voice_text
+            except (_json.JSONDecodeError, TypeError):
+                pass
 
         _, dampening_instruction = await resolve_dampening(
             self.db_path, user_id, self.config, has_blunt_tag=has_blunt_tag,

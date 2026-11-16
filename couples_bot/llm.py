@@ -37,6 +37,7 @@ def parse_llm_response(raw: str) -> LLMResponse:
             "partner_themes": data.get("partner_themes", []),
             "articulation_note": data.get("articulation_note"),
             "horsemen_detected": data.get("horsemen_detected", []),
+            "voice_traits": data.get("voice_traits", {}),
         }
     except (json.JSONDecodeError, TypeError):
         return {
@@ -48,6 +49,7 @@ def parse_llm_response(raw: str) -> LLMResponse:
             "partner_themes": [],
             "articulation_note": None,
             "horsemen_detected": [],
+            "voice_traits": {},
         }
 
 

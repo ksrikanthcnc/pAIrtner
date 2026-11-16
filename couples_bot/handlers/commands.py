@@ -535,27 +535,73 @@ class CommandsMixin:
             document=("my_facts.txt", content),
         )]
 
-    # ── /style ───────────────────────────────────────────────────────────
+    # ── /vibe (was /style) ───────────────────────────────────────────────
 
-    async def handle_style(
+    async def handle_vibe(
         self, user_id: int, arg: str | None
     ) -> list[BotResponse]:
-        """Show or change the user's voice and intensity settings."""
+        """Show learned voice profile, maturity status, and allow manual trait overrides."""
+        import json as _json
+
         if not is_user_allowed(self.config, user_id):
             return []
 
         lang = await self._get_lang(user_id)
         profile = await db_mod.ensure_user_profile(self.db_path, user_id)
 
-        if arg and arg.strip():
-            # Direct set: /style casual_en or /style 0.5
-            # handled via callbacks instead; show usage
-            pass
+        # /vibe set <trait> <value> — manual override
+        if arg and arg.strip().lower().startswith("set "):
+            parts = arg.strip().split(None, 2)
+            if len(parts) < 3:
+                return [BotResponse(t(lang, "vibe_set_usage"))]
+            trait = parts[1].lower()
+            value = parts[2].lower()
+            valid_traits = {
+                "register": ["casual", "formal", "mixed"],
+                "sentence_length": ["short", "medium", "long"],
+                "emoji_use": ["none", "light", "heavy"],
+                "humor": ["none", "light", "frequent"],
+                "directness": ["indirect", "balanced", "very_direct"],
+            }
+            if trait not in valid_traits:
+                return [BotResponse(t(lang, "vibe_set_invalid_trait"))]
+            # Load existing or create empty
+            raw = profile.get("learned_voice")
+            try:
+                traits = _json.loads(raw) if raw else {}
+            except (_json.JSONDecodeError, TypeError):
+                traits = {}
+            traits[trait] = value
+            await db_mod.update_learned_voice(
+                self.db_path, user_id, _json.dumps(traits),
+            )
+            return [BotResponse(t(lang, "vibe_set_success", trait=trait, value=value))]
 
-        # Show current + inline buttons
+        # Show current vibe profile
+        msg_count = profile.get("message_count") or 0
+        threshold = getattr(self.config, "voice_learn_after_messages", 10)
+        is_mature = msg_count >= threshold
+
+        parts_out = [t(lang, "vibe_header")]
+
+        if is_mature:
+            parts_out.append(t(lang, "vibe_mature", count=msg_count))
+        else:
+            parts_out.append(t(lang, "vibe_not_mature", count=msg_count, threshold=threshold))
+
+        raw = profile.get("learned_voice")
+        if raw:
+            try:
+                traits = _json.loads(raw)
+                if isinstance(traits, dict):
+                    for k, v in traits.items():
+                        parts_out.append(t(lang, "vibe_trait_line", trait=k, value=v))
+            except (_json.JSONDecodeError, TypeError):
+                pass
+
+        # Also show static voice info
         voice = profile.get("default_voice") or "casual_en"
         intensity = profile.get("voice_intensity", 0.5)
-
         voice_labels = {
             "casual_en": "Casual English",
             "telugu": "Telugu",
@@ -563,10 +609,8 @@ class CommandsMixin:
             "formal_en": "Formal English",
         }
         voice_display = voice_labels.get(voice, voice)
-
-        text = (
-            t(lang, "style_header")
-            + t(lang, "style_current", voice=voice_display, intensity=intensity)
+        parts_out.append(
+            "\n" + t(lang, "style_current", voice=voice_display, intensity=intensity)
         )
 
         voice_buttons = [
@@ -581,7 +625,13 @@ class CommandsMixin:
             InlineButton("Deep 0.8", "si:0.8"),
         ]
 
-        return [BotResponse(text, buttons=[voice_buttons, intensity_buttons])]
+        return [BotResponse("".join(parts_out), buttons=[voice_buttons, intensity_buttons])]
+
+    async def handle_style(
+        self, user_id: int, arg: str | None
+    ) -> list[BotResponse]:
+        """Backward-compatible alias for /vibe."""
+        return await self.handle_vibe(user_id, arg)
 
     # ── /mood ────────────────────────────────────────────────────────────
 

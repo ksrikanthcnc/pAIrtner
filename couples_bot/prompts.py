@@ -147,7 +147,14 @@ You MUST respond ONLY with valid JSON matching this schema:
   "articulation_note": "<tip on how the user could express themselves better>" or null,
   "horsemen_detected": [
     {"type": "criticism|contempt|defensiveness|stonewalling", "evidence": "<what you observed>", "suggestion": "<constructive alternative>"}
-  ]
+  ],
+  "voice_traits": {
+    "register": "casual|formal|mixed",
+    "sentence_length": "short|medium|long",
+    "emoji_use": "none|light|heavy",
+    "humor": "none|light|frequent",
+    "directness": "indirect|balanced|very_direct"
+  }
 }
 
 Rules:
@@ -174,6 +181,10 @@ Rules:
   down). May be empty []. NEVER use the term 'horsemen' or any
   Gottman jargon in your reply. Translate patterns to natural,
   friendly language.
+- "voice_traits": analyze the user's writing style and return traits:
+  register (casual/formal/mixed), sentence_length (short/medium/long),
+  emoji_use (none/light/heavy), humor (none/light/frequent),
+  directness (indirect/balanced/very_direct). Always provide this.
 - Keep facts concise (one sentence each).
 - Never include the partner's private information in your reply.
 """
