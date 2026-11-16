@@ -107,7 +107,8 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/mediate — Get a neutral perspective on shared issues\n"
             "/pause — Pause relay delivery\n"
             "/resume — Resume relay delivery\n"
-            "/history — View recent sent and received messages\n\n"
+            "/history — View recent sent and received messages\n"
+            "/conflicts — View open discussion topics\n\n"
             "<b>Memory</b>\n"
             "/whatdoyouknow — See what I remember about you\n"
             "/forget &lt;id|all&gt; — Delete your facts\n"
@@ -364,6 +365,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "appreciation_trend_positive": "Your positive interactions have been strong this week! 🌟",
         "appreciation_trend_negative": "This week has been a bit tense. Focus on the good moments. 💛",
         "conflicts_header": "⚡ <b>Communication Patterns</b>",
+        "conflicts_empty": "No open topics right now. Things are going well! 🌟",
+        "conflicts_item": "• <b>{theme}</b> — open for {duration} ({relay_count} relays)\n",
+        "conflicts_resolved_note": "✅ Resolved: {theme}",
+        "checkin_conflicts_summary": "This week, {resolved} out of {total} discussion topics were resolved. Still open: {open_themes}.",
     },
 
     "te": {
@@ -451,7 +456,8 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/mediate — తటస్థ దృక్పథం పొందండి\n"
             "/pause — డెలివరీ ఆపు\n"
             "/resume — డెలివరీ కొనసాగించు\n"
-            "/history — ఇటీవల పంపిన/అందుకున్న సందేశాలు\n\n"
+            "/history — ఇటీవల పంపిన/అందుకున్న సందేశాలు\n"
+            "/conflicts — ఓపెన్ చర్చా అంశాలు చూడండి\n\n"
             "<b>జ్ఞాపకం</b>\n"
             "/whatdoyouknow — నేను ఏమి గుర్తుంచుకుంటున్నాను\n"
             "/forget — మీ విషయాలు తొలగించండి\n"
@@ -698,6 +704,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "appreciation_trend_positive": "ఈ వారం మీ సానుకూల సంభాషణలు బాగున్నాయి! 🌟",
         "appreciation_trend_negative": "ఈ వారం కొంచెం ఒత్తిడిగా ఉంది. మంచి క్షణాలపై దృష్టి పెట్టండి. 💛",
         "conflicts_header": "⚡ <b>కమ్యూనికేషన్ నమూనాలు</b>",
+        "conflicts_empty": "ఇప్పుడు ఓపెన్ టాపిక్స్ లేవు. అంతా బాగుంది! 🌟",
+        "conflicts_item": "• <b>{theme}</b> — {duration} నుండి ఓపెన్ ({relay_count} రిలేలు)\n",
+        "conflicts_resolved_note": "✅ పరిష్కరించబడింది: {theme}",
+        "checkin_conflicts_summary": "ఈ వారం, {total} చర్చా అంశాలలో {resolved} పరిష్కరించబడ్డాయి. ఇంకా ఓపెన్: {open_themes}.",
     },
 }
 

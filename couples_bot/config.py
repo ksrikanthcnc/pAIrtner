@@ -126,6 +126,11 @@ class Config:
     appreciation_check_days: int = 7
     horsemen_enabled: bool = True
 
+    # Conflict resolution tracking (FEAT-002 batch4)
+    conflicts_enabled: bool = True
+    conflicts_auto_detect: bool = True
+    conflicts_resolution_timeout_hours: int = 48
+
 
 def is_user_allowed(config: Config, user_id: int) -> bool:
     """Check if a user is allowed.  Empty allowlist = open mode (everyone)."""
@@ -381,5 +386,19 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         horsemen_enabled=_parse_bool(
             os.environ.get("HORSEMEN_ENABLED"),
             yaml_cfg.get("horsemen", {}).get("enabled", True),
+        ),
+        conflicts_enabled=_parse_bool(
+            os.environ.get("CONFLICTS_ENABLED"),
+            yaml_cfg.get("conflicts", {}).get("enabled", True),
+        ),
+        conflicts_auto_detect=_parse_bool(
+            os.environ.get("CONFLICTS_AUTO_DETECT"),
+            yaml_cfg.get("conflicts", {}).get("auto_detect", True),
+        ),
+        conflicts_resolution_timeout_hours=int(
+            os.getenv(
+                "CONFLICTS_RESOLUTION_TIMEOUT_HOURS",
+                str(yaml_cfg.get("conflicts", {}).get("resolution_timeout_hours", 48)),
+            )
         ),
     )

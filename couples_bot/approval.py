@@ -82,6 +82,13 @@ async def delivery_loop(
                     await send_func(receiver_id, message)
                     await db_mod.mark_as_sent(db_path, row["id"])
 
+                    # Track relay in open conflicts (FEAT-002)
+                    cid = db_mod.make_couple_id(sender_id, receiver_id)
+                    for oc in await db_mod.get_open_conflicts(db_path, cid):
+                        await db_mod.add_relay_to_conflict(
+                            db_path, oc["id"], row["id"],
+                        )
+
                     # Notify sender that it was delivered
                     sender = await db_mod.get_user(db_path, sender_id)
                     slang = (sender or {}).get("lang") or "en"

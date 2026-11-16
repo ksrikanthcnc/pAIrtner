@@ -741,3 +741,38 @@ class CommandsMixin:
         header = t(lang, "remember_header")
         item = t(lang, "remember_item", text=fact["text"])
         return [BotResponse(f"{header}\n{item}")]
+
+    # ── /conflicts ───────────────────────────────────────────────────────
+
+    async def handle_conflicts(self, user_id: int) -> list[BotResponse]:
+        """Show open conflicts for the user's couple."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+        user = await db_mod.get_user(self.db_path, user_id)
+        if not user or not user.get("partner_id"):
+            return [BotResponse(t(lang, "not_paired"))]
+
+        couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
+        conflicts = await db_mod.get_open_conflicts(self.db_path, couple_id)
+
+        if not conflicts:
+            return [BotResponse(t(lang, "conflicts_empty"))]
+
+        parts = [t(lang, "conflicts_header") + "\n"]
+        for c in conflicts:
+            duration = format_relative_time(c.get("opened_at"))
+            import json
+            try:
+                relay_ids = json.loads(c.get("relay_ids") or "[]")
+            except (json.JSONDecodeError, TypeError):
+                relay_ids = []
+            parts.append(t(
+                lang, "conflicts_item",
+                theme=c["theme"],
+                duration=duration,
+                relay_count=len(relay_ids),
+            ))
+
+        return [BotResponse("".join(parts))]

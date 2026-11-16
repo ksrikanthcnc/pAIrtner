@@ -9,6 +9,7 @@ from __future__ import annotations
 import uuid
 
 from couples_bot import db as db_mod
+from couples_bot.conflict_detector import detect_conflict_opening
 from couples_bot.dampening import resolve_dampening
 from couples_bot.i18n import t
 from couples_bot.profile_updater import process_llm_extras
@@ -132,6 +133,15 @@ class TagsMixin:
         # Fire-and-forget: auto-update profiles from LLM extras
         await process_llm_extras(self.db_path, user_id, result, self.config)
 
+        # Conflict detection (FEAT-002)
+        if self.config.conflicts_enabled and self.config.conflicts_auto_detect:
+            couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
+            is_conflict, theme = await detect_conflict_opening(
+                self.db_path, couple_id, user_id, result,
+            )
+            if is_conflict and theme:
+                await db_mod.create_conflict(self.db_path, couple_id, theme)
+
         draft = result.get("relay_draft") or result["reply"]
         pending_id = await db_mod.create_pending(
             self.db_path, user_id, user["partner_id"], draft
@@ -249,6 +259,17 @@ class TagsMixin:
 
         # Fire-and-forget: auto-update profiles from LLM extras
         await process_llm_extras(self.db_path, user_id, result, self.config)
+
+        # Conflict detection (FEAT-002)
+        if self.config.conflicts_enabled and self.config.conflicts_auto_detect:
+            _usr = await db_mod.get_user(self.db_path, user_id)
+            if _usr and _usr.get("partner_id"):
+                couple_id = db_mod.make_couple_id(user_id, _usr["partner_id"])
+                is_conflict, theme = await detect_conflict_opening(
+                    self.db_path, couple_id, user_id, result,
+                )
+                if is_conflict and theme:
+                    await db_mod.create_conflict(self.db_path, couple_id, theme)
 
         reply_text = result["reply"]
         if count:

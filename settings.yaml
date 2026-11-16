@@ -109,3 +109,9 @@ appreciation:
 # Horsemen detection — communication anti-patterns.
 horsemen:
   enabled: true
+
+# Conflict resolution tracking — automatic detection and resolution.
+conflicts:
+  enabled: true
+  auto_detect: true
+  resolution_timeout_hours: 48

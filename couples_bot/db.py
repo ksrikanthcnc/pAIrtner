@@ -222,6 +222,20 @@ CREATE INDEX IF NOT EXISTS idx_batch_status_send_after
     ON pending_batch(status, send_after);
 CREATE INDEX IF NOT EXISTS idx_batch_items_batch
     ON pending_batch_items(batch_id);
+
+CREATE TABLE IF NOT EXISTS conflicts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    couple_id   TEXT NOT NULL,
+    theme       TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'open'
+                CHECK(status IN ('open','resolved','recurring')),
+    opened_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP,
+    relay_ids   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_conflicts_couple_status
+    ON conflicts(couple_id, status);
 """
 
 
@@ -1574,3 +1588,109 @@ async def get_shared_goal_by_id(db_path: str, goal_id: int) -> dict[str, Any] | 
     return await _fetch_one(
         db_path, "SELECT * FROM shared_goals WHERE id = ?", (goal_id,)
     )
+
+
+# ---------------------------------------------------------------------------
+# Conflicts (FEAT-002)
+# ---------------------------------------------------------------------------
+
+async def create_conflict(
+    db_path: str, couple_id: str, theme: str
+) -> int:
+    """Create a new open conflict; return its id."""
+    return await _execute(
+        db_path,
+        "INSERT INTO conflicts (couple_id, theme) VALUES (?, ?)",
+        (couple_id, theme),
+    )
+
+
+async def get_open_conflicts(
+    db_path: str, couple_id: str
+) -> list[dict[str, Any]]:
+    """Return all open conflicts for a couple."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM conflicts WHERE couple_id = ? AND status = 'open' "
+        "ORDER BY opened_at DESC",
+        (couple_id,),
+    )
+
+
+async def get_conflict_by_id(
+    db_path: str, conflict_id: int
+) -> dict[str, Any] | None:
+    """Return a single conflict row, or ``None``."""
+    return await _fetch_one(
+        db_path, "SELECT * FROM conflicts WHERE id = ?", (conflict_id,)
+    )
+
+
+async def update_conflict_status(
+    db_path: str,
+    conflict_id: int,
+    status: str,
+    resolved_at: str | None = None,
+) -> None:
+    """Transition a conflict to a new status."""
+    if resolved_at:
+        await _execute(
+            db_path,
+            "UPDATE conflicts SET status = ?, resolved_at = ? WHERE id = ?",
+            (status, resolved_at, conflict_id),
+        )
+    else:
+        await _execute(
+            db_path,
+            "UPDATE conflicts SET status = ? WHERE id = ?",
+            (status, conflict_id),
+        )
+
+
+async def add_relay_to_conflict(
+    db_path: str, conflict_id: int, relay_id: int
+) -> None:
+    """Append a relay id to the conflict's relay_ids JSON array."""
+    import json
+
+    conflict = await get_conflict_by_id(db_path, conflict_id)
+    if not conflict:
+        return
+    existing = conflict.get("relay_ids")
+    try:
+        ids = json.loads(existing) if existing else []
+    except (json.JSONDecodeError, TypeError):
+        ids = []
+    if relay_id not in ids:
+        ids.append(relay_id)
+    await _execute(
+        db_path,
+        "UPDATE conflicts SET relay_ids = ? WHERE id = ?",
+        (json.dumps(ids), conflict_id),
+    )
+
+
+async def get_conflict_summary(
+    db_path: str, couple_id: str
+) -> dict[str, int]:
+    """Return counts by status for a couple's conflicts."""
+    rows = await _fetch_all(
+        db_path,
+        "SELECT status, COUNT(*) AS cnt FROM conflicts "
+        "WHERE couple_id = ? GROUP BY status",
+        (couple_id,),
+    )
+    return {row["status"]: row["cnt"] for row in rows}
+
+
+async def get_recent_pending_count(
+    db_path: str, sender_id: int, since: str
+) -> int:
+    """Count pending rows created since a timestamp for a sender."""
+    row = await _fetch_one(
+        db_path,
+        "SELECT COUNT(*) AS cnt FROM pending "
+        "WHERE sender_id = ? AND created_at >= ?",
+        (sender_id, since),
+    )
+    return row["cnt"] if row else 0

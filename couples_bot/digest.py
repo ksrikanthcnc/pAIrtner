@@ -9,6 +9,7 @@ from typing import Awaitable, Callable
 from zoneinfo import ZoneInfo
 
 from couples_bot import db as db_mod
+from couples_bot.conflict_detector import check_conflict_resolutions
 from couples_bot.i18n import t
 from couples_bot.llm import LLMClient
 from couples_bot.prompts import build_digest_prompt
@@ -135,4 +136,13 @@ async def _send_digest_for_couple(
     # Record the digest timestamp
     now_iso = datetime.now(timezone.utc).isoformat()
     await db_mod.set_couple_config(db_path, couple_id, "last_digest", now_iso)
+
+    # Periodic conflict resolution check (FEAT-002)
+    resolved = await check_conflict_resolutions(db_path, couple_id)
+    if resolved:
+        logger.info(
+            "Auto-resolved %d conflict(s) for couple %s during digest",
+            resolved, couple_id,
+        )
+
     logger.info("Daily digest sent for couple %s", couple_id)

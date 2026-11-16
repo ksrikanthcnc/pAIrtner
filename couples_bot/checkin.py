@@ -244,12 +244,32 @@ async def _generate_summary(
         "## Interaction Trends\n" + "\n".join(f"- {t}" for t in trends_parts) + "\n"
     ) if trends_parts else None
 
-    # Combine goals and trends
+    # Build conflict resolution summary (FEAT-002)
+    conflict_summary = await db_mod.get_conflict_summary(db_path, couple_id)
+    conflicts_text = None
+    if conflict_summary:
+        total = sum(conflict_summary.values())
+        resolved = conflict_summary.get("resolved", 0)
+        open_count = conflict_summary.get("open", 0)
+        open_conflicts = await db_mod.get_open_conflicts(db_path, couple_id)
+        open_themes = ", ".join(c["theme"] for c in open_conflicts) or "none"
+        conflicts_text = (
+            "## Conflict Resolution\n"
+            f"- This week: {resolved} out of {total} topics raised were resolved.\n"
+        )
+        if open_count > 0:
+            conflicts_text += f"- Still open: {open_themes}\n"
+        else:
+            conflicts_text += "- All topics resolved.\n"
+
+    # Combine goals, trends, and conflicts
     extra = ""
     if goals_text:
         extra += goals_text
     if trends_text:
         extra += trends_text
+    if conflicts_text:
+        extra += conflicts_text
 
     system_prompt, user_content = build_checkin_summary_prompt(
         a_answers, b_answers, shared_texts, goals=extra or None,
