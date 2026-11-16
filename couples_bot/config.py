@@ -160,6 +160,10 @@ class Config:
     voice_auto_learn: bool = True
     voice_learn_after_messages: int = 10
 
+    # Adapter architecture (FEAT-003 batch5)
+    adapter: str = "telegram"
+    ws_port: int = 8080
+
 
 def is_user_allowed(config: Config, user_id: int) -> bool:
     """Check if a user is allowed.  Empty allowlist = open mode (everyone)."""
@@ -491,6 +495,16 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
             os.getenv(
                 "VOICE_LEARN_AFTER_MESSAGES",
                 str(yaml_cfg.get("voice", {}).get("learn_after_messages", 10)),
+            )
+        ),
+        adapter=os.getenv(
+            "ADAPTER",
+            yaml_cfg.get("adapter", "telegram"),
+        ),
+        ws_port=int(
+            os.getenv(
+                "WS_PORT",
+                str(yaml_cfg.get("ws_port", 8080)),
             )
         ),
     )

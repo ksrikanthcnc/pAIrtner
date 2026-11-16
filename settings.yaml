@@ -152,3 +152,7 @@ context:
 voice:
   auto_learn: true
   learn_after_messages: 10
+
+# Adapter architecture — which transport to start by default.
+adapter: telegram
+ws_port: 8080

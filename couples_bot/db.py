@@ -265,6 +265,12 @@ CREATE TABLE IF NOT EXISTS fact_summaries (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fact_summaries_user_month
     ON fact_summaries(user_id, year_month);
+
+CREATE TABLE IF NOT EXISTS auth_tokens (
+    user_id     INTEGER PRIMARY KEY,
+    token       TEXT NOT NULL,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -1997,3 +2003,43 @@ async def get_timeline_summary(
         (couple_id,),
     )
     return {row["event_type"]: row["cnt"] for row in rows}
+
+
+# ---------------------------------------------------------------------------
+# Auth tokens (adapter authentication)
+# ---------------------------------------------------------------------------
+
+async def create_auth_token(
+    db_path: str, user_id: int, token: str
+) -> None:
+    """Store an authentication token for a user (upsert)."""
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "INSERT INTO auth_tokens (user_id, token) VALUES (?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET "
+            "token = excluded.token, created_at = CURRENT_TIMESTAMP",
+            (user_id, token),
+        )
+        await db.commit()
+
+
+async def get_auth_token(
+    db_path: str, user_id: int
+) -> str | None:
+    """Return the stored token for *user_id*, or ``None``."""
+    row = await _fetch_one(
+        db_path,
+        "SELECT token FROM auth_tokens WHERE user_id = ?",
+        (user_id,),
+    )
+    return row["token"] if row else None
+
+
+async def validate_auth_token(
+    db_path: str, user_id: int, token: str
+) -> bool:
+    """Check if a token matches the stored token for *user_id*."""
+    stored = await get_auth_token(db_path, user_id)
+    if stored is None:
+        return False
+    return stored == token
