@@ -34,8 +34,5 @@ def sanitize_input(text: str) -> tuple[str, list[str]]:
     # Collapse extra whitespace left by removals
     cleaned = re.sub(r"  +", " ", cleaned).strip()
 
-    # If nothing meaningful remains, return the original text unchanged
-    if not cleaned:
-        return text, stripped
-
+    # If nothing meaningful remains, return empty — caller decides response
     return cleaned, stripped

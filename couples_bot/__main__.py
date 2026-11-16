@@ -291,7 +291,7 @@ async def _post_init(app: Application) -> None:
             _send,
             checkin_day=_config.checkin_day,
             checkin_time=_config.checkin_time,
-            checkin_tz=_config.digest_timezone,
+            checkin_tz=_config.checkin_timezone,
             checkin_questions=_config.checkin_questions,
         ))
         logger.info("Check-in loop started")

@@ -61,6 +61,7 @@ checkin:
   enabled: true
   day: "sunday"
   time: "18:00"
+  timezone: "Asia/Kolkata"
   questions:
     - "What went well this week?"
     - "What could we do differently?"

@@ -297,6 +297,11 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
                 user_id, stripped,
             )
 
+        # If sanitization removed everything, return a canned response
+        if not clean and stripped:
+            lang = await self._get_lang(user_id)
+            return [BotResponse(t(lang, "error_generic"))]
+
         # Tagged messages bypass check-in — only plain text can be a check-in answer
         if not tags:
             # Check if user has an active check-in awaiting their answer
@@ -306,12 +311,10 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
                 checkin_responses.append(BotResponse(txt, target_user_id=uid))
 
             consumed = await process_checkin_answer(
-                self.db_path, self.llm, _checkin_send, user_id, text,
+                self.db_path, self.llm, _checkin_send, user_id, clean,
             )
             if consumed:
-                lang = await self._get_lang(user_id)
-                extra = [r for r in checkin_responses if r.target_user_id != user_id]
-                return [BotResponse(t(lang, "checkin_both_answered"))] + extra
+                return checkin_responses
 
         if "#keep" in tags:
             return await self._handle_keep(user_id, clean)

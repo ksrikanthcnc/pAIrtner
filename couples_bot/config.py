@@ -89,6 +89,7 @@ class Config:
     checkin_enabled: bool = True
     checkin_day: str = "sunday"
     checkin_time: str = "18:00"
+    checkin_timezone: str = "Asia/Kolkata"
     checkin_questions: list[str] = field(
         default_factory=lambda: [
             "What went well this week?",
@@ -254,6 +255,10 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         checkin_time=os.getenv(
             "CHECKIN_TIME",
             yaml_cfg.get("checkin", {}).get("time", "18:00"),
+        ),
+        checkin_timezone=os.getenv(
+            "CHECKIN_TIMEZONE",
+            yaml_cfg.get("checkin", {}).get("timezone", "Asia/Kolkata"),
         ),
         checkin_questions=yaml_cfg.get("checkin", {}).get("questions", [
             "What went well this week?",
