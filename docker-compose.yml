@@ -1,3 +1,17 @@
+# pAIrtner Couples Bot — Docker Compose
+#
+# Usage:
+#   cp .env.example .env   # fill in TELEGRAM_BOT_TOKEN + GEMINI_API_KEY
+#   docker compose up -d
+#   docker compose logs -f
+#
+# The SQLite database is persisted via volume mount.
+# Settings and persona are mounted read-only.
+# Backups are written to ./backups/ on the host.
+#
+# For WebSocket adapter, uncomment the ports and ADAPTER lines below.
+# For Ollama on the host, uncomment extra_hosts.
+
 services:
   pairtner:
     build: .
@@ -8,3 +22,11 @@ services:
       - ./persona.md:/app/persona.md:ro
       - ./backups:/app/backups
     restart: unless-stopped
+    # Uncomment for WebSocket adapter:
+    # ports:
+    #   - "8080:8080"
+    # environment:
+    #   - ADAPTER=both
+    # Uncomment for Ollama on the host (Linux):
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
