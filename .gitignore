@@ -3,7 +3,11 @@
 __pycache__/
 tmp-kiro/
 agents/
+.agents/
 .venv/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+backups/
+comms/
+.worktrees/
