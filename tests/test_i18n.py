@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from couples_bot.i18n import t
+from couples_bot.i18n import _STRINGS, t
 
 
 class TestI18n:
@@ -67,3 +67,20 @@ class TestI18n:
         result = t("te", "not_therapy")
         assert "Telegram" in result
         assert "Gemini" in result
+
+
+# ---------------------------------------------------------------------------
+# FEAT-005: en/te key parity
+# ---------------------------------------------------------------------------
+
+
+def test_en_te_key_parity():
+    """Every i18n key must exist in both 'en' and 'te' string tables."""
+    en_keys = set(_STRINGS["en"].keys())
+    te_keys = set(_STRINGS["te"].keys())
+
+    missing_in_te = en_keys - te_keys
+    missing_in_en = te_keys - en_keys
+
+    assert not missing_in_te, f"Keys in 'en' missing from 'te': {sorted(missing_in_te)}"
+    assert not missing_in_en, f"Keys in 'te' missing from 'en': {sorted(missing_in_en)}"

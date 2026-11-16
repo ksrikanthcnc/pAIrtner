@@ -1,0 +1,146 @@
+"""Tag handler methods — ``#keep``, ``#send``, ``#deep``, plain messages.
+
+These methods are mixed into :class:`~couples_bot.handlers.service.BotService`
+via the :class:`TagsMixin` base class.
+"""
+
+from __future__ import annotations
+
+import uuid
+
+from couples_bot import db as db_mod
+from couples_bot.i18n import t
+from couples_bot.prompts import (
+    build_chat_prompt,
+    build_keep_prompt,
+    build_tell_prompt,
+)
+
+from .models import BotResponse
+
+
+class TagsMixin:
+    """Mixin providing tag-based message handlers for BotService."""
+
+    async def _handle_keep(
+        self, user_id: int, text: str
+    ) -> list[BotResponse]:
+        """Process a ``#keep`` message — extract and save facts only."""
+        lang = await self._get_lang(user_id)
+        ctx = await self._build_ctx(user_id)
+        system, content = build_keep_prompt(ctx, text)
+
+        api_key = await self._get_couple_api_key(user_id)
+        await db_mod.log_message(self.db_path, user_id, "user", text)
+        result = await self.llm.generate(
+            content, system, api_key_override=api_key,
+        )
+        await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
+
+        count = await self._save_facts(user_id, result.get("new_facts", []))
+
+        reply = result["reply"]
+        if count:
+            reply += "\n\n" + t(lang, "fact_saved", count=count)
+        return [BotResponse(reply)]
+
+    async def _handle_send(
+        self, user_id: int, text: str, skip_cooldown: bool
+    ) -> list[BotResponse]:
+        """Process a ``#send`` message — draft a relay for the partner."""
+        lang = await self._get_lang(user_id)
+        user = await db_mod.get_user(self.db_path, user_id)
+        if not user or not user.get("partner_id"):
+            return [BotResponse(t(lang, "not_paired"))]
+
+        ctx = await self._build_ctx(user_id)
+        system, content = build_tell_prompt(ctx, text)
+
+        api_key = await self._get_couple_api_key(user_id)
+        await db_mod.log_message(self.db_path, user_id, "user", text)
+        result = await self.llm.generate(
+            content, system, api_key_override=api_key,
+        )
+        await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
+
+        await self._save_facts(user_id, result.get("new_facts", []))
+
+        draft = result.get("relay_draft") or result["reply"]
+        pending_id = await db_mod.create_pending(
+            self.db_path, user_id, user["partner_id"], draft
+        )
+
+        text_msg = t(lang, "tell_draft_header") + draft
+
+        # Inform sender if partner is paused
+        partner = await db_mod.get_user(self.db_path, user["partner_id"])
+        if partner and partner.get("paused"):
+            text_msg += "\n\n" + t(lang, "partner_paused_notice")
+
+        buttons = self._approval_buttons(pending_id, lang, skip_cooldown)
+        return [BotResponse(text_msg, buttons=buttons)]
+
+    async def _handle_deep(
+        self, user_id: int, text: str
+    ) -> list[BotResponse]:
+        """Process a ``#deep`` message — chat using the heavy model."""
+        lang = await self._get_lang(user_id)
+        ctx = await self._build_ctx(user_id)
+        system, content = build_chat_prompt(ctx, text)
+
+        model = self.config.model_heavy[0] if self.config.model_heavy else None
+        api_key = await self._get_couple_api_key(user_id)
+        await db_mod.log_message(self.db_path, user_id, "user", text)
+        result = await self.llm.generate(
+            content, system, model=model, api_key_override=api_key,
+        )
+        await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
+
+        if model and hasattr(self.llm, "check_usage_warning"):
+            warning = await self.llm.check_usage_warning(model)
+            if warning:
+                result["reply"] += "\n\n" + warning
+
+        count = await self._save_facts(user_id, result.get("new_facts", []))
+
+        replies: list[BotResponse] = [BotResponse(result["reply"])]
+        if count:
+            replies[0].text += "\n\n" + t(lang, "fact_saved", count=count)
+        return replies
+
+    async def _handle_plain(
+        self, user_id: int, text: str
+    ) -> list[BotResponse]:
+        """Process a plain message (no tag) — chat, then optionally offer relay."""
+        lang = await self._get_lang(user_id)
+        ctx = await self._build_ctx(user_id)
+        system, content = build_chat_prompt(ctx, text)
+
+        api_key = await self._get_couple_api_key(user_id)
+        await db_mod.log_message(self.db_path, user_id, "user", text)
+        result = await self.llm.generate(
+            content, system, api_key_override=api_key,
+        )
+        await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
+
+        count = await self._save_facts(user_id, result.get("new_facts", []))
+
+        reply_text = result["reply"]
+        if count:
+            reply_text += "\n\n" + t(lang, "fact_saved", count=count)
+
+        # If user is paired and LLM suggested a relay, offer save/relay choice
+        user = await db_mod.get_user(self.db_path, user_id)
+        if user and user.get("partner_id") and result.get("relay_draft"):
+            choice_id = uuid.uuid4().hex[:8]
+            self._relay_choices[choice_id] = {
+                "user_id": user_id,
+                "relay_draft": result["relay_draft"],
+            }
+            buttons = self._choice_buttons(choice_id, lang)
+            return [BotResponse(
+                reply_text + "\n\n" + t(lang, "ask_action"),
+                buttons=buttons,
+            )]
+
+        return [BotResponse(reply_text)]

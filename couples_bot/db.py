@@ -179,6 +179,7 @@ async def _execute(
 # ---------------------------------------------------------------------------
 
 async def get_user(db_path: str, tg_id: int) -> dict[str, Any] | None:
+    """Return the user row for *tg_id*, or ``None`` if not found."""
     return await _fetch_one(
         db_path, "SELECT * FROM users WHERE tg_id = ?", (tg_id,)
     )
@@ -187,6 +188,7 @@ async def get_user(db_path: str, tg_id: int) -> dict[str, Any] | None:
 async def create_user(
     db_path: str, tg_id: int, name: str | None = None, lang: str = "en"
 ) -> None:
+    """Insert a new user row, ignoring if one already exists."""
     await _execute(
         db_path,
         "INSERT OR IGNORE INTO users (tg_id, name, lang) VALUES (?, ?, ?)",
@@ -319,6 +321,7 @@ async def create_pending(
 
 
 async def get_pending(db_path: str, pending_id: int) -> dict[str, Any] | None:
+    """Return a pending relay row by ID, or ``None``."""
     return await _fetch_one(
         db_path, "SELECT * FROM pending WHERE id = ?", (pending_id,)
     )
@@ -330,6 +333,7 @@ async def update_pending_status(
     status: str,
     send_after: str | None = None,
 ) -> None:
+    """Transition a pending row to *status*, optionally setting *send_after*."""
     if send_after:
         await _execute(
             db_path,
@@ -347,6 +351,7 @@ async def update_pending_status(
 async def update_pending_edited_draft(
     db_path: str, pending_id: int, edited_draft: str
 ) -> None:
+    """Store the user-edited draft text on a pending row."""
     await _execute(
         db_path,
         "UPDATE pending SET edited_draft = ? WHERE id = ?",
@@ -365,6 +370,7 @@ async def get_deliverable(db_path: str) -> list[dict[str, Any]]:
 
 
 async def mark_as_sent(db_path: str, pending_id: int) -> None:
+    """Mark a pending row as sent and record the delivery timestamp."""
     now = _now_iso()
     await _execute(
         db_path,
@@ -380,6 +386,7 @@ async def mark_as_sent(db_path: str, pending_id: int) -> None:
 async def log_message(
     db_path: str, user_id: int, role: str, content: str
 ) -> int:
+    """Append a message to the conversation log and return its ID."""
     return await _execute(
         db_path,
         "INSERT INTO messages (user_id, role, content) VALUES (?, ?, ?)",
@@ -390,6 +397,7 @@ async def log_message(
 async def get_recent_messages(
     db_path: str, user_id: int, limit: int = 10
 ) -> list[dict[str, Any]]:
+    """Return the last *limit* messages for a user (most recent first)."""
     return await _fetch_all(
         db_path,
         "SELECT role, content FROM messages WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
@@ -402,6 +410,7 @@ async def get_recent_messages(
 # ---------------------------------------------------------------------------
 
 async def increment_usage(db_path: str, model: str) -> None:
+    """Increment today's usage counter for *model*."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
@@ -413,6 +422,7 @@ async def increment_usage(db_path: str, model: str) -> None:
 
 
 async def get_usage_count(db_path: str, model: str) -> int:
+    """Return today's usage count for a specific *model*."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     row = await _fetch_one(
         db_path,

@@ -220,7 +220,13 @@ class OpenAICompatClient:
         user_content: str,
         system_prompt: str,
         model: str | None = None,
+        api_key_override: str | None = None,
     ) -> LLMResponse:
+        """Generate a response using an OpenAI-compatible API.
+
+        *api_key_override* is accepted for Protocol compliance but unused;
+        OpenAI-compatible clients use the key configured at construction.
+        """
         model = model or self._default_model
         models_to_try = self._build_model_list(model)
 
