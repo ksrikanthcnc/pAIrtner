@@ -193,8 +193,24 @@ async def _generate_summary(
     shared_facts = await db_mod.get_shared_facts_for_pair(db_path, user_a, user_b)
     shared_texts = [f["text"] for f in shared_facts]
 
+    # Build goals section for the check-in (FEAT-004)
+    couple_id = db_mod.make_couple_id(user_a, user_b)
+    goals_parts: list[str] = []
+    for uid in (user_a, user_b):
+        personal = await db_mod.get_active_goals(db_path, uid)
+        if personal:
+            items = "\n".join(f"- {g['text']}" for g in personal)
+            goals_parts.append(f"### Personal\n{items}")
+    shared_goals = await db_mod.get_shared_goals(db_path, couple_id)
+    if shared_goals:
+        items = "\n".join(f"- {g['text']}" for g in shared_goals)
+        goals_parts.append(f"### Shared\n{items}")
+    goals_text = (
+        "## Active Goals\n" + "\n".join(goals_parts) + "\n"
+    ) if goals_parts else None
+
     system_prompt, user_content = build_checkin_summary_prompt(
-        a_answers, b_answers, shared_texts,
+        a_answers, b_answers, shared_texts, goals=goals_text,
     )
     response = await llm.generate(user_content, system_prompt)
     summary = response.get("reply", "")

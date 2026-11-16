@@ -234,6 +234,45 @@ async def _cmd_mood(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _send_response(ctx.bot, update.effective_chat.id, r)
 
 
+async def _cmd_goal(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    text = " ".join(ctx.args) if ctx.args else None
+    responses = await _service.handle_goal(user.id, text)
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
+async def _cmd_together(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    text = " ".join(ctx.args) if ctx.args else None
+    responses = await _service.handle_together(user.id, text)
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
+async def _cmd_goals(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    responses = await _service.handle_goals(user.id)
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
+async def _cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    arg = " ".join(ctx.args) if ctx.args else None
+    responses = await _service.handle_settings(user.id, arg)
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
 async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not is_user_allowed(_config, user.id):
@@ -368,6 +407,10 @@ def main() -> None:
     app.add_handler(CommandHandler("resume", _cmd_resume))
     app.add_handler(CommandHandler("style", _cmd_style))
     app.add_handler(CommandHandler("mood", _cmd_mood))
+    app.add_handler(CommandHandler("goal", _cmd_goal))
+    app.add_handler(CommandHandler("together", _cmd_together))
+    app.add_handler(CommandHandler("goals", _cmd_goals))
+    app.add_handler(CommandHandler("settings", _cmd_settings))
     app.add_handler(CommandHandler("help", _cmd_help))
     app.add_handler(CallbackQueryHandler(_on_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))

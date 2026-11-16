@@ -54,6 +54,7 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
         self._forget_confirm: set[int] = set()
         self._batch_item_edit_state: dict[int, int] = {}
         self._pending_contradictions: list[BotResponse] = []
+        self._profile_edit_state: dict[int, str] = {}
 
         # No instance-level check-in state needed; handle_message uses
         # a local list + closure to avoid concurrency issues.
@@ -66,23 +67,40 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
         return (user or {}).get("lang") or "en"
 
     async def _get_couple_api_key(self, user_id: int) -> str | None:
-        """Resolve the BYO Gemini key for this user's couple, or ``None``."""
+        """Resolve the BYO Gemini key with three-tier lookup.
+
+        Priority: 1) User's own key  2) Couple key  3) Global key (None → caller uses config).
+        """
         user = await db_mod.get_user(self.db_path, user_id)
         if not user or not user.get("partner_id"):
             return None
         couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
-        encrypted = await db_mod.get_couple_config(
-            self.db_path, couple_id, "gemini_key"
-        )
-        if not encrypted:
-            return None
         encryption_key = os.environ.get("DB_ENCRYPTION_KEY", "")
         if not encryption_key:
             return None
-        try:
-            return decrypt_value(encrypted, encryption_key)
-        except Exception:
-            return None
+
+        # Tier 1: user's own key
+        encrypted = await db_mod.get_couple_config(
+            self.db_path, couple_id, f"gemini_key:{user_id}"
+        )
+        if encrypted:
+            try:
+                return decrypt_value(encrypted, encryption_key)
+            except Exception:
+                pass
+
+        # Tier 2: couple key
+        encrypted = await db_mod.get_couple_config(
+            self.db_path, couple_id, "gemini_key"
+        )
+        if encrypted:
+            try:
+                return decrypt_value(encrypted, encryption_key)
+            except Exception:
+                pass
+
+        # Tier 3: global key (None → caller uses config.gemini_api_key)
+        return None
 
     async def _build_ctx(self, user_id: int) -> UserContext:
         """Build the prompt context for a user."""
@@ -375,6 +393,10 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
         # Clear any stale forget-confirm state on new message
         self._forget_confirm.discard(user_id)
 
+        # Check if user is in profile-edit state (settings)
+        if user_id in self._profile_edit_state:
+            return await self._handle_profile_edit_input(user_id, text)
+
         # Check if user is in batch-item edit state
         if user_id in self._batch_item_edit_state:
             return await self._handle_batch_item_edit_input(user_id, text)
@@ -518,5 +540,39 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
             return await self._cb_fact_keep_both(user_id, callback_data, lang)
         if callback_data.startswith("fc_old:"):
             return await self._cb_fact_keep_old(user_id, callback_data, lang)
+
+        # Goal callbacks
+        if callback_data.startswith("ga:"):
+            return await self._cb_goal_achieved(user_id, callback_data, lang)
+        if callback_data.startswith("gd:"):
+            return await self._cb_goal_dropped(user_id, callback_data, lang)
+        if callback_data.startswith("sg_a:"):
+            return await self._cb_shared_goal_achieved(user_id, callback_data, lang)
+        if callback_data.startswith("sg_d:"):
+            return await self._cb_shared_goal_dropped(user_id, callback_data, lang)
+
+        # Settings callbacks
+        if callback_data == "stv":
+            return await self._cb_settings_voice(user_id, callback_data, lang)
+        if callback_data == "std":
+            return await self._cb_settings_dampening(user_id, callback_data, lang)
+        if callback_data == "stg":
+            return await self._cb_settings_goals(user_id, callback_data, lang)
+        if callback_data == "stp":
+            return await self._cb_settings_profile(user_id, callback_data, lang)
+        if callback_data == "stm":
+            return await self._cb_settings_mood(user_id, callback_data, lang)
+        if callback_data == "sd_up":
+            return await self._cb_dampening_up(user_id, callback_data, lang)
+        if callback_data == "sd_down":
+            return await self._cb_dampening_down(user_id, callback_data, lang)
+        if callback_data == "sd_noop":
+            return []
+        if callback_data.startswith("sp:"):
+            return await self._cb_profile_edit(user_id, callback_data, lang)
+        if callback_data.startswith("sm:"):
+            return await self._cb_mood_set(user_id, callback_data, lang)
+        if callback_data == "sm_clear":
+            return await self._cb_mood_clear(user_id, callback_data, lang)
 
         return [BotResponse(t(lang, "error_generic"))]

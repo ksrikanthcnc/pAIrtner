@@ -15,6 +15,7 @@ from couples_bot.profile_updater import process_llm_extras
 from couples_bot.prompts import (
     build_blunt_prompt,
     build_chat_prompt,
+    build_goals_section,
     build_keep_prompt,
     build_partner_summary_block,
     build_system_prompt,
@@ -56,6 +57,21 @@ class TagsMixin:
             return None
         return build_partner_summary_block(perceptions)
 
+    async def _get_goals_text(self, user_id: int) -> str | None:
+        """Build the goals section for system prompts."""
+        personal = await db_mod.get_active_goals(self.db_path, user_id)
+        personal_texts = [g["text"] for g in personal]
+
+        shared_texts: list[str] = []
+        user = await db_mod.get_user(self.db_path, user_id)
+        if user and user.get("partner_id"):
+            couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
+            shared = await db_mod.get_shared_goals(self.db_path, couple_id)
+            shared_texts = [g["text"] for g in shared]
+
+        section = build_goals_section(personal_texts, shared_texts)
+        return section or None
+
     async def _handle_keep(
         self, user_id: int, text: str
     ) -> list[BotResponse]:
@@ -96,10 +112,12 @@ class TagsMixin:
         ctx = await self._build_ctx(user_id)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
         partner_summary = await self._get_partner_summary(user_id)
+        goals_text = await self._get_goals_text(user_id)
         system, content = build_tell_prompt(
             ctx, text, voice_text=voice_text,
             dampening_instruction=damp_instr,
             partner_summary=partner_summary,
+            goals_text=goals_text,
         )
 
         api_key = await self._get_couple_api_key(user_id)
@@ -144,10 +162,12 @@ class TagsMixin:
         ctx = await self._build_ctx(user_id)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
         partner_summary = await self._get_partner_summary(user_id)
+        goals_text = await self._get_goals_text(user_id)
         system, content = build_chat_prompt(
             ctx, text, voice_text=voice_text,
             dampening_instruction=damp_instr,
             partner_summary=partner_summary,
+            goals_text=goals_text,
         )
 
         model = self.config.model_heavy[0] if self.config.model_heavy else None
@@ -210,10 +230,12 @@ class TagsMixin:
         ctx = await self._build_ctx(user_id)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
         partner_summary = await self._get_partner_summary(user_id)
+        goals_text = await self._get_goals_text(user_id)
         system, content = build_chat_prompt(
             ctx, text, voice_text=voice_text,
             dampening_instruction=damp_instr,
             partner_summary=partner_summary,
+            goals_text=goals_text,
         )
 
         api_key = await self._get_couple_api_key(user_id)

@@ -95,28 +95,37 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # Help
         "help": (
-            "📖 <b>pAIrtner Commands:</b>\n"
+            "📖 <b>pAIrtner Commands:</b>\n\n"
+            "<b>Basic</b>\n"
             "/start — Get a pairing code\n"
             "/join &lt;code&gt; — Pair with your partner\n"
+            "/help — Show this message\n"
+            "/lang &lt;en|te&gt; — Switch language\n"
+            "/status — Check your relationship dashboard\n\n"
+            "<b>Communication</b>\n"
             "/tell &lt;message&gt; — Draft a gentle message for your partner\n"
             "/mediate — Get a neutral perspective on shared issues\n"
+            "/pause — Pause relay delivery\n"
+            "/resume — Resume relay delivery\n"
+            "/history — View recent sent and received messages\n\n"
+            "<b>Memory</b>\n"
             "/whatdoyouknow — See what I remember about you\n"
             "/forget &lt;id|all&gt; — Delete your facts\n"
             "/export — Download your facts as a file\n"
-            "/history — View recent sent and received messages\n"
+            "/goal &lt;text&gt; — Set a personal goal\n"
+            "/together &lt;text&gt; — Set a shared goal with your partner\n"
+            "/goals — View your active goals\n\n"
+            "<b>Personalization</b>\n"
+            "/settings — Open settings menu\n"
             "/style — Change your voice and intensity\n"
             "/mood &lt;mood&gt; — Set your mood (stressed|happy|angry|reflective)\n"
-            "/setup — Configure your couple's Gemini API key\n"
-            "/status — Check your relationship dashboard\n"
-            "/pause — Pause relay delivery\n"
-            "/resume — Resume relay delivery\n"
-            "/lang &lt;en|te&gt; — Switch language\n"
-            "/skip — Skip onboarding questions\n"
-            "/help — Show this message\n\n"
+            "/setup — Configure Gemini API keys\n"
+            "/skip — Skip onboarding questions\n\n"
             "<b>Tags (in regular messages):</b>\n"
             "#keep — Save only, no relay\n"
             "#send — Draft a relay for your partner\n"
             "#deep — Use a more thoughtful model\n"
+            "#blunt — Get direct, honest feedback\n"
             "#now — Skip cooldown on an approved relay\n\n"
             "Just send a plain message to chat with me!"
         ),
@@ -181,7 +190,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
 
         # Setup (multi-tenant BYO key)
-        "setup_usage": "Usage: /setup gemini_key &lt;your-key&gt; or /setup gemini_key clear",
+        "setup_usage": "Usage: /setup [my-key|our-key] &lt;your-key|clear&gt;",
         "setup_key_stored": "🔑 Gemini API key stored: {api_key}",
         "setup_key_cleared": "🔑 Gemini API key removed. The global key will be used.",
         "setup_key_not_set": "🔑 No custom Gemini API key set. Using the global key.",
@@ -293,6 +302,51 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_keep_both": "🔄 Keep Both",
         "btn_keep_old": "⏮️ Keep Old",
         "fact_contradiction_resolved": "✅ Got it, updated!",
+
+        # Goals (FEAT-004)
+        "goal_created": "🎯 Personal goal set: {text}",
+        "goal_shared_created": "🎯 Shared goal set: {text}",
+        "goal_shared_notify": "🎯 {partner_name} set a shared goal: {text}",
+        "goals_header": "🎯 <b>Your Goals</b>\n\n",
+        "goals_personal": "<b>Personal:</b>\n",
+        "goals_shared": "<b>Shared:</b>\n",
+        "goals_empty": "No active goals. Use /goal to set one!",
+        "goal_achieved": "✅ Goal marked as achieved!",
+        "goal_dropped": "❌ Goal dropped.",
+        "goal_usage": "Usage: /goal <your goal>",
+        "together_usage": "Usage: /together <shared goal>",
+        "together_no_partner": "You need to pair with a partner first. Use /start.",
+
+        # Settings (FEAT-004)
+        "settings_header": "⚙️ <b>Settings</b>\n\nChoose a category:",
+        "settings_voice": "🗣 Voice",
+        "settings_dampening": "🎚 Dampening",
+        "settings_goals": "🎯 Goals",
+        "settings_profile": "👤 Profile",
+        "settings_mood": "🎭 Mood Presets",
+        "settings_dampening_current": "🎚 Current dampening base: <b>{level:.1f}</b>",
+        "settings_dampening_updated": "🎚 Dampening updated to <b>{level:.1f}</b>.",
+        "settings_profile_current": (
+            "👤 <b>Your Profile</b>\n"
+            "Type: {relationship_type}\n"
+            "Duration: {duration_years} years\n"
+            "Kids: {has_kids}\n"
+            "Age range: {age_range}\n\n"
+            "Tap a field to edit:"
+        ),
+        "settings_profile_updated": "✅ Profile updated: {field} = {value}",
+
+        # Setup keys (FEAT-004)
+        "setup_my_key_stored": "🔑 Your personal Gemini key stored: {api_key}",
+        "setup_my_key_cleared": "🔑 Your personal Gemini key removed.",
+        "setup_our_key_stored": "🔑 Couple Gemini key stored: {api_key}",
+        "setup_our_key_cleared": "🔑 Couple Gemini key removed.",
+        "setup_tier_info": (
+            "🔑 <b>API Key Status</b>\n"
+            "Your key: {user_key}\n"
+            "Couple key: {couple_key}\n"
+            "Active tier: <b>{active_tier}</b>"
+        ),
     },
 
     "te": {
@@ -368,24 +422,32 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # Help
         "help": (
-            "📖 <b>pAIrtner ఆదేశాలు:</b>\n"
+            "📖 <b>pAIrtner ఆదేశాలు:</b>\n\n"
+            "<b>ప్రాథమిక</b>\n"
             "/start — జత కోడ్ పొందండి\n"
             "/join — భాగస్వామితో జత చేయండి\n"
+            "/help — ఈ సందేశం చూపించండి\n"
+            "/lang — భాష మార్చండి\n"
+            "/status — మీ స్థితి చూడండి\n\n"
+            "<b>కమ్యూనికేషన్</b>\n"
             "/tell — భాగస్వామికి మృదువుగా సందేశం పంపండి\n"
             "/mediate — తటస్థ దృక్పథం పొందండి\n"
+            "/pause — డెలివరీ ఆపు\n"
+            "/resume — డెలివరీ కొనసాగించు\n"
+            "/history — ఇటీవల పంపిన/అందుకున్న సందేశాలు\n\n"
+            "<b>జ్ఞాపకం</b>\n"
             "/whatdoyouknow — నేను ఏమి గుర్తుంచుకుంటున్నాను\n"
             "/forget — మీ విషయాలు తొలగించండి\n"
             "/export — మీ విషయాలు డౌన్‌లోడ్ చేయండి\n"
-            "/history — ఇటీవల పంపిన/అందుకున్న సందేశాలు\n"
+            "/goal — వ్యక్తిగత లక్ష్యం సెట్ చేయండి\n"
+            "/together — భాగస్వామ్య లక్ష్యం సెట్ చేయండి\n"
+            "/goals — మీ లక్ష్యాలు చూడండి\n\n"
+            "<b>వ్యక్తిగతీకరణ</b>\n"
+            "/settings — సెట్టింగ్స్ మెనూ\n"
             "/style — మీ వాయిస్ మరియు ఇంటెన్సిటీ మార్చండి\n"
             "/mood — మీ మూడ్ సెట్ చేయండి\n"
-            "/setup — మీ Gemini API కీ సెట్ చేయండి\n"
-            "/status — మీ స్థితి చూడండి\n"
-            "/pause — డెలివరీ ఆపు\n"
-            "/resume — డెలివరీ కొనసాగించు\n"
-            "/lang — భాష మార్చండి\n"
-            "/skip — ఆన్‌బోర్డింగ్ ప్రశ్నలు దాటండి\n"
-            "/help — ఈ సందేశం చూపించండి"
+            "/setup — Gemini API కీలు సెట్ చేయండి\n"
+            "/skip — ఆన్‌బోర్డింగ్ ప్రశ్నలు దాటండి"
         ),
 
         # Language
@@ -445,7 +507,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
 
         # Setup (multi-tenant BYO key)
-        "setup_usage": "వాడకం: /setup gemini_key <మీ-కీ> లేదా /setup gemini_key clear",
+        "setup_usage": "వాడకం: /setup [my-key|our-key] <మీ-కీ|clear>",
         "setup_key_stored": "🔑 Gemini API కీ సేవ్ అయింది: {api_key}",
         "setup_key_cleared": "🔑 Gemini API కీ తొలగించబడింది. గ్లోబల్ కీ వాడబడుతుంది.",
         "setup_key_not_set": "🔑 కస్టమ్ Gemini API కీ సెట్ చేయబడలేదు. గ్లోబల్ కీ వాడబడుతుంది.",
@@ -557,6 +619,51 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_keep_both": "🔄 రెండూ ఉంచు",
         "btn_keep_old": "⏮️ పాతది ఉంచు",
         "fact_contradiction_resolved": "✅ అర్థమైంది, అప్‌డేట్ అయింది!",
+
+        # Goals (FEAT-004)
+        "goal_created": "🎯 వ్యక్తిగత లక్ష్యం సెట్ అయింది: {text}",
+        "goal_shared_created": "🎯 భాగస్వామ్య లక్ష్యం సెట్ అయింది: {text}",
+        "goal_shared_notify": "🎯 {partner_name} భాగస్వామ్య లక్ష్యం సెట్ చేశారు: {text}",
+        "goals_header": "🎯 <b>మీ లక్ష్యాలు</b>\n\n",
+        "goals_personal": "<b>వ్యక్తిగత:</b>\n",
+        "goals_shared": "<b>భాగస్వామ్య:</b>\n",
+        "goals_empty": "యాక్టివ్ లక్ష్యాలు లేవు. /goal వాడి సెట్ చేయండి!",
+        "goal_achieved": "✅ లక్ష్యం సాధించబడింది!",
+        "goal_dropped": "❌ లక్ష్యం తొలగించబడింది.",
+        "goal_usage": "వాడకం: /goal <మీ లక్ష్యం>",
+        "together_usage": "వాడకం: /together <భాగస్వామ్య లక్ష్యం>",
+        "together_no_partner": "ముందు భాగస్వామితో జత చేయండి. /start వాడండి.",
+
+        # Settings (FEAT-004)
+        "settings_header": "⚙️ <b>సెట్టింగ్స్</b>\n\nవర్గం ఎంచుకోండి:",
+        "settings_voice": "🗣 వాయిస్",
+        "settings_dampening": "🎚 డాంపెనింగ్",
+        "settings_goals": "🎯 లక్ష్యాలు",
+        "settings_profile": "👤 ప్రొఫైల్",
+        "settings_mood": "🎭 మూడ్ ప్రీసెట్స్",
+        "settings_dampening_current": "🎚 ప్రస్తుత డాంపెనింగ్ బేస్: <b>{level:.1f}</b>",
+        "settings_dampening_updated": "🎚 డాంపెనింగ్ <b>{level:.1f}</b> కి అప్‌డేట్ అయింది.",
+        "settings_profile_current": (
+            "👤 <b>మీ ప్రొఫైల్</b>\n"
+            "రకం: {relationship_type}\n"
+            "వ్యవధి: {duration_years} సంవత్సరాలు\n"
+            "పిల్లలు: {has_kids}\n"
+            "వయస్సు: {age_range}\n\n"
+            "ఎడిట్ చేయడానికి ఫీల్డ్ నొక్కండి:"
+        ),
+        "settings_profile_updated": "✅ ప్రొఫైల్ అప్‌డేట్: {field} = {value}",
+
+        # Setup keys (FEAT-004)
+        "setup_my_key_stored": "🔑 మీ వ్యక్తిగత Gemini కీ సేవ్ అయింది: {api_key}",
+        "setup_my_key_cleared": "🔑 మీ వ్యక్తిగత Gemini కీ తొలగించబడింది.",
+        "setup_our_key_stored": "🔑 కపుల్ Gemini కీ సేవ్ అయింది: {api_key}",
+        "setup_our_key_cleared": "🔑 కపుల్ Gemini కీ తొలగించబడింది.",
+        "setup_tier_info": (
+            "🔑 <b>API కీ స్థితి</b>\n"
+            "మీ కీ: {user_key}\n"
+            "కపుల్ కీ: {couple_key}\n"
+            "యాక్టివ్ టైర్: <b>{active_tier}</b>"
+        ),
     },
 }
 

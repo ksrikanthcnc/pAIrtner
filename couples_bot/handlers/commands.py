@@ -345,7 +345,7 @@ class CommandsMixin:
     async def handle_setup(
         self, user_id: int, arg: str | None
     ) -> list[BotResponse]:
-        """Configure the couple's BYO Gemini API key."""
+        """Configure Gemini API keys with three-tier lookup."""
         if not is_user_allowed(self.config, user_id):
             return []
 
@@ -356,56 +356,90 @@ class CommandsMixin:
             return [BotResponse(t(lang, "setup_not_paired"))]
 
         couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
+        encryption_key = os.environ.get("DB_ENCRYPTION_KEY", "")
 
-        # No arg → show current config
+        # No arg → show current tier info
         if not arg or not arg.strip():
-            stored = await db_mod.get_couple_config(
+            user_key_enc = await db_mod.get_couple_config(
+                self.db_path, couple_id, f"gemini_key:{user_id}"
+            )
+            couple_key_enc = await db_mod.get_couple_config(
                 self.db_path, couple_id, "gemini_key"
             )
-            if stored:
-                encryption_key = os.environ.get("DB_ENCRYPTION_KEY", "")
+
+            def _mask(enc: str | None) -> str:
+                if not enc:
+                    return "not set"
                 if not encryption_key:
-                    return [BotResponse(t(lang, "setup_no_encryption_key"))]
+                    return "****"
                 try:
-                    plaintext = decrypt_value(stored, encryption_key)
-                    masked = mask_key(plaintext)
+                    return mask_key(decrypt_value(enc, encryption_key))
                 except Exception:
-                    masked = "****"
-                return [BotResponse(
-                    t(lang, "setup_show_config", api_key=masked)
-                )]
-            return [BotResponse(t(lang, "setup_key_not_set"))]
+                    return "****"
+
+            user_key_display = _mask(user_key_enc)
+            couple_key_display = _mask(couple_key_enc)
+
+            if user_key_enc:
+                active_tier = "your personal key"
+            elif couple_key_enc:
+                active_tier = "couple key"
+            else:
+                active_tier = "global key"
+
+            return [BotResponse(t(
+                lang, "setup_tier_info",
+                user_key=user_key_display,
+                couple_key=couple_key_display,
+                active_tier=active_tier,
+            ))]
 
         parts = arg.strip().split(None, 1)
         sub_cmd = parts[0].lower()
 
-        if sub_cmd != "gemini_key":
+        # Backward compat: /setup gemini_key <key> → maps to our-key
+        if sub_cmd == "gemini_key":
+            sub_cmd = "our-key"
+            if len(parts) > 1:
+                parts = ["our-key", parts[1]]
+            else:
+                parts = ["our-key"]
+
+        if sub_cmd not in ("my-key", "our-key"):
             return [BotResponse(t(lang, "setup_usage"))]
 
-        # /setup gemini_key clear
+        if not encryption_key:
+            return [BotResponse(t(lang, "setup_no_encryption_key"))]
+
+        config_key = (
+            f"gemini_key:{user_id}" if sub_cmd == "my-key"
+            else "gemini_key"
+        )
+        is_personal = sub_cmd == "my-key"
+
+        # Clear operation
         if len(parts) == 2 and parts[1].strip().lower() == "clear":
             deleted = await db_mod.delete_couple_config(
-                self.db_path, couple_id, "gemini_key"
+                self.db_path, couple_id, config_key
             )
             if deleted:
-                return [BotResponse(t(lang, "setup_key_cleared"))]
-            return [BotResponse(t(lang, "setup_key_not_set"))]
+                key_str = "setup_my_key_cleared" if is_personal else "setup_our_key_cleared"
+                return [BotResponse(t(lang, key_str))]
+            key_str = "setup_key_not_set"
+            return [BotResponse(t(lang, key_str))]
 
-        # /setup gemini_key <key>
+        # Store key
         if len(parts) < 2 or not parts[1].strip():
             return [BotResponse(t(lang, "setup_usage"))]
 
         api_key = parts[1].strip()
-        encryption_key = os.environ.get("DB_ENCRYPTION_KEY", "")
-        if not encryption_key:
-            return [BotResponse(t(lang, "setup_no_encryption_key"))]
-
         encrypted = encrypt_value(api_key, encryption_key)
         await db_mod.set_couple_config(
-            self.db_path, couple_id, "gemini_key", encrypted
+            self.db_path, couple_id, config_key, encrypted
         )
         masked = mask_key(api_key)
-        return [BotResponse(t(lang, "setup_key_stored", api_key=masked))]
+        key_str = "setup_my_key_stored" if is_personal else "setup_our_key_stored"
+        return [BotResponse(t(lang, key_str, api_key=masked))]
 
     # ── /forget ──────────────────────────────────────────────────────────
 
@@ -557,3 +591,126 @@ class CommandsMixin:
         )
 
         return [BotResponse(t(lang, "mood_set", mood=mood, hours=hours))]
+
+    # ── /goal ────────────────────────────────────────────────────────────
+
+    async def handle_goal(
+        self, user_id: int, text: str | None
+    ) -> list[BotResponse]:
+        """Create a personal goal."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+
+        if not text or not text.strip():
+            return [BotResponse(t(lang, "goal_usage"))]
+
+        text = text.strip()
+        await db_mod.add_user_goal(self.db_path, user_id, text)
+        return [BotResponse(t(lang, "goal_created", text=text))]
+
+    # ── /together ────────────────────────────────────────────────────────
+
+    async def handle_together(
+        self, user_id: int, text: str | None
+    ) -> list[BotResponse]:
+        """Create a shared goal (both partners see it)."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+        user = await db_mod.get_user(self.db_path, user_id)
+        if not user or not user.get("partner_id"):
+            return [BotResponse(t(lang, "together_no_partner"))]
+
+        if not text or not text.strip():
+            return [BotResponse(t(lang, "together_usage"))]
+
+        text = text.strip()
+        partner_id = user["partner_id"]
+        couple_id = db_mod.make_couple_id(user_id, partner_id)
+        await db_mod.add_shared_goal(self.db_path, couple_id, user_id, text)
+
+        # Notify partner
+        user_name = user.get("name") or "Your partner"
+        partner = await db_mod.get_user(self.db_path, partner_id)
+        plang = (partner or {}).get("lang") or "en"
+
+        return [
+            BotResponse(t(lang, "goal_shared_created", text=text)),
+            BotResponse(
+                t(plang, "goal_shared_notify", partner_name=user_name, text=text),
+                target_user_id=partner_id,
+            ),
+        ]
+
+    # ── /goals ───────────────────────────────────────────────────────────
+
+    async def handle_goals(self, user_id: int) -> list[BotResponse]:
+        """Show all active goals with achieve/drop inline buttons."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+        user = await db_mod.get_user(self.db_path, user_id)
+
+        personal = await db_mod.get_active_goals(self.db_path, user_id)
+
+        shared: list[dict] = []
+        if user and user.get("partner_id"):
+            couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
+            shared = await db_mod.get_shared_goals(self.db_path, couple_id)
+
+        if not personal and not shared:
+            return [BotResponse(t(lang, "goals_empty"))]
+
+        parts = [t(lang, "goals_header")]
+        buttons: list[list[InlineButton]] = []
+
+        if personal:
+            parts.append(t(lang, "goals_personal"))
+            for g in personal:
+                parts.append(f"  🎯 {g['text']}\n")
+                buttons.append([
+                    InlineButton("✅ Achieved", f"ga:{g['id']}"),
+                    InlineButton("❌ Drop", f"gd:{g['id']}"),
+                ])
+
+        if shared:
+            parts.append(t(lang, "goals_shared"))
+            for g in shared:
+                parts.append(f"  🎯 {g['text']}\n")
+                buttons.append([
+                    InlineButton("✅ Achieved", f"sg_a:{g['id']}"),
+                    InlineButton("❌ Drop", f"sg_d:{g['id']}"),
+                ])
+
+        return [BotResponse("".join(parts), buttons=buttons if buttons else None)]
+
+    # ── /settings ────────────────────────────────────────────────────────
+
+    async def handle_settings(
+        self, user_id: int, arg: str | None = None
+    ) -> list[BotResponse]:
+        """Show an interactive settings menu with inline buttons."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+
+        buttons = [
+            [
+                InlineButton(t(lang, "settings_voice"), "stv"),
+                InlineButton(t(lang, "settings_dampening"), "std"),
+            ],
+            [
+                InlineButton(t(lang, "settings_goals"), "stg"),
+                InlineButton(t(lang, "settings_profile"), "stp"),
+            ],
+            [
+                InlineButton(t(lang, "settings_mood"), "stm"),
+            ],
+        ]
+
+        return [BotResponse(t(lang, "settings_header"), buttons=buttons)]

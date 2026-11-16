@@ -165,6 +165,34 @@ _TONE = (
 
 
 # ---------------------------------------------------------------------------
+# Goals section (FEAT-004)
+# ---------------------------------------------------------------------------
+
+def build_goals_section(
+    personal_goals: list[str],
+    shared_goals: list[str],
+) -> str:
+    """Format goals into a prompt section for the system prompt.
+
+    Returns an empty string when no goals exist.
+    """
+    if not personal_goals and not shared_goals:
+        return ""
+    parts = ["\n## Your Goals"]
+    if personal_goals:
+        items = "\n".join(f"- {g}" for g in personal_goals)
+        parts.append(f"Personal:\n{items}")
+    if shared_goals:
+        items = "\n".join(f"- {g}" for g in shared_goals)
+        parts.append(f"Shared:\n{items}")
+    parts.append(
+        "If the conversation touches on any of these goals, "
+        "mention the progress or connection."
+    )
+    return "\n".join(parts) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # Partner summary (FEAT-003)
 # ---------------------------------------------------------------------------
 
@@ -243,6 +271,7 @@ def build_chat_prompt(
     voice_text: str | None = None,
     dampening_instruction: str | None = None,
     partner_summary: str | None = None,
+    goals_text: str | None = None,
 ) -> tuple[str, str]:
     """Build prompt for a regular chat message.
 
@@ -251,6 +280,8 @@ def build_chat_prompt(
     system = build_system_prompt(
         voice_text=voice_text, dampening_instruction=dampening_instruction,
     )
+    if goals_text:
+        system += "\n" + goals_text
 
     parts: list[str] = []
     parts.append(_format_facts("Your private notes", ctx.private_facts))
@@ -269,6 +300,7 @@ def build_tell_prompt(
     voice_text: str | None = None,
     dampening_instruction: str | None = None,
     partner_summary: str | None = None,
+    goals_text: str | None = None,
 ) -> tuple[str, str]:
     """Build prompt for /tell or #send — relay drafting.
 
@@ -283,6 +315,9 @@ def build_tell_prompt(
         if voice_text:
             style_parts.append(voice_text)
         style_section = "\n\n## Communication Style\n" + "\n".join(style_parts)
+    goals_section = ""
+    if goals_text:
+        goals_section = "\n" + goals_text
     system = (
         f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
         "The user wants to send a message to their partner. "
@@ -292,6 +327,7 @@ def build_tell_prompt(
         "IMPORTANT: relay_draft is REQUIRED for this request — "
         "always provide a softened version of the message."
         f"{style_section}"
+        f"{goals_section}"
     )
 
     parts: list[str] = []
@@ -402,6 +438,7 @@ def build_checkin_summary_prompt(
     partner_a_answers: str,
     partner_b_answers: str,
     shared_facts: list[str],
+    goals: str | None = None,
 ) -> tuple[str, str]:
     """Build prompt for the weekly check-in summary — blame-free.
 
@@ -422,6 +459,8 @@ def build_checkin_summary_prompt(
     if shared_facts:
         items = "\n".join(f"- {f}" for f in shared_facts)
         parts.append(f"## Shared context\n{items}\n")
+    if goals:
+        parts.append(goals)
     parts.append(
         "\nPlease provide a warm, blame-free summary focusing on common "
         "themes and growth opportunities."

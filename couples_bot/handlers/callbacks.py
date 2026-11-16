@@ -23,6 +23,14 @@ _VOICE_LABELS: dict[str, str] = {
     "formal_en": "Formal English",
 }
 
+# Profile field name → i18n question key mapping
+_PROFILE_FIELDS: dict[str, str] = {
+    "relationship_type": "onboard_q_relationship_type",
+    "duration_years": "onboard_q_duration",
+    "has_kids": "onboard_q_kids",
+    "age_range": "onboard_q_age_range",
+}
+
 
 class CallbacksMixin:
     """Mixin providing callback-query handlers for BotService."""
@@ -428,3 +436,195 @@ class CallbacksMixin:
         new_id, old_id = int(parts[1]), int(parts[2])
         await db_mod.archive_fact(self.db_path, new_id)
         return [BotResponse(t(lang, "fact_contradiction_resolved"))]
+
+    # ── goal callbacks ───────────────────────────────────────────────────
+
+    async def _cb_goal_achieved(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Mark a personal goal as achieved."""
+        goal_id = int(data.split(":")[1])
+        goal = await db_mod.get_goal_by_id(self.db_path, goal_id)
+        if not goal or goal["user_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+        await db_mod.update_goal_status(self.db_path, goal_id, "achieved")
+        return [BotResponse(t(lang, "goal_achieved"))]
+
+    async def _cb_goal_dropped(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Mark a personal goal as dropped."""
+        goal_id = int(data.split(":")[1])
+        goal = await db_mod.get_goal_by_id(self.db_path, goal_id)
+        if not goal or goal["user_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+        await db_mod.update_goal_status(self.db_path, goal_id, "dropped")
+        return [BotResponse(t(lang, "goal_dropped"))]
+
+    async def _cb_shared_goal_achieved(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Mark a shared goal as achieved."""
+        goal_id = int(data.split(":")[1])
+        await db_mod.update_shared_goal_status(self.db_path, goal_id, "achieved")
+        return [BotResponse(t(lang, "goal_achieved"))]
+
+    async def _cb_shared_goal_dropped(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Mark a shared goal as dropped."""
+        goal_id = int(data.split(":")[1])
+        await db_mod.update_shared_goal_status(self.db_path, goal_id, "dropped")
+        return [BotResponse(t(lang, "goal_dropped"))]
+
+    # ── settings callbacks ───────────────────────────────────────────────
+
+    async def _cb_settings_voice(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Show the voice picker (reuse /style)."""
+        return await self.handle_style(user_id, None)
+
+    async def _cb_settings_dampening(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Show dampening level with +/- buttons."""
+        profile = await db_mod.ensure_user_profile(self.db_path, user_id)
+        level = profile.get("dampening_base") or 0.7
+        buttons = [[
+            InlineButton("➖", "sd_down"),
+            InlineButton(f"{level:.1f}", "sd_noop"),
+            InlineButton("➕", "sd_up"),
+        ]]
+        return [BotResponse(
+            t(lang, "settings_dampening_current", level=level),
+            buttons=buttons,
+        )]
+
+    async def _cb_settings_goals(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Show the goals view (reuse /goals)."""
+        return await self.handle_goals(user_id)
+
+    async def _cb_settings_profile(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Show current profile with edit buttons per field."""
+        profile = await db_mod.ensure_user_profile(self.db_path, user_id)
+        rtype = profile.get("relationship_type") or "—"
+        dur = profile.get("duration_years") or "—"
+        kids = "yes" if profile.get("has_kids") else ("no" if profile.get("has_kids") == 0 else "—")
+        age = profile.get("age_range") or "—"
+
+        buttons = [
+            [InlineButton(f"Type: {rtype}", "sp:relationship_type")],
+            [InlineButton(f"Duration: {dur}", "sp:duration_years")],
+            [InlineButton(f"Kids: {kids}", "sp:has_kids")],
+            [InlineButton(f"Age: {age}", "sp:age_range")],
+        ]
+        return [BotResponse(
+            t(lang, "settings_profile_current",
+              relationship_type=rtype, duration_years=dur,
+              has_kids=kids, age_range=age),
+            buttons=buttons,
+        )]
+
+    async def _cb_settings_mood(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Show mood presets with set/clear buttons."""
+        active = await db_mod.get_active_mood(self.db_path, user_id)
+        current = active["mood"] if active else "none"
+
+        mood_buttons = [
+            InlineButton("😰 Stressed", "sm:stressed"),
+            InlineButton("😊 Happy", "sm:happy"),
+        ]
+        mood_buttons2 = [
+            InlineButton("😤 Angry", "sm:angry"),
+            InlineButton("🤔 Reflective", "sm:reflective"),
+        ]
+        clear_row = [InlineButton("🔄 Clear", "sm_clear")]
+
+        text = t(lang, "mood_current", mood=current, expires="") if active else t(lang, "mood_none")
+        return [BotResponse(text, buttons=[mood_buttons, mood_buttons2, clear_row])]
+
+    async def _cb_dampening_up(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Increase dampening base by 0.1."""
+        profile = await db_mod.ensure_user_profile(self.db_path, user_id)
+        level = min(1.0, round((profile.get("dampening_base") or 0.7) + 0.1, 1))
+        await db_mod.update_user_profile(self.db_path, user_id, dampening_base=level)
+        buttons = [[
+            InlineButton("➖", "sd_down"),
+            InlineButton(f"{level:.1f}", "sd_noop"),
+            InlineButton("➕", "sd_up"),
+        ]]
+        return [BotResponse(
+            t(lang, "settings_dampening_updated", level=level),
+            buttons=buttons,
+        )]
+
+    async def _cb_dampening_down(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Decrease dampening base by 0.1."""
+        profile = await db_mod.ensure_user_profile(self.db_path, user_id)
+        level = max(0.1, round((profile.get("dampening_base") or 0.7) - 0.1, 1))
+        await db_mod.update_user_profile(self.db_path, user_id, dampening_base=level)
+        buttons = [[
+            InlineButton("➖", "sd_down"),
+            InlineButton(f"{level:.1f}", "sd_noop"),
+            InlineButton("➕", "sd_up"),
+        ]]
+        return [BotResponse(
+            t(lang, "settings_dampening_updated", level=level),
+            buttons=buttons,
+        )]
+
+    async def _cb_profile_edit(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Start editing a profile field — send the question, store state."""
+        field_name = data.split(":")[1]
+        if field_name not in _PROFILE_FIELDS:
+            return [BotResponse(t(lang, "error_generic"))]
+        self._profile_edit_state[user_id] = field_name
+        return [BotResponse(t(lang, _PROFILE_FIELDS[field_name]))]
+
+    async def _handle_profile_edit_input(
+        self, user_id: int, text: str
+    ) -> list[BotResponse]:
+        """Process the user's answer for a profile field edit."""
+        lang = await self._get_lang(user_id)
+        field_name = self._profile_edit_state.pop(user_id)
+        value = text.strip()
+
+        # Type coercion for specific fields
+        if field_name == "duration_years":
+            try:
+                value = int(value)
+            except ValueError:
+                value = 0
+        elif field_name == "has_kids":
+            value = 1 if value.lower() in ("yes", "1", "true") else 0
+
+        await db_mod.update_user_profile(self.db_path, user_id, **{field_name: value})
+        return [BotResponse(t(lang, "settings_profile_updated", field=field_name, value=value))]
+
+    async def _cb_mood_set(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Set a mood preset from settings menu."""
+        mood = data.split(":")[1]
+        return await self.handle_mood(user_id, mood)
+
+    async def _cb_mood_clear(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Clear the active mood."""
+        # Clear by expiring all moods for this user
+        await db_mod.clear_expired_moods(self.db_path)
+        return [BotResponse(t(lang, "mood_none"))]
