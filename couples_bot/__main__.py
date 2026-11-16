@@ -273,6 +273,16 @@ async def _cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _send_response(ctx.bot, update.effective_chat.id, r)
 
 
+async def _cmd_skip(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    # Route through handle_message — onboarding intercept handles /skip
+    responses = await _service.handle_message(user.id, user.first_name, "/skip")
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
 async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not is_user_allowed(_config, user.id):
@@ -411,6 +421,7 @@ def main() -> None:
     app.add_handler(CommandHandler("together", _cmd_together))
     app.add_handler(CommandHandler("goals", _cmd_goals))
     app.add_handler(CommandHandler("settings", _cmd_settings))
+    app.add_handler(CommandHandler("skip", _cmd_skip))
     app.add_handler(CommandHandler("help", _cmd_help))
     app.add_handler(CallbackQueryHandler(_on_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
