@@ -161,12 +161,26 @@ CREATE TABLE IF NOT EXISTS user_patterns (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER NOT NULL REFERENCES users(tg_id),
     pattern     TEXT NOT NULL,
+    pattern_type TEXT DEFAULT 'communication'
+                CHECK(pattern_type IN ('communication','horsemen','articulation')),
     frequency   INTEGER DEFAULT 1,
     first_seen  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_seen   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_patterns_user ON user_patterns(user_id);
+
+CREATE TABLE IF NOT EXISTS interaction_scores (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    couple_id        TEXT NOT NULL,
+    user_id          INTEGER NOT NULL REFERENCES users(tg_id),
+    interaction_type TEXT NOT NULL CHECK(interaction_type IN ('positive','negative')),
+    source           TEXT DEFAULT 'llm' CHECK(source IN ('relay','checkin','nudge','llm')),
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_interaction_couple_created
+    ON interaction_scores(couple_id, created_at);
 
 CREATE TABLE IF NOT EXISTS user_goals (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -255,6 +269,14 @@ async def init_db(db_path: str) -> None:
             "CREATE INDEX IF NOT EXISTS idx_facts_owner_category "
             "ON facts(owner_id, category)"
         )
+
+        # Migration: add 'pattern_type' column to user_patterns if missing
+        async with db.execute("PRAGMA table_info(user_patterns)") as cur:
+            pattern_columns = {row[1] for row in await cur.fetchall()}
+        if "pattern_type" not in pattern_columns:
+            await db.execute(
+                "ALTER TABLE user_patterns ADD COLUMN pattern_type TEXT DEFAULT 'communication'"
+            )
 
         await db.commit()
 
@@ -1338,19 +1360,22 @@ async def update_perception_confidence(
 # ---------------------------------------------------------------------------
 
 async def record_pattern(
-    db_path: str, user_id: int, pattern: str
+    db_path: str, user_id: int, pattern: str,
+    pattern_type: str = "communication",
 ) -> int:
     """Upsert a communication pattern.
 
-    If the pattern text already exists (case-insensitive), increment
-    frequency and update last_seen.  Otherwise insert a new row.
-    Returns the row id.
+    If the pattern text already exists (case-insensitive) with the same
+    pattern_type, increment frequency and update last_seen.  Otherwise
+    insert a new row.  Returns the row id.
     """
+    if pattern_type not in ("communication", "horsemen", "articulation"):
+        pattern_type = "communication"
     existing = await _fetch_one(
         db_path,
         "SELECT id, frequency FROM user_patterns "
-        "WHERE user_id = ? AND LOWER(pattern) = LOWER(?)",
-        (user_id, pattern),
+        "WHERE user_id = ? AND LOWER(pattern) = LOWER(?) AND pattern_type = ?",
+        (user_id, pattern, pattern_type),
     )
     if existing:
         await _execute(
@@ -1362,8 +1387,8 @@ async def record_pattern(
         return existing["id"]
     return await _execute(
         db_path,
-        "INSERT INTO user_patterns (user_id, pattern) VALUES (?, ?)",
-        (user_id, pattern),
+        "INSERT INTO user_patterns (user_id, pattern, pattern_type) VALUES (?, ?, ?)",
+        (user_id, pattern, pattern_type),
     )
 
 
@@ -1376,6 +1401,76 @@ async def get_user_patterns(
         "SELECT * FROM user_patterns WHERE user_id = ? "
         "ORDER BY frequency DESC LIMIT ?",
         (user_id, limit),
+    )
+
+
+async def get_user_patterns_by_type(
+    db_path: str, user_id: int, pattern_type: str, limit: int = 10
+) -> list[dict[str, Any]]:
+    """Return top patterns filtered by pattern_type for a user."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM user_patterns WHERE user_id = ? AND pattern_type = ? "
+        "ORDER BY frequency DESC LIMIT ?",
+        (user_id, pattern_type, limit),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Interaction scores (Gottman 5:1 appreciation ratio)
+# ---------------------------------------------------------------------------
+
+async def record_interaction(
+    db_path: str,
+    couple_id: str,
+    user_id: int,
+    interaction_type: str,
+    source: str = "llm",
+) -> int:
+    """Record a positive or negative interaction; return row id."""
+    if interaction_type not in ("positive", "negative"):
+        interaction_type = "negative"
+    if source not in ("relay", "checkin", "nudge", "llm"):
+        source = "llm"
+    return await _execute(
+        db_path,
+        "INSERT INTO interaction_scores (couple_id, user_id, interaction_type, source) "
+        "VALUES (?, ?, ?, ?)",
+        (couple_id, user_id, interaction_type, source),
+    )
+
+
+async def get_interaction_ratio(
+    db_path: str, couple_id: str, days: int = 7
+) -> tuple[int, int]:
+    """Return (positive_count, negative_count) for the last *days* days."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    pos = await _fetch_one(
+        db_path,
+        "SELECT COUNT(*) AS cnt FROM interaction_scores "
+        "WHERE couple_id = ? AND interaction_type = 'positive' AND created_at >= ?",
+        (couple_id, cutoff),
+    )
+    neg = await _fetch_one(
+        db_path,
+        "SELECT COUNT(*) AS cnt FROM interaction_scores "
+        "WHERE couple_id = ? AND interaction_type = 'negative' AND created_at >= ?",
+        (couple_id, cutoff),
+    )
+    return (pos["cnt"] if pos else 0, neg["cnt"] if neg else 0)
+
+
+async def get_positive_shared_facts(
+    db_path: str, user_id: int, partner_id: int
+) -> list[dict[str, Any]]:
+    """Get shared facts with positive categories from both partners."""
+    positive_categories = ("relationship", "emotional")
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM facts WHERE owner_id IN (?, ?) AND visibility = 'shared' "
+        "AND category IN (?, ?) AND archived_at IS NULL "
+        "ORDER BY created_at DESC",
+        (user_id, partner_id, *positive_categories),
     )
 
 

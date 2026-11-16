@@ -132,7 +132,10 @@ You MUST respond ONLY with valid JSON matching this schema:
   "detected_mood": "stressed|happy|angry|reflective|neutral" or null,
   "patterns_observed": ["<communication pattern noticed>"],
   "partner_themes": ["<theme about what user says regarding partner>"],
-  "articulation_note": "<tip on how the user could express themselves better>" or null
+  "articulation_note": "<tip on how the user could express themselves better>" or null,
+  "horsemen_detected": [
+    {"type": "criticism|contempt|defensiveness|stonewalling", "evidence": "<what you observed>", "suggestion": "<constructive alternative>"}
+  ]
 }
 
 Rules:
@@ -153,6 +156,12 @@ Rules:
   partner (e.g. "feels unheard about household decisions"). May be empty [].
 - "articulation_note": if the user's message could be expressed more
   constructively, provide a brief coaching tip. null otherwise.
+- "horsemen_detected": detect communication anti-patterns: criticism
+  (attacking character rather than behavior), contempt (disrespect,
+  mockery), defensiveness (deflecting blame), stonewalling (shutting
+  down). May be empty []. NEVER use the term 'horsemen' or any
+  Gottman jargon in your reply. Translate patterns to natural,
+  friendly language.
 - Keep facts concise (one sentence each).
 - Never include the partner's private information in your reply.
 """

@@ -882,3 +882,105 @@ async def test_clear_expired_moods(test_db):
 
     deleted = await clear_expired_moods(test_db)
     assert deleted == 1
+
+
+# ---------------------------------------------------------------------------
+# Interaction scores (FEAT-001 batch4)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_record_interaction(test_db):
+    """record_interaction creates a row and returns its id."""
+    from couples_bot.db import record_interaction
+
+    await create_user(test_db, 1001, "Alice")
+    await create_user(test_db, 1002, "Bob")
+    await set_partner(test_db, 1001, 1002)
+
+    couple_id = make_couple_id(1001, 1002)
+    row_id = await record_interaction(test_db, couple_id, 1001, "positive", "llm")
+    assert row_id > 0
+
+
+@pytest.mark.asyncio
+async def test_get_interaction_ratio(test_db):
+    """get_interaction_ratio returns correct positive/negative counts."""
+    from couples_bot.db import get_interaction_ratio, record_interaction
+
+    await create_user(test_db, 1001, "Alice")
+    await create_user(test_db, 1002, "Bob")
+    await set_partner(test_db, 1001, 1002)
+    couple_id = make_couple_id(1001, 1002)
+
+    for _ in range(5):
+        await record_interaction(test_db, couple_id, 1001, "positive")
+    for _ in range(2):
+        await record_interaction(test_db, couple_id, 1001, "negative")
+
+    pos, neg = await get_interaction_ratio(test_db, couple_id)
+    assert pos == 5
+    assert neg == 2
+
+
+@pytest.mark.asyncio
+async def test_get_interaction_ratio_empty(test_db):
+    """get_interaction_ratio returns (0, 0) with no data."""
+    from couples_bot.db import get_interaction_ratio
+
+    pos, neg = await get_interaction_ratio(test_db, "999:998")
+    assert pos == 0
+    assert neg == 0
+
+
+@pytest.mark.asyncio
+async def test_get_positive_shared_facts(test_db):
+    """get_positive_shared_facts filters by shared + positive category."""
+    from couples_bot.db import get_positive_shared_facts
+
+    await create_user(test_db, 1001, "Alice")
+    await create_user(test_db, 1002, "Bob")
+    await set_partner(test_db, 1001, 1002)
+
+    # Positive: relationship category, shared
+    await add_fact(
+        test_db, 1001, "We love hiking", "shared",
+        category="relationship",
+    )
+    # Positive: emotional category, shared
+    await add_fact(
+        test_db, 1001, "We enjoy cooking", "shared",
+        category="emotional",
+    )
+    # Non-positive: household, shared
+    await add_fact(
+        test_db, 1001, "Fix the sink", "shared",
+        category="household",
+    )
+    # Private (should not be returned)
+    await add_fact(
+        test_db, 1001, "I feel stressed", "private",
+        category="emotional",
+    )
+
+    facts = await get_positive_shared_facts(test_db, 1001, 1002)
+    texts = [f["text"] for f in facts]
+    assert "We love hiking" in texts
+    assert "We enjoy cooking" in texts
+    assert "Fix the sink" not in texts
+    assert "I feel stressed" not in texts
+
+
+@pytest.mark.asyncio
+async def test_record_pattern_with_type(test_db):
+    """record_pattern accepts pattern_type parameter."""
+    from couples_bot.db import get_user_patterns_by_type, record_pattern
+
+    await create_user(test_db, 1001, "Alice")
+    await record_pattern(test_db, 1001, "blame language", pattern_type="horsemen")
+    await record_pattern(test_db, 1001, "generalizing", pattern_type="communication")
+
+    horsemen = await get_user_patterns_by_type(test_db, 1001, "horsemen")
+    comm = await get_user_patterns_by_type(test_db, 1001, "communication")
+    assert len(horsemen) == 1
+    assert len(comm) == 1
+    assert horsemen[0]["pattern"] == "blame language"

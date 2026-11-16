@@ -95,4 +95,34 @@ async def _process(
     # (d) Articulation note → record as pattern
     note = llm_response.get("articulation_note")
     if isinstance(note, str) and note.strip():
-        await db_mod.record_pattern(db_path, user_id, note.strip())
+        await db_mod.record_pattern(
+            db_path, user_id, note.strip(), pattern_type="articulation",
+        )
+
+    # (e) Horsemen detection → record patterns with pattern_type='horsemen'
+    horsemen = llm_response.get("horsemen_detected") or []
+    if getattr(config, "horsemen_enabled", True):
+        for item in horsemen:
+            if isinstance(item, dict):
+                h_type = item.get("type", "")
+                evidence = item.get("evidence", "")
+                pattern_text = f"{h_type}: {evidence}" if evidence else h_type
+                if pattern_text.strip():
+                    await db_mod.record_pattern(
+                        db_path, user_id, pattern_text.strip(),
+                        pattern_type="horsemen",
+                    )
+
+    # (f) Record interaction score based on mood + horsemen
+    user = await db_mod.get_user(db_path, user_id)
+    partner_id = (user or {}).get("partner_id")
+    if partner_id:
+        couple_id = db_mod.make_couple_id(user_id, partner_id)
+        if horsemen:
+            await db_mod.record_interaction(
+                db_path, couple_id, user_id, "negative", source="llm",
+            )
+        elif mood in ("happy", "reflective"):
+            await db_mod.record_interaction(
+                db_path, couple_id, user_id, "positive", source="llm",
+            )

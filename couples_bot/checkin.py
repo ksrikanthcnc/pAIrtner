@@ -209,8 +209,50 @@ async def _generate_summary(
         "## Active Goals\n" + "\n".join(goals_parts) + "\n"
     ) if goals_parts else None
 
+    # Build appreciation and horsemen trends (FEAT-001 batch4)
+    trends_parts: list[str] = []
+    pos, neg = await db_mod.get_interaction_ratio(db_path, couple_id, days=7)
+    if pos + neg > 0:
+        ratio = pos / neg if neg > 0 else pos
+        if ratio >= 5.0:
+            trends_parts.append(
+                "Positive interactions have been strong this week."
+            )
+        elif neg > pos:
+            trends_parts.append(
+                "This week has had more tense moments than positive ones. "
+                "Focus on expressing needs rather than complaints."
+            )
+        else:
+            trends_parts.append(
+                f"This week: {pos} positive and {neg} tense interactions."
+            )
+
+    # Check horsemen trends
+    for uid in (user_a, user_b):
+        horsemen = await db_mod.get_user_patterns_by_type(
+            db_path, uid, "horsemen", limit=3,
+        )
+        if horsemen:
+            trends_parts.append(
+                "Some communication patterns this week could use attention — "
+                "focus on expressing feelings without blame."
+            )
+            break  # One note is enough
+
+    trends_text = (
+        "## Interaction Trends\n" + "\n".join(f"- {t}" for t in trends_parts) + "\n"
+    ) if trends_parts else None
+
+    # Combine goals and trends
+    extra = ""
+    if goals_text:
+        extra += goals_text
+    if trends_text:
+        extra += trends_text
+
     system_prompt, user_content = build_checkin_summary_prompt(
-        a_answers, b_answers, shared_texts, goals=goals_text,
+        a_answers, b_answers, shared_texts, goals=extra or None,
     )
     response = await llm.generate(user_content, system_prompt)
     summary = response.get("reply", "")

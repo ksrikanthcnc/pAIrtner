@@ -26,6 +26,7 @@ from couples_bot.db import init_db
 from couples_bot.digest import digest_loop
 from couples_bot.handlers import BotResponse, BotService
 from couples_bot.llm import create_llm_client
+from couples_bot.nudges import nudge_loop
 from couples_bot.prompts import load_persona
 
 logging.basicConfig(
@@ -283,6 +284,15 @@ async def _cmd_skip(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _send_response(ctx.bot, update.effective_chat.id, r)
 
 
+async def _cmd_remember(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    responses = await _service.handle_remember(user.id)
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
 async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not is_user_allowed(_config, user.id):
@@ -366,6 +376,16 @@ async def _post_init(app: Application) -> None:
         ))
         logger.info("Check-in loop started")
 
+    if _config.nudges_enabled or _config.appreciation_enabled:
+        app.create_task(nudge_loop(
+            _service.db_path,
+            _service.llm,
+            _send,
+            config=_config,
+            poll_interval=_config.nudges_interval_hours * 3600,
+        ))
+        logger.info("Nudge loop started")
+
 
 # ---------------------------------------------------------------------------
 # Main
@@ -422,6 +442,7 @@ def main() -> None:
     app.add_handler(CommandHandler("goals", _cmd_goals))
     app.add_handler(CommandHandler("settings", _cmd_settings))
     app.add_handler(CommandHandler("skip", _cmd_skip))
+    app.add_handler(CommandHandler("remember", _cmd_remember))
     app.add_handler(CommandHandler("help", _cmd_help))
     app.add_handler(CallbackQueryHandler(_on_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))

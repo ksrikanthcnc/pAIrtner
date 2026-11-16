@@ -714,3 +714,30 @@ class CommandsMixin:
         ]
 
         return [BotResponse(t(lang, "settings_header"), buttons=buttons)]
+
+    # ── /remember ────────────────────────────────────────────────────────
+
+    async def handle_remember(self, user_id: int) -> list[BotResponse]:
+        """Return a random positive shared memory."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        import random
+
+        lang = await self._get_lang(user_id)
+        user = await db_mod.get_user(self.db_path, user_id)
+        if not user or not user.get("partner_id"):
+            return [BotResponse(t(lang, "not_paired"))]
+
+        partner_id = user["partner_id"]
+        positive_facts = await db_mod.get_positive_shared_facts(
+            self.db_path, user_id, partner_id,
+        )
+
+        if not positive_facts:
+            return [BotResponse(t(lang, "remember_empty"))]
+
+        fact = random.choice(positive_facts)
+        header = t(lang, "remember_header")
+        item = t(lang, "remember_item", text=fact["text"])
+        return [BotResponse(f"{header}\n{item}")]

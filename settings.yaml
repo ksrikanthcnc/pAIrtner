@@ -92,3 +92,20 @@ dampening:
 # Articulation teaching (placeholder for FEAT-003).
 articulation:
   enabled: true
+
+# Proactive nudges — context-aware conversation starters.
+nudges:
+  enabled: true
+  interval_hours: 24
+  quiet_start: "09:00"
+  quiet_end: "21:00"
+
+# Appreciation ratio tracking (Gottman 5:1).
+appreciation:
+  enabled: true
+  target_ratio: 5.0
+  check_days: 7
+
+# Horsemen detection — communication anti-patterns.
+horsemen:
+  enabled: true

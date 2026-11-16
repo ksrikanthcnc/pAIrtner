@@ -116,6 +116,16 @@ class Config:
         ]
     )
 
+    # Proactive engagement (FEAT-001 batch4)
+    nudges_enabled: bool = True
+    nudges_interval_hours: int = 24
+    nudges_quiet_start: str = "09:00"
+    nudges_quiet_end: str = "21:00"
+    appreciation_enabled: bool = True
+    appreciation_target_ratio: float = 5.0
+    appreciation_check_days: int = 7
+    horsemen_enabled: bool = True
+
 
 def is_user_allowed(config: Config, user_id: int) -> bool:
     """Check if a user is allowed.  Empty allowlist = open mode (everyone)."""
@@ -334,4 +344,42 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
             "What could we do differently?",
             "What are you grateful for about us?",
         ]),
+        nudges_enabled=_parse_bool(
+            os.environ.get("NUDGES_ENABLED"),
+            yaml_cfg.get("nudges", {}).get("enabled", True),
+        ),
+        nudges_interval_hours=int(
+            os.getenv(
+                "NUDGES_INTERVAL_HOURS",
+                str(yaml_cfg.get("nudges", {}).get("interval_hours", 24)),
+            )
+        ),
+        nudges_quiet_start=os.getenv(
+            "NUDGES_QUIET_START",
+            yaml_cfg.get("nudges", {}).get("quiet_start", "09:00"),
+        ),
+        nudges_quiet_end=os.getenv(
+            "NUDGES_QUIET_END",
+            yaml_cfg.get("nudges", {}).get("quiet_end", "21:00"),
+        ),
+        appreciation_enabled=_parse_bool(
+            os.environ.get("APPRECIATION_ENABLED"),
+            yaml_cfg.get("appreciation", {}).get("enabled", True),
+        ),
+        appreciation_target_ratio=float(
+            os.getenv(
+                "APPRECIATION_TARGET_RATIO",
+                str(yaml_cfg.get("appreciation", {}).get("target_ratio", 5.0)),
+            )
+        ),
+        appreciation_check_days=int(
+            os.getenv(
+                "APPRECIATION_CHECK_DAYS",
+                str(yaml_cfg.get("appreciation", {}).get("check_days", 7)),
+            )
+        ),
+        horsemen_enabled=_parse_bool(
+            os.environ.get("HORSEMEN_ENABLED"),
+            yaml_cfg.get("horsemen", {}).get("enabled", True),
+        ),
     )
