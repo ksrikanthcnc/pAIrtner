@@ -61,6 +61,7 @@ class Config:
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model_default: str = ""
+    llm_reasoning_effort: str = ""
     llm_model_heavy: list[str] = field(default_factory=list)
 
     # New tunables (FEAT-001)
@@ -244,6 +245,7 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         llm_base_url=llm_base_url,
         llm_api_key=llm_api_key,
         llm_model_default=os.getenv("LLM_MODEL_DEFAULT", ""),
+        llm_reasoning_effort=os.getenv("LLM_REASONING_EFFORT", ""),
         llm_model_heavy=llm_model_heavy,
         rate_limit_per_minute=int(
             os.getenv(

@@ -199,7 +199,7 @@ class WebSocketAdapter(BaseAdapter):
         # Send typing indicator
         await ws.send(json.dumps({"type": "typing", "active": True}))
 
-        responses = await self.service.handle_message(uid, user_name, text)
+        responses = await self.service.dispatch(uid, user_name, text)
 
         await ws.send(json.dumps({"type": "typing", "active": False}))
 

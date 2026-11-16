@@ -27,13 +27,19 @@ from couples_bot.sanitize import detect_crisis, sanitize_input
 
 from .callbacks import CallbacksMixin
 from .commands import CommandsMixin
+from .dispatch import DispatchMixin
 from .models import BotResponse, InlineButton, parse_tags
 from .tags import TagsMixin
 
 logger = logging.getLogger(__name__)
 
 
-class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
+def _normalise_fact(text: str) -> str:
+    """Case/whitespace/trailing-punctuation-insensitive key for fact dedupe."""
+    return " ".join(text.lower().split()).rstrip(" .!?")
+
+
+class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
     """Stateful bot logic — transport-agnostic.
 
     Inherits command, callback, and tag handlers from mixin classes.
@@ -140,11 +146,22 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
         lang = await self._get_lang(user_id)
         self._pending_contradictions = []
 
+        # The model often re-emits facts it was shown as context; skip repeats.
+        seen = {
+            _normalise_fact(f["text"])
+            for f in await db_mod.get_active_facts(self.db_path, user_id)
+        }
+
         for fact in new_facts:
             text = fact.get("text", "").strip()
-            vis = fact.get("visibility", "private")
-            if vis not in ("private", "shared"):
-                vis = "private"
+            # The model may never publish a fact: sharing needs an explicit user
+            # action, so any visibility it proposes is stored as private.
+            vis = "private"
+            if text:
+                key = _normalise_fact(text)
+                if key in seen:
+                    continue
+                seen.add(key)
             category = fact.get("category") or None
             fact_type = fact.get("fact_type", "stable")
             if fact_type not in ("transient", "situational", "stable"):

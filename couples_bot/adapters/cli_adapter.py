@@ -132,51 +132,8 @@ class CLIAdapter(BaseAdapter):
             turn += 1
 
     async def _dispatch(self, uid: int, name: str, text: str):
-        """Route text to the appropriate BotService handler."""
-        from couples_bot.handlers import BotResponse
-
-        # Handle /command syntax
-        if text.startswith("/"):
-            parts = text.split(maxsplit=1)
-            cmd = parts[0][1:].lower()  # strip the /
-            arg = parts[1] if len(parts) > 1 else None
-
-            handler_map = {
-                "start": lambda: self.service.handle_start(uid, name),
-                "join": lambda: self.service.handle_join(uid, name, arg),
-                "tell": lambda: self.service.handle_tell(uid, arg),
-                "mediate": lambda: self.service.handle_mediate(uid),
-                "whatdoyouknow": lambda: self.service.handle_whatdoyouknow(uid),
-                "forget": lambda: self.service.handle_forget(uid, arg),
-                "export": lambda: self.service.handle_export(uid, arg),
-                "help": lambda: self.service.handle_help(uid),
-                "lang": lambda: self.service.handle_lang(uid, arg),
-                "setup": lambda: self.service.handle_setup(uid, arg),
-                "status": lambda: self.service.handle_status(uid),
-                "history": lambda: self.service.handle_history(uid, arg),
-                "pause": lambda: self.service.handle_pause(uid),
-                "resume": lambda: self.service.handle_resume(uid),
-                "style": lambda: self.service.handle_style(uid, arg),
-                "vibe": lambda: self.service.handle_vibe(uid, arg),
-                "mood": lambda: self.service.handle_mood(uid, arg),
-                "goal": lambda: self.service.handle_goal(uid, arg),
-                "together": lambda: self.service.handle_together(uid, arg),
-                "goals": lambda: self.service.handle_goals(uid),
-                "settings": lambda: self.service.handle_settings(uid, arg),
-                "remember": lambda: self.service.handle_remember(uid),
-                "search": lambda: self.service.handle_search(uid, arg),
-                "conflicts": lambda: self.service.handle_conflicts(uid),
-                "timeline": lambda: self.service.handle_timeline(uid, arg),
-            }
-
-            handler = handler_map.get(cmd)
-            if handler:
-                return await handler()
-            else:
-                return [BotResponse(f"Unknown command: /{cmd}")]
-
-        # Plain message
-        return await self.service.handle_message(uid, name, text)
+        """Route text through the shared BotService dispatcher."""
+        return await self.service.dispatch(uid, name, text)
 
     async def _print_response(self, target_uid: int, resp) -> None:
         """Print a BotResponse to stdout."""

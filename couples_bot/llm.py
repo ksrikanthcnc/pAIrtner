@@ -222,8 +222,13 @@ class OpenAICompatClient:
         db_path: str,
         model_heavy: list[str] | None = None,
         heavy_daily_cap: int = 10,
+        reasoning_effort: str = "",
     ) -> None:
         self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        # e.g. "none" turns off thinking on Qwen3 via Ollama; empty = don't send
+        self._extra_body = (
+            {"reasoning_effort": reasoning_effort} if reasoning_effort else None
+        )
         self._default_model = default_model
         self._model_heavy = model_heavy or []
         self._db_path = db_path
@@ -255,6 +260,7 @@ class OpenAICompatClient:
                         {"role": "user", "content": user_content},
                     ],
                     response_format={"type": "json_object"},
+                    extra_body=self._extra_body,
                 )
                 raw = response.choices[0].message.content or ""
                 await db_mod.increment_usage(self._db_path, candidate)
@@ -274,6 +280,7 @@ class OpenAICompatClient:
                                 {"role": "user", "content": user_content},
                             ],
                             response_format={"type": "json_object"},
+                            extra_body=self._extra_body,
                         )
                         raw = response.choices[0].message.content or ""
                         await db_mod.increment_usage(self._db_path, candidate)
@@ -326,5 +333,6 @@ def create_llm_client(config: Config, db_path: str) -> LLMClient:
             db_path=db_path,
             model_heavy=config.llm_model_heavy or config.model_heavy,
             heavy_daily_cap=config.heavy_daily_cap,
+            reasoning_effort=config.llm_reasoning_effort,
         )
     return GeminiClient(config, db_path)

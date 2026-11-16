@@ -280,3 +280,30 @@ async def test_429_backoff_uses_retry_after(test_db):
 
     assert result["reply"] == "ok"
     mock_sleep.assert_called_once_with(5.0)
+
+
+# ---------------------------------------------------------------------------
+# reasoning_effort passthrough (disables thinking on Qwen3 via Ollama)
+# ---------------------------------------------------------------------------
+
+class _KwargsCapturingCompletions(FakeCompletions):
+    def __init__(self):
+        super().__init__()
+        self.kwargs: dict = {}
+
+    async def create(self, *, model, messages, **kwargs):
+        self.kwargs = kwargs
+        return await super().create(model=model, messages=messages, **kwargs)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("effort,expected", [("none", {"reasoning_effort": "none"}), ("", None)])
+async def test_reasoning_effort_sent_only_when_configured(test_db, effort, expected):
+    comps = _KwargsCapturingCompletions()
+    with patch("couples_bot.llm.AsyncOpenAI", return_value=FakeAsyncOpenAI(comps)):
+        client = OpenAICompatClient(
+            base_url="http://x/v1", api_key="k", default_model="m",
+            db_path=test_db, reasoning_effort=effort,
+        )
+    await client.generate("hi", "sys")
+    assert comps.kwargs["extra_body"] == expected
