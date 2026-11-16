@@ -15,6 +15,9 @@ from couples_bot.prompts import build_digest_prompt
 
 logger = logging.getLogger(__name__)
 
+# Preserve reference to fromisoformat — tests may mock the datetime class
+_parse_isoformat = datetime.fromisoformat
+
 SendFunc = Callable[[int, str], Awaitable[None]]
 
 
@@ -66,11 +69,17 @@ async def _check_and_send(
     for user_a, user_b in couples:
         couple_id = db_mod.make_couple_id(user_a, user_b)
 
-        # Check if digest already sent today
+        # Check if digest already sent today (compare in local tz)
         last_digest = await db_mod.get_couple_config(db_path, couple_id, "last_digest")
         today_str = now.strftime("%Y-%m-%d")
-        if last_digest and last_digest.startswith(today_str):
-            continue
+        if last_digest:
+            try:
+                last_dt = _parse_isoformat(last_digest)
+                last_local = last_dt.astimezone(tz)
+                if last_local.strftime("%Y-%m-%d") == today_str:
+                    continue
+            except (ValueError, TypeError):
+                pass  # malformed — proceed as if no digest sent
 
         await _send_digest_for_couple(
             db_path, llm, send_func, user_a, user_b, couple_id, last_digest
