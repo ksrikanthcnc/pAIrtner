@@ -71,6 +71,18 @@ def _get_error_code(exc: Exception) -> int:
     return 0
 
 
+def parse_retry_delay(exc: Exception) -> float:
+    """Try to read a retry delay from the exception; default to 60s."""
+    for attr in ("retry_delay", "retry_after"):
+        val = getattr(exc, attr, None)
+        if val is not None:
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                pass
+    return 60.0
+
+
 class GeminiClient:
     """Concrete LLM client backed by the google-genai SDK."""
 
@@ -111,7 +123,7 @@ class GeminiClient:
             except Exception as exc:
                 code = _get_error_code(exc)
                 if code == 429:
-                    delay = self._parse_retry_delay(exc)
+                    delay = parse_retry_delay(exc)
                     logger.warning("429 on %s — backing off %ss", candidate, delay)
                     await asyncio.sleep(delay)
                     # Retry once on the same model
@@ -178,18 +190,6 @@ class GeminiClient:
         )
         return response.text or ""
 
-    @staticmethod
-    def _parse_retry_delay(exc: Exception) -> float:
-        """Try to read a retry delay from the exception; default to 60s."""
-        for attr in ("retry_delay", "retry_after"):
-            val = getattr(exc, attr, None)
-            if val is not None:
-                try:
-                    return float(val)
-                except (TypeError, ValueError):
-                    pass
-        return 60.0
-
 
 # ---------------------------------------------------------------------------
 # OpenAI-compatible implementation
@@ -246,7 +246,7 @@ class OpenAICompatClient:
             except Exception as exc:
                 code = _get_error_code(exc)
                 if code == 429:
-                    delay = self._parse_retry_delay(exc)
+                    delay = parse_retry_delay(exc)
                     logger.warning("429 on %s — backing off %ss", candidate, delay)
                     await asyncio.sleep(delay)
                     # Retry once on the same model
@@ -294,18 +294,6 @@ class OpenAICompatClient:
             others = [m for m in self._model_heavy if m != requested]
             return [requested, *others]
         return [requested]
-
-    @staticmethod
-    def _parse_retry_delay(exc: Exception) -> float:
-        """Try to read a retry delay from the exception; default to 60s."""
-        for attr in ("retry_delay", "retry_after"):
-            val = getattr(exc, attr, None)
-            if val is not None:
-                try:
-                    return float(val)
-                except (TypeError, ValueError):
-                    pass
-        return 60.0
 
 
 # ---------------------------------------------------------------------------

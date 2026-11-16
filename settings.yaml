@@ -33,3 +33,12 @@ models:
 #   "reset"      — timer resets on each new approval (future).
 cooldown:
   behavior: "accumulate"
+
+# Fact categories — LLM classifies facts into one of these.
+fact_categories:
+  - relationship
+  - household
+  - emotional
+  - work
+  - health
+  - other

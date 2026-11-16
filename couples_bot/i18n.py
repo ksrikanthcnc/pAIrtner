@@ -92,6 +92,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/whatdoyouknow — See what I remember about you\n"
             "/forget &lt;id|all&gt; — Delete your facts\n"
             "/export — Download your facts as a file\n"
+            "/history — View recent sent and received messages\n"
             "/setup — Configure your couple's Gemini API key\n"
             "/status — Check your relationship dashboard\n"
             "/pause — Pause relay delivery\n"
@@ -200,6 +201,21 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # Blunt mode
         "blunt_disclaimer": "🔥 Blunt mode — here's my honest take:",
+
+        # History
+        "history_header": "📜 <b>Recent Messages:</b>\n\n",
+        "history_empty": "No messages sent or received yet.",
+        "history_sent": "[{date}] You → Partner: \"{message}\"\n",
+        "history_received": "[{date}] Partner → You: \"{message}\"\n",
+        "history_usage": "Usage: /history [limit]",
+
+        # Fact categories
+        "cat_relationship": "❤️ Relationship",
+        "cat_household": "🏠 Household",
+        "cat_emotional": "💭 Emotional",
+        "cat_work": "💼 Work",
+        "cat_health": "🏥 Health",
+        "cat_other": "📌 Other",
     },
 
     "te": {
@@ -272,6 +288,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/whatdoyouknow — నేను ఏమి గుర్తుంచుకుంటున్నాను\n"
             "/forget — మీ విషయాలు తొలగించండి\n"
             "/export — మీ విషయాలు డౌన్‌లోడ్ చేయండి\n"
+            "/history — ఇటీవల పంపిన/అందుకున్న సందేశాలు\n"
             "/setup — మీ Gemini API కీ సెట్ చేయండి\n"
             "/status — మీ స్థితి చూడండి\n"
             "/pause — డెలివరీ ఆపు\n"
@@ -371,6 +388,21 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # Blunt mode
         "blunt_disclaimer": "🔥 బ్లంట్ మోడ్ — నా నిజాయితీ అభిప్రాయం:",
+
+        # History
+        "history_header": "📜 <b>ఇటీవల సందేశాలు:</b>\n\n",
+        "history_empty": "ఇంకా పంపిన లేదా అందుకున్న సందేశాలు లేవు.",
+        "history_sent": "[{date}] మీరు → భాగస్వామి: \"{message}\"\n",
+        "history_received": "[{date}] భాగస్వామి → మీరు: \"{message}\"\n",
+        "history_usage": "వాడకం: /history [పరిమితి]",
+
+        # Fact categories
+        "cat_relationship": "❤️ సంబంధం",
+        "cat_household": "🏠 గృహం",
+        "cat_emotional": "💭 భావోద్వేగం",
+        "cat_work": "💼 పని",
+        "cat_health": "🏥 ఆరోగ్యం",
+        "cat_other": "📌 ఇతర",
     },
 }
 

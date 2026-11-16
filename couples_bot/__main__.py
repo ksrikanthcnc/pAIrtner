@@ -7,6 +7,7 @@ import logging
 from io import BytesIO
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ChatAction
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -99,6 +100,7 @@ async def _cmd_tell(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_user_allowed(_config, user.id):
         return
     text = " ".join(ctx.args) if ctx.args else None
+    await update.effective_chat.send_action(ChatAction.TYPING)
     responses = await _service.handle_tell(user.id, text)
     for r in responses:
         await _send_response(ctx.bot, update.effective_chat.id, r)
@@ -108,6 +110,7 @@ async def _cmd_mediate(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not is_user_allowed(_config, user.id):
         return
+    await update.effective_chat.send_action(ChatAction.TYPING)
     responses = await _service.handle_mediate(user.id)
     for r in responses:
         await _send_response(ctx.bot, update.effective_chat.id, r)
@@ -179,6 +182,16 @@ async def _cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _send_response(ctx.bot, update.effective_chat.id, r)
 
 
+async def _cmd_history(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    arg = ctx.args[0] if ctx.args else None
+    responses = await _service.handle_history(user.id, arg)
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
 async def _cmd_pause(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not is_user_allowed(_config, user.id):
@@ -202,6 +215,7 @@ async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_user_allowed(_config, user.id):
         return
     text = update.message.text or ""
+    await update.effective_chat.send_action(ChatAction.TYPING)
     responses = await _service.handle_message(user.id, user.first_name, text)
     for r in responses:
         await _send_response(ctx.bot, update.effective_chat.id, r)
@@ -289,6 +303,7 @@ def main() -> None:
     app.add_handler(CommandHandler("lang", _cmd_lang))
     app.add_handler(CommandHandler("setup", _cmd_setup))
     app.add_handler(CommandHandler("status", _cmd_status))
+    app.add_handler(CommandHandler("history", _cmd_history))
     app.add_handler(CommandHandler("pause", _cmd_pause))
     app.add_handler(CommandHandler("resume", _cmd_resume))
     app.add_handler(CommandHandler("help", _cmd_help))

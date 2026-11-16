@@ -321,6 +321,50 @@ async def test_paused_column_migration(tmp_path):
     assert user["paused"] == 1
 
 
+@pytest.mark.asyncio
+async def test_category_column_migration(tmp_path):
+    """Existing DBs without 'category' column in facts get it via migration."""
+    import aiosqlite
+
+    db_path = str(tmp_path / "migrate_cat.db")
+
+    # Create a DB with the OLD facts schema (no category column)
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "CREATE TABLE users ("
+            "tg_id INTEGER PRIMARY KEY, name TEXT, partner_id INTEGER, "
+            "lang TEXT DEFAULT 'en', paused INTEGER DEFAULT 0, "
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        await db.execute(
+            "CREATE TABLE facts ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "owner_id INTEGER NOT NULL, text TEXT NOT NULL, "
+            "visibility TEXT NOT NULL, source TEXT, "
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        await db.execute("INSERT INTO users (tg_id, name) VALUES (1, 'Test')")
+        await db.execute(
+            "INSERT INTO facts (owner_id, text, visibility) VALUES (1, 'Old fact', 'private')"
+        )
+        await db.commit()
+
+    # Run init_db — should add the category column
+    await init_db(db_path)
+
+    facts = await get_facts(db_path, 1)
+    assert len(facts) == 1
+    assert facts[0]["text"] == "Old fact"
+    assert facts[0]["category"] is None
+
+    # New facts can have a category
+    fid = await add_fact(db_path, 1, "New fact", "private", category="work")
+    facts = await get_facts(db_path, 1)
+    new_fact = [f for f in facts if f["id"] == fid][0]
+    assert new_fact["category"] == "work"
+
+
 # ---------------------------------------------------------------------------
 # FEAT-003: couple_config CRUD and make_couple_id
 # ---------------------------------------------------------------------------
@@ -638,3 +682,82 @@ async def test_rate_limit_separate_windows(test_db):
     assert remaining_m == 1
     assert allowed_d is True
     assert remaining_d == 199
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002: get_sent_relays
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_sent_relays(test_db, paired_users):
+    """get_sent_relays returns sent pending rows for the user."""
+    from couples_bot.db import get_sent_relays
+
+    a_id, b_id = paired_users
+
+    pid = await create_pending(test_db, a_id, b_id, "Hello")
+    await update_pending_status(test_db, pid, "approved", "2020-01-01T00:00:00")
+    await mark_as_sent(test_db, pid)
+
+    relays = await get_sent_relays(test_db, a_id)
+    assert len(relays) == 1
+    assert relays[0]["draft"] == "Hello"
+    assert relays[0]["status"] == "sent"
+
+
+@pytest.mark.asyncio
+async def test_get_sent_relays_as_receiver(test_db, paired_users):
+    """get_sent_relays returns rows where user is receiver too."""
+    from couples_bot.db import get_sent_relays
+
+    a_id, b_id = paired_users
+
+    pid = await create_pending(test_db, b_id, a_id, "From partner")
+    await update_pending_status(test_db, pid, "approved", "2020-01-01T00:00:00")
+    await mark_as_sent(test_db, pid)
+
+    relays = await get_sent_relays(test_db, a_id)
+    assert len(relays) == 1
+    assert relays[0]["draft"] == "From partner"
+
+
+@pytest.mark.asyncio
+async def test_get_sent_relays_limit(test_db, paired_users):
+    """get_sent_relays respects the limit parameter."""
+    from couples_bot.db import get_sent_relays
+
+    a_id, b_id = paired_users
+
+    for i in range(5):
+        pid = await create_pending(test_db, a_id, b_id, f"Msg {i}")
+        await update_pending_status(test_db, pid, "approved", "2020-01-01T00:00:00")
+        await mark_as_sent(test_db, pid)
+
+    relays = await get_sent_relays(test_db, a_id, limit=2)
+    assert len(relays) == 2
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002: add_fact with category
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_add_fact_with_category(test_db):
+    """add_fact stores a category when provided."""
+    await create_user(test_db, 10, "X")
+    fid = await add_fact(test_db, 10, "Works from home", "private", category="work")
+    facts = await get_facts(test_db, 10)
+    fact = [f for f in facts if f["id"] == fid][0]
+    assert fact["category"] == "work"
+
+
+@pytest.mark.asyncio
+async def test_add_fact_without_category(test_db):
+    """add_fact stores NULL category by default."""
+    await create_user(test_db, 10, "X")
+    fid = await add_fact(test_db, 10, "Likes coffee", "private")
+    facts = await get_facts(test_db, 10)
+    fact = [f for f in facts if f["id"] == fid][0]
+    assert fact["category"] is None

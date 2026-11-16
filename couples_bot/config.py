@@ -70,6 +70,14 @@ class Config:
     review_before_send: bool = True
     persona_file: str = "persona.md"
 
+    # New tunables (FEAT-002)
+    fact_categories: list[str] = field(
+        default_factory=lambda: [
+            "relationship", "household", "emotional", "work", "health", "other",
+        ]
+    )
+    cooldown_behavior: str = "accumulate"
+
 
 def is_user_allowed(config: Config, user_id: int) -> bool:
     """Check if a user is allowed.  Empty allowlist = open mode (everyone)."""
@@ -175,5 +183,13 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         ),
         persona_file=os.getenv(
             "PERSONA_FILE", yaml_cfg.get("persona_file", "persona.md")
+        ),
+        fact_categories=yaml_cfg.get(
+            "fact_categories",
+            ["relationship", "household", "emotional", "work", "health", "other"],
+        ),
+        cooldown_behavior=os.getenv(
+            "COOLDOWN_BEHAVIOR",
+            yaml_cfg.get("cooldown", {}).get("behavior", "accumulate"),
         ),
     )

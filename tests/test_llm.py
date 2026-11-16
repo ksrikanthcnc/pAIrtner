@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from couples_bot.db import get_usage_count, increment_usage
-from couples_bot.llm import GeminiClient, parse_llm_response, _get_error_code
+from couples_bot.llm import GeminiClient, parse_llm_response, parse_retry_delay, _get_error_code
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ async def test_llm_fallback_on_503(test_db, config):
 
 
 @pytest.mark.asyncio
-async def test_llm_429_backoff(test_db, config):
+async def test_llm_429_backoff(test_db, config, monkeypatch):
     """429 should retry once on the same model before moving on."""
     call_count = 0
 
@@ -164,7 +164,7 @@ async def test_llm_429_backoff(test_db, config):
     client = GeminiClient(config, test_db)
     client._client = FakeGenaiClient(models)  # type: ignore
     # Shorten backoff for test
-    client._parse_retry_delay = staticmethod(lambda exc: 0.01)  # type: ignore
+    monkeypatch.setattr("couples_bot.llm.parse_retry_delay", lambda exc: 0.01)
 
     result = await client.generate("Hello", "System", model="test-default")
     assert result["reply"] == "retried"
@@ -183,3 +183,34 @@ async def test_all_models_exhausted(test_db, config):
 
     result = await client.generate("Hello", "System", model="test-heavy-1")
     assert "trouble" in result["reply"].lower() or "try again" in result["reply"].lower()
+
+
+# ---------------------------------------------------------------------------
+# parse_retry_delay — module-level function (FEAT-002 dedup)
+# ---------------------------------------------------------------------------
+
+class TestParseRetryDelay:
+    def test_retry_delay_attr(self):
+        exc = Exception("test")
+        exc.retry_delay = 30.0  # type: ignore
+        assert parse_retry_delay(exc) == 30.0
+
+    def test_retry_after_attr(self):
+        exc = Exception("test")
+        exc.retry_after = 45  # type: ignore
+        assert parse_retry_delay(exc) == 45.0
+
+    def test_no_attr_defaults_to_60(self):
+        exc = Exception("plain error")
+        assert parse_retry_delay(exc) == 60.0
+
+    def test_non_numeric_attr(self):
+        exc = Exception("test")
+        exc.retry_delay = "not-a-number"  # type: ignore
+        assert parse_retry_delay(exc) == 60.0
+
+    def test_is_module_level_function(self):
+        """parse_retry_delay is a module-level function, not a method."""
+        import couples_bot.llm as llm_mod
+        assert callable(llm_mod.parse_retry_delay)
+        assert not hasattr(GeminiClient, "_parse_retry_delay")

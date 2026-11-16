@@ -83,7 +83,7 @@ You MUST respond ONLY with valid JSON matching this schema:
 {
   "reply": "<your conversational response to the user>",
   "new_facts": [
-    {"text": "<a concise fact to remember>", "visibility": "private"}
+    {"text": "<a concise fact to remember>", "visibility": "private", "category": "relationship|household|emotional|work|health|other|null"}
   ],
   "relay_draft": "<a softened version of the message for the partner>" or null
 }
@@ -92,6 +92,8 @@ Rules:
 - "reply" is always required.
 - "new_facts" may be empty []. Mark each fact "private" unless the user
   explicitly wants their partner to know, in which case use "shared".
+- Classify each fact into one of the categories: relationship, household,
+  emotional, work, health, other. Use null if uncertain.
 - "relay_draft": provide a kind, non-confrontational rewrite if the
   message contains something the user might want to share with their
   partner. Set to null otherwise.

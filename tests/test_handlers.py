@@ -1498,3 +1498,259 @@ async def test_sanitization_logs_warning(
     assert any("sanitized" in record.message.lower() or "stripped" in record.message.lower()
                for record in caplog.records)
 
+
+# ---------------------------------------------------------------------------
+# FEAT-002: /history command
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_history_shows_sent_relays(service: BotService, test_db, paired_users):
+    """History shows messages the user has sent."""
+    from couples_bot.db import create_pending, mark_as_sent, update_pending_status
+
+    a_id, b_id = paired_users
+
+    pid = await create_pending(test_db, a_id, b_id, "Hello partner")
+    await update_pending_status(test_db, pid, "approved", "2020-01-01T00:00:00")
+    await mark_as_sent(test_db, pid)
+
+    responses = await service.handle_history(a_id, None)
+    assert len(responses) == 1
+    text = responses[0].text
+    assert "Hello partner" in text
+    assert "→ Partner" in text or "→" in text
+
+
+@pytest.mark.asyncio
+async def test_history_shows_received_relays(service: BotService, test_db, paired_users):
+    """History shows messages the user has received."""
+    from couples_bot.db import create_pending, mark_as_sent, update_pending_status
+
+    a_id, b_id = paired_users
+
+    # b_id sends to a_id
+    pid = await create_pending(test_db, b_id, a_id, "From partner with love")
+    await update_pending_status(test_db, pid, "approved", "2020-01-01T00:00:00")
+    await mark_as_sent(test_db, pid)
+
+    responses = await service.handle_history(a_id, None)
+    assert len(responses) == 1
+    text = responses[0].text
+    assert "From partner with love" in text
+    assert "Partner → You" in text or "→" in text
+
+
+@pytest.mark.asyncio
+async def test_history_empty(service: BotService, test_db, paired_users):
+    """History with no relays returns empty message."""
+    a_id, _ = paired_users
+    responses = await service.handle_history(a_id, None)
+    assert len(responses) == 1
+    assert "no messages" in responses[0].text.lower() or "empty" in responses[0].text.lower() or "లేవు" in responses[0].text
+
+
+@pytest.mark.asyncio
+async def test_history_custom_limit(service: BotService, test_db, paired_users):
+    """History respects a custom limit parameter."""
+    from couples_bot.db import create_pending, mark_as_sent, update_pending_status
+
+    a_id, b_id = paired_users
+
+    for i in range(5):
+        pid = await create_pending(test_db, a_id, b_id, f"Message {i}")
+        await update_pending_status(test_db, pid, "approved", "2020-01-01T00:00:00")
+        await mark_as_sent(test_db, pid)
+
+    # Request limit of 2
+    responses = await service.handle_history(a_id, "2")
+    text = responses[0].text
+    # Count message occurrences — should be at most 2
+    count = sum(1 for i in range(5) if f"Message {i}" in text)
+    assert count <= 2
+
+
+@pytest.mark.asyncio
+async def test_history_edited_draft_preferred(service: BotService, test_db, paired_users):
+    """History shows edited_draft when present, not the original draft."""
+    from couples_bot.db import (
+        create_pending,
+        mark_as_sent,
+        update_pending_edited_draft,
+        update_pending_status,
+    )
+
+    a_id, b_id = paired_users
+
+    pid = await create_pending(test_db, a_id, b_id, "Original text")
+    await update_pending_edited_draft(test_db, pid, "Edited text")
+    await update_pending_status(test_db, pid, "approved", "2020-01-01T00:00:00")
+    await mark_as_sent(test_db, pid)
+
+    responses = await service.handle_history(a_id, None)
+    text = responses[0].text
+    assert "Edited text" in text
+    assert "Original text" not in text
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002: fact categories
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fact_category_saved(service: BotService, test_db, paired_users):
+    """LLM-extracted facts with categories are saved correctly."""
+    a_id, _ = paired_users
+
+    service.llm = MockLLMClient([{
+        "reply": "Noted!",
+        "new_facts": [
+            {"text": "Works late on Wednesdays", "visibility": "private", "category": "work"},
+            {"text": "Loves hiking together", "visibility": "shared", "category": "relationship"},
+        ],
+        "relay_draft": None,
+    }])
+
+    await service.handle_message(a_id, "Alice", "#keep I work late on Wed and we love hiking")
+    facts = await get_facts(test_db, a_id)
+    cat_facts = [f for f in facts if f.get("category")]
+    assert len(cat_facts) >= 2
+    categories = {f["category"] for f in cat_facts}
+    assert "work" in categories
+    assert "relationship" in categories
+
+
+@pytest.mark.asyncio
+async def test_whatdoyouknow_groups_by_category(
+    service: BotService, test_db, paired_users
+):
+    """When facts have categories, /whatdoyouknow groups them under headers."""
+    from couples_bot.db import add_fact
+
+    a_id, _ = paired_users
+
+    # Add categorized facts
+    await add_fact(test_db, a_id, "Likes morning runs", "private", category="health")
+    await add_fact(test_db, a_id, "Anniversary in June", "shared", category="relationship")
+
+    responses = await service.handle_whatdoyouknow(a_id)
+    text = responses[0].text
+    # Should contain category headers
+    assert "🏥" in text or "Health" in text or "ఆరోగ్యం" in text
+    assert "❤️" in text or "Relationship" in text or "సంబంధం" in text
+    assert "morning runs" in text.lower()
+    assert "anniversary" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_whatdoyouknow_no_categories_uses_legacy(
+    service: BotService, test_db, paired_users
+):
+    """Without categories, /whatdoyouknow uses private/shared sections."""
+    a_id, _ = paired_users
+    # The paired_users fixture adds facts without categories
+    responses = await service.handle_whatdoyouknow(a_id)
+    text = responses[0].text
+    assert "Private" in text or "🔒" in text
+    assert "Shared" in text or "🔓" in text
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002: cooldown behavior
+# ---------------------------------------------------------------------------
+
+
+def _make_cooldown_service(test_db, mock_llm, behavior: str):
+    """Create a BotService with a specific cooldown behavior."""
+    from couples_bot.config import Config
+    cfg = Config(
+        telegram_token="test-token",
+        gemini_api_key="test-key",
+        model_default="test-default",
+        model_heavy=["test-heavy-1"],
+        cooldown_minutes=5,
+        db_path=test_db,
+        heavy_daily_cap=10,
+        cooldown_behavior=behavior,
+    )
+    return BotService(config=cfg, db_path=test_db, llm=mock_llm)
+
+
+@pytest.mark.asyncio
+async def test_cooldown_behavior_accumulate(test_db, paired_users):
+    """With 'accumulate', subsequent approvals do NOT reset the batch timer."""
+    import asyncio
+    from couples_bot.db import get_active_batch_for_sender
+
+    a_id, b_id = paired_users
+
+    mock = MockLLMClient([
+        {"reply": "Ok", "new_facts": [], "relay_draft": "D1"},
+        {"reply": "Ok", "new_facts": [], "relay_draft": "D2"},
+    ])
+    svc = _make_cooldown_service(test_db, mock, "accumulate")
+
+    # First relay
+    r1 = await svc.handle_tell(a_id, "Msg 1")
+    await svc.handle_callback(a_id, r1[0].buttons[0][0].callback_data)
+    batch = await get_active_batch_for_sender(test_db, a_id, b_id)
+    first_send_after = batch["send_after"]
+
+    await asyncio.sleep(0.05)
+
+    # Second relay
+    r2 = await svc.handle_tell(a_id, "Msg 2")
+    await svc.handle_callback(a_id, r2[0].buttons[0][0].callback_data)
+    batch = await get_active_batch_for_sender(test_db, a_id, b_id)
+    second_send_after = batch["send_after"]
+
+    # Timer should NOT have been reset
+    assert second_send_after == first_send_after
+
+
+@pytest.mark.asyncio
+async def test_cooldown_behavior_reset(test_db, paired_users):
+    """With 'reset', subsequent approvals DO reset the batch timer."""
+    import asyncio
+    from couples_bot.db import get_active_batch_for_sender
+
+    a_id, b_id = paired_users
+
+    mock = MockLLMClient([
+        {"reply": "Ok", "new_facts": [], "relay_draft": "D1"},
+        {"reply": "Ok", "new_facts": [], "relay_draft": "D2"},
+    ])
+    svc = _make_cooldown_service(test_db, mock, "reset")
+
+    # First relay
+    r1 = await svc.handle_tell(a_id, "Msg 1")
+    await svc.handle_callback(a_id, r1[0].buttons[0][0].callback_data)
+    batch = await get_active_batch_for_sender(test_db, a_id, b_id)
+    first_send_after = batch["send_after"]
+
+    await asyncio.sleep(0.05)
+
+    # Second relay
+    r2 = await svc.handle_tell(a_id, "Msg 2")
+    await svc.handle_callback(a_id, r2[0].buttons[0][0].callback_data)
+    batch = await get_active_batch_for_sender(test_db, a_id, b_id)
+    second_send_after = batch["send_after"]
+
+    # Timer should have been reset to a later time
+    assert second_send_after > first_send_after
+
+
+# ---------------------------------------------------------------------------
+# FEAT-002: /help includes /history
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_help_includes_history(service: BotService, test_db, paired_users):
+    """/help text should mention /history."""
+    a_id, _ = paired_users
+    responses = await service.handle_help(a_id)
+    text = responses[0].text
+    assert "/history" in text
+

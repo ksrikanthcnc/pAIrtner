@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS facts (
     text        TEXT NOT NULL,
     visibility  TEXT NOT NULL CHECK(visibility IN ('private', 'shared')),
     source      TEXT,
+    category    TEXT DEFAULT NULL,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -128,6 +129,20 @@ async def init_db(db_path: str) -> None:
             await db.execute(
                 "ALTER TABLE users ADD COLUMN paused INTEGER DEFAULT 0"
             )
+
+        # Migration: add 'category' column to facts if missing (existing DBs)
+        async with db.execute("PRAGMA table_info(facts)") as cur:
+            fact_columns = {row[1] for row in await cur.fetchall()}
+        if "category" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN category TEXT DEFAULT NULL"
+            )
+
+        # Create category index (after migration ensures column exists)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_facts_owner_category "
+            "ON facts(owner_id, category)"
+        )
 
         await db.commit()
 
@@ -242,12 +257,13 @@ async def add_fact(
     text: str,
     visibility: str = "private",
     source: str | None = None,
+    category: str | None = None,
 ) -> int:
     """Insert a fact; return its id."""
     return await _execute(
         db_path,
-        "INSERT INTO facts (owner_id, text, visibility, source) VALUES (?, ?, ?, ?)",
-        (owner_id, text, visibility, source),
+        "INSERT INTO facts (owner_id, text, visibility, source, category) VALUES (?, ?, ?, ?, ?)",
+        (owner_id, text, visibility, source, category),
     )
 
 
@@ -707,6 +723,26 @@ async def get_deliverable_batches(db_path: str) -> list[dict[str, Any]]:
         "SELECT * FROM pending_batch WHERE "
         "(status = 'accumulating' AND send_after <= ?) OR status = 'approved'",
         (now,),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sent relays (history)
+# ---------------------------------------------------------------------------
+
+async def get_sent_relays(
+    db_path: str, user_id: int, limit: int = 10
+) -> list[dict[str, Any]]:
+    """Fetch sent pending rows where the user is sender or receiver.
+
+    Ordered by ``sent_at`` DESC with LIMIT.
+    """
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM pending "
+        "WHERE (sender_id = ? OR receiver_id = ?) AND status = 'sent' "
+        "ORDER BY sent_at DESC LIMIT ?",
+        (user_id, user_id, limit),
     )
 
 

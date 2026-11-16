@@ -47,11 +47,17 @@ class CallbacksMixin:
             )
 
             draft = pending.get("edited_draft") or pending["draft"]
+            existing_batch = await db_mod.get_active_batch_for_sender(
+                self.db_path, user_id, pending["receiver_id"]
+            )
             batch = await db_mod.create_or_get_active_batch(
                 self.db_path, user_id, pending["receiver_id"], send_after
             )
             await db_mod.add_item_to_batch(self.db_path, batch["id"], draft)
-            await db_mod.reset_batch_timer(self.db_path, batch["id"], send_after)
+
+            # Only reset timer for new batches, or when behavior is 'reset'
+            if not existing_batch or self.config.cooldown_behavior == "reset":
+                await db_mod.reset_batch_timer(self.db_path, batch["id"], send_after)
 
             msg = t(lang, "approved", minutes=self.config.cooldown_minutes)
 

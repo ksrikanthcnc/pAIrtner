@@ -109,9 +109,11 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
             vis = fact.get("visibility", "private")
             if vis not in ("private", "shared"):
                 vis = "private"
+            category = fact.get("category") or None
             if text:
                 await db_mod.add_fact(
-                    self.db_path, user_id, text, vis, source="llm"
+                    self.db_path, user_id, text, vis, source="llm",
+                    category=category,
                 )
                 count += 1
         return count

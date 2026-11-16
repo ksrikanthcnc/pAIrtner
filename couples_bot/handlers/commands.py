@@ -7,6 +7,7 @@ via the :class:`CommandsMixin` base class.
 from __future__ import annotations
 
 import os
+from datetime import datetime
 
 from couples_bot import db as db_mod
 from couples_bot.config import is_user_allowed
@@ -15,6 +16,17 @@ from couples_bot.i18n import t
 from couples_bot.prompts import build_mediate_prompt, build_tell_prompt
 
 from .models import BotResponse, format_fact_date, format_relative_time, parse_tags
+
+# Category key → i18n key mapping
+_CATEGORY_I18N: dict[str | None, str] = {
+    "relationship": "cat_relationship",
+    "household": "cat_household",
+    "emotional": "cat_emotional",
+    "work": "cat_work",
+    "health": "cat_health",
+    "other": "cat_other",
+    None: "cat_other",
+}
 
 
 class CommandsMixin:
@@ -70,6 +82,45 @@ class CommandsMixin:
             buttons=buttons,
         )]
 
+    # ── /history ───────────────────────────────────────────────────────
+
+    async def handle_history(
+        self, user_id: int, arg: str | None
+    ) -> list[BotResponse]:
+        """Show the user's recent sent and received relay messages."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+
+        limit = 10
+        if arg and arg.strip():
+            try:
+                limit = int(arg.strip())
+            except ValueError:
+                return [BotResponse(t(lang, "history_usage"))]
+
+        relays = await db_mod.get_sent_relays(self.db_path, user_id, limit)
+        if not relays:
+            return [BotResponse(t(lang, "history_empty"))]
+
+        parts = [t(lang, "history_header")]
+        for row in relays:
+            text = row.get("edited_draft") or row["draft"]
+            sent_at = row.get("sent_at") or ""
+            try:
+                dt = datetime.fromisoformat(sent_at)
+                date_str = dt.strftime("%b %d %H:%M")
+            except (ValueError, TypeError):
+                date_str = "?"
+
+            if row["sender_id"] == user_id:
+                parts.append(t(lang, "history_sent", date=date_str, message=text))
+            else:
+                parts.append(t(lang, "history_received", date=date_str, message=text))
+
+        return [BotResponse("".join(parts))]
+
     # ── /mediate ─────────────────────────────────────────────────────────
 
     async def handle_mediate(self, user_id: int) -> list[BotResponse]:
@@ -109,7 +160,7 @@ class CommandsMixin:
     # ── /whatdoyouknow ───────────────────────────────────────────────────
 
     async def handle_whatdoyouknow(self, user_id: int) -> list[BotResponse]:
-        """List all stored facts for the user."""
+        """List all stored facts for the user, grouped by category if present."""
         if not is_user_allowed(self.config, user_id):
             return []
 
@@ -121,25 +172,57 @@ class CommandsMixin:
         if not private_facts and not shared_facts:
             return [BotResponse(t(lang, "whatdoyouknow_empty"))]
 
+        all_facts = private_facts + shared_facts
+        has_categories = any(f.get("category") for f in all_facts)
+
         parts = [t(lang, "whatdoyouknow_header")]
 
-        if private_facts:
-            parts.append(t(lang, "whatdoyouknow_private"))
-            for f in private_facts:
-                date = format_fact_date(f.get("created_at"))
-                parts.append(t(
-                    lang, "fact_item",
-                    id=f["id"], date=date, text=f["text"], visibility="private",
-                ))
+        if has_categories:
+            # Group by category
+            grouped: dict[str | None, list[dict]] = {}
+            for f in all_facts:
+                cat = f.get("category") or None
+                grouped.setdefault(cat, []).append(f)
 
-        if shared_facts:
-            parts.append(t(lang, "whatdoyouknow_shared"))
-            for f in shared_facts:
-                date = format_fact_date(f.get("created_at"))
-                parts.append(t(
-                    lang, "fact_item",
-                    id=f["id"], date=date, text=f["text"], visibility="shared",
-                ))
+            # Ordered category display
+            cat_order = [
+                "relationship", "household", "emotional",
+                "work", "health", "other", None,
+            ]
+            for cat in cat_order:
+                facts_in_cat = grouped.get(cat)
+                if not facts_in_cat:
+                    continue
+                i18n_key = _CATEGORY_I18N.get(cat, "cat_other")
+                parts.append(f"\n<b>{t(lang, i18n_key)}:</b>\n")
+                for f in facts_in_cat:
+                    date = format_fact_date(f.get("created_at"))
+                    parts.append(t(
+                        lang, "fact_item",
+                        id=f["id"], date=date, text=f["text"],
+                        visibility=f["visibility"],
+                    ))
+        else:
+            # Legacy: no categories, use private/shared sections
+            if private_facts:
+                parts.append(t(lang, "whatdoyouknow_private"))
+                for f in private_facts:
+                    date = format_fact_date(f.get("created_at"))
+                    parts.append(t(
+                        lang, "fact_item",
+                        id=f["id"], date=date, text=f["text"],
+                        visibility="private",
+                    ))
+
+            if shared_facts:
+                parts.append(t(lang, "whatdoyouknow_shared"))
+                for f in shared_facts:
+                    date = format_fact_date(f.get("created_at"))
+                    parts.append(t(
+                        lang, "fact_item",
+                        id=f["id"], date=date, text=f["text"],
+                        visibility="shared",
+                    ))
 
         return [BotResponse("".join(parts))]
 
