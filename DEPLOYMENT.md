@@ -26,6 +26,9 @@ All secrets go in `.env` (never in `settings.yaml`):
 | `LLM_API_KEY` | If openai_compat | API key for the provider |
 | `ADAPTER` | No | `telegram` (default), `websocket`, `cli`, `both` |
 | `WS_PORT` | No | WebSocket port (default: `8080`) |
+| `DASHBOARD_TOKEN` | For dashboard | Admin dashboard access token, 16+ chars (see Dashboard) |
+| `DASHBOARD_BIND` | No | Host interface for the dashboard port (default `127.0.0.1`) |
+| `DASHBOARD_HOST` / `_PORT` / `_SHOW_RAW_TEXT` / `_ADMIN_ACTIONS` / `_PAGE_SIZE` / `_SESSION_TTL_HOURS` | No | Override the `dashboard:` block in `settings.yaml` |
 
 ### Volume mounts
 
@@ -255,3 +258,46 @@ services:
 - On Apple Silicon, Ollama uses the GPU automatically
 - Response quality is good but not Gemini-level for nuanced relationship advice
 - Works great for testing and privacy-sensitive deployments
+
+## Dashboard
+
+The admin dashboard (`python -m couples_bot.dashboard`) runs as a second compose
+service. It is opt-in, so existing `docker compose up -d` deployments are
+unchanged.
+
+```bash
+# .env (or exported in your shell): 16+ characters, keep it secret
+DASHBOARD_TOKEN=<random string>
+# Host-side interface. Default 127.0.0.1. Use your LAN or Tailscale IP to reach it remotely.
+DASHBOARD_BIND=100.x.y.z
+
+docker compose --profile dashboard up -d --build dashboard
+```
+
+Open `http://<DASHBOARD_BIND>:8765` and enter the token. Do not publish this port
+to the public internet: there is no TLS and the token is the only protection.
+
+- **Isolation:** the service has no `env_file`. Compose passes it only
+  `DASHBOARD_TOKEN`, so the bot's Telegram, LLM and encryption keys are not in
+  its environment. It mounts `couples_bot.db`, `settings.yaml` (read-only) and
+  `./backups`.
+- **Raw text:** set `dashboard.show_raw_text: false` in `settings.yaml` (or
+  `DASHBOARD_SHOW_RAW_TEXT=false`) to show counts and metadata only.
+- **Admin actions:** set `dashboard.admin_actions_enabled: false` for a
+  view-only dashboard.
+- **Backups:** "Backup now" and every clear action write
+  `./backups/admin_<action>_<UTC timestamp>.db` using SQLite's online backup API,
+  then verify it with `PRAGMA integrity_check`. The bot's daily rotation ignores
+  `admin_*` files, so they are kept until you delete them. Each action is also
+  logged (no content) to `./backups/admin_audit.log`.
+- **Concurrency:** the dashboard never keeps a connection open. Reads use a
+  read-only connection. Clear actions run in one `BEGIN IMMEDIATE` transaction,
+  so the bot's writes wait for it. The DB file is never replaced or deleted.
+- **Bind-mount caveat:** compose mounts the single file `./couples_bot.db`. In
+  SQLite's default journal mode the `-journal` file lives next to the DB, and
+  with a single-file mount it exists separately in each container. Dashboard
+  transactions are short and always preceded by a backup, but for new
+  deployments prefer mounting a directory (for example `./data:/app/data` with
+  `DB_PATH=/app/data/couples_bot.db` for both services).
+
+Run it without Docker with `uv run python -m couples_bot.dashboard` (see README).

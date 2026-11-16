@@ -156,3 +156,14 @@ voice:
 # Adapter architecture — which transport to start by default.
 adapter: telegram
 ws_port: 8080
+# Admin dashboard — standalone web UI (python -m couples_bot.dashboard).
+# The access token is NOT here: set DASHBOARD_TOKEN in the environment.
+# Every key can be overridden by DASHBOARD_HOST / _PORT / _SHOW_RAW_TEXT /
+# _ADMIN_ACTIONS / _PAGE_SIZE / _SESSION_TTL_HOURS.
+dashboard:
+  host: "127.0.0.1"          # bind address; use a LAN / Tailscale IP, never public
+  port: 8765
+  show_raw_text: true        # false = counts and metadata only, no message/fact text
+  admin_actions_enabled: true  # false = backup/clear actions return 403
+  page_size: 50              # explorer rows per page (max 200)
+  session_ttl_hours: 12

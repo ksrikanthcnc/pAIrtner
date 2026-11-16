@@ -78,6 +78,7 @@ Config (YAML + env vars)                         ← deployment-agnostic
 | `couples_bot/i18n.py` | Internationalization (English + Telugu) |
 | `couples_bot/adapters/` | Transport adapters (Telegram, WebSocket, CLI) |
 | `couples_bot/__main__.py` | Thin launcher — picks adapter from config/CLI args |
+| `couples_bot/dashboard/` | Standalone admin web dashboard (stats, SQLite explorer, backup/clear actions); separate process |
 
 ### Prompt Assembly
 
@@ -252,6 +253,49 @@ After enough messages, the bot learns your writing style (register, sentence len
 | Conflicts enabled | `conflicts.enabled` | `CONFLICTS_ENABLED` | `true` |
 | Feedback enabled | `feedback.enabled` | `FEEDBACK_ENABLED` | `true` |
 | Timeline enabled | `timeline.enabled` | `TIMELINE_ENABLED` | `true` |
+
+## Admin Dashboard
+
+A small web UI for the owner. It is a separate process that reads the bot's
+SQLite file; it does not import the bot, the adapters, or the LLM clients, and
+it never loads `.env`. Stdlib only, no extra dependencies.
+
+**Shows:** users, messages per day, per-user activity, LLM calls per model per
+day (`usage` table), pending relays and batches, conflicts, goals, and a
+timeline per user and per couple. **SQLite explorer:** list tables, schema,
+paged rows, read-only (no SQL box, opened `mode=ro`). **Admin actions:** backup
+now, clear one user, clear the whole database. Clear actions need a typed
+confirmation (`CLEAR USER <id>` / `CLEAR ALL DATA`), take a verified backup
+first (aborting if it fails), and write a content-free line to
+`<backup dir>/admin_audit.log`.
+
+```bash
+export DASHBOARD_TOKEN="$(openssl rand -hex 24)"   # 16+ chars, env only
+DB_PATH=couples_bot.db uv run python -m couples_bot.dashboard
+# open http://127.0.0.1:8765 and paste the token (or send Authorization: Bearer <token>)
+```
+
+| Setting | YAML | Env Var | Default |
+|---------|------|---------|---------|
+| Access token | — (env only) | `DASHBOARD_TOKEN` | required, 16+ chars |
+| Bind address | `dashboard.host` | `DASHBOARD_HOST` | `127.0.0.1` |
+| Port | `dashboard.port` | `DASHBOARD_PORT` | `8765` |
+| Show raw message/fact text | `dashboard.show_raw_text` | `DASHBOARD_SHOW_RAW_TEXT` | `true` |
+| Enable backup/clear actions | `dashboard.admin_actions_enabled` | `DASHBOARD_ADMIN_ACTIONS` | `true` |
+| Explorer page size (max 200) | `dashboard.page_size` | `DASHBOARD_PAGE_SIZE` | `50` |
+| Session lifetime (hours) | `dashboard.session_ttl_hours` | `DASHBOARD_SESSION_TTL_HOURS` | `12` |
+
+The DB path and backup directory reuse `DB_PATH` and `backup.directory`.
+CLI flags `--host`, `--port`, `--db`, `--settings` override them.
+
+**Security notes**
+- Bind to a LAN or Tailscale address only; the token is the sole protection and
+  there is no TLS. Five failed logins from one IP lock it out for 5 minutes.
+- Auth tokens (`auth_tokens.token`), encrypted API keys (`couple_config` values)
+  and any column named like `token|secret|password|api_key` are redacted inside
+  the SQL query and never leave SQLite. Nothing from `.env` is read.
+- With `show_raw_text: false` every page shows counts and metadata only. Columns
+  not classified in `dashboard/redaction.py` are hidden by default.
 
 ## Local LLM Setup (Ollama)
 

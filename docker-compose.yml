@@ -30,3 +30,31 @@ services:
     # Uncomment for Ollama on the host (Linux):
     # extra_hosts:
     #   - "host.docker.internal:host-gateway"
+
+  # Admin dashboard: separate process, shares the DB file, no bot secrets.
+  # Opt-in:  docker compose --profile dashboard up -d dashboard
+  # Needs DASHBOARD_TOKEN (16+ chars) in .env or the shell; compose
+  # interpolates just that value, so the bot's other secrets stay out of this
+  # container. DASHBOARD_BIND is the host-side interface (LAN / Tailscale IP);
+  # keep it off the public internet. See DEPLOYMENT.md.
+  dashboard:
+    profiles: ["dashboard"]
+    build: .
+    entrypoint: ["uv", "run", "--no-dev", "python", "-m", "couples_bot.dashboard"]
+    environment:
+      DASHBOARD_TOKEN: ${DASHBOARD_TOKEN:-}
+      DASHBOARD_HOST: 0.0.0.0
+      DASHBOARD_PORT: "8765"
+    ports:
+      - "${DASHBOARD_BIND:-127.0.0.1}:8765:8765"
+    volumes:
+      - ./couples_bot.db:/app/couples_bot.db
+      - ./settings.yaml:/app/settings.yaml:ro
+      - ./backups:/app/backups
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8765/healthz', timeout=3).read()==b'ok' else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
