@@ -130,3 +130,11 @@ ab_rewrite:
 timeline:
   enabled: true
   max_events: 500
+
+# Soft read receipts — relay acknowledgment tracking.
+read_receipts:
+  enabled: true
+
+# Therapy export — structured therapy-ready reports.
+therapy_export:
+  enabled: true

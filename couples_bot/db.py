@@ -1485,7 +1485,7 @@ async def get_interaction_ratio(
     db_path: str, couple_id: str, days: int = 7
 ) -> tuple[int, int]:
     """Return (positive_count, negative_count) for the last *days* days."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     pos = await _fetch_one(
         db_path,
         "SELECT COUNT(*) AS cnt FROM interaction_scores "

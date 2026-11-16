@@ -193,8 +193,8 @@ class TagsMixin:
             buttons = [[
                 InlineButton(t(lang, "btn_send_a"), f"ab_a:{ab_id}"),
                 InlineButton(t(lang, "btn_send_b"), f"ab_b:{ab_id}"),
-                InlineButton(t(lang, "btn_edit"), f"ed:__ab_placeholder__"),
-                InlineButton(t(lang, "btn_discard"), f"di:__ab_placeholder__"),
+                InlineButton(t(lang, "btn_edit"), f"ab_ed:{ab_id}"),
+                InlineButton(t(lang, "btn_discard"), f"ab_di:{ab_id}"),
             ]]
             responses = [BotResponse(text_msg, buttons=buttons)]
             responses.extend(self._drain_contradictions())

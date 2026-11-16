@@ -595,5 +595,9 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
             return await self._cb_ab_choose_a(user_id, callback_data, lang)
         if callback_data.startswith("ab_b:"):
             return await self._cb_ab_choose_b(user_id, callback_data, lang)
+        if callback_data.startswith("ab_ed:"):
+            return await self._cb_ab_edit(user_id, callback_data, lang)
+        if callback_data.startswith("ab_di:"):
+            return await self._cb_ab_discard(user_id, callback_data, lang)
 
         return [BotResponse(t(lang, "error_generic"))]

@@ -145,6 +145,12 @@ class Config:
     timeline_enabled: bool = True
     timeline_max_events: int = 500
 
+    # Read receipts (FEAT-004 batch4)
+    read_receipts_enabled: bool = True
+
+    # Therapy export (FEAT-004 batch4)
+    therapy_export_enabled: bool = True
+
 
 def is_user_allowed(config: Config, user_id: int) -> bool:
     """Check if a user is allowed.  Empty allowlist = open mode (everyone)."""
@@ -441,5 +447,13 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
                 "TIMELINE_MAX_EVENTS",
                 str(yaml_cfg.get("timeline", {}).get("max_events", 500)),
             )
+        ),
+        read_receipts_enabled=_parse_bool(
+            os.environ.get("READ_RECEIPTS_ENABLED"),
+            yaml_cfg.get("read_receipts", {}).get("enabled", True),
+        ),
+        therapy_export_enabled=_parse_bool(
+            os.environ.get("THERAPY_EXPORT_ENABLED"),
+            yaml_cfg.get("therapy_export", {}).get("enabled", True),
         ),
     )

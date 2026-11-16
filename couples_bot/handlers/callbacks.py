@@ -705,6 +705,33 @@ class CallbacksMixin:
         ab_id = data.split(":")[1]
         return await self._process_ab_choice(user_id, ab_id, "b", lang)
 
+    async def _cb_ab_edit(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Edit the A/B draft — create a pending from the original draft and enter edit mode."""
+        ab_id = data.split(":")[1]
+        ab = self._ab_choices.pop(ab_id, None)
+        if not ab or ab["user_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+
+        draft = ab["draft_b"]  # original (more transformed) version
+        partner_id = ab["partner_id"]
+        pending_id = await db_mod.create_pending(
+            self.db_path, user_id, partner_id, draft,
+        )
+        self._edit_state[user_id] = pending_id
+        return [BotResponse(t(lang, "edit_prompt"))]
+
+    async def _cb_ab_discard(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Discard the entire A/B rewrite choice."""
+        ab_id = data.split(":")[1]
+        ab = self._ab_choices.pop(ab_id, None)
+        if not ab or ab["user_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+        return [BotResponse(t(lang, "discarded"))]
+
     async def _process_ab_choice(
         self, user_id: int, ab_id: str, choice: str, lang: str
     ) -> list[BotResponse]:
