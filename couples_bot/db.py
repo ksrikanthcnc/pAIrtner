@@ -152,6 +152,15 @@ async def ensure_user(
     return user  # type: ignore[return-value]
 
 
+async def update_user_lang(db_path: str, user_id: int, lang: str) -> None:
+    """Update a user's language preference."""
+    await _execute(
+        db_path,
+        "UPDATE users SET lang = ? WHERE tg_id = ?",
+        (lang, user_id),
+    )
+
+
 async def set_partner(
     db_path: str, user_id: int, partner_id: int
 ) -> None:

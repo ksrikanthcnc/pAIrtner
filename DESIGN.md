@@ -1,4 +1,4 @@
-# Couples Mediator Telegram Bot: Final Design (scaffold)
+# pAIrtner — Telegram Bot: Final Design (scaffold)
 
 ## Goal
 One Telegram bot, two partners. Each chats privately with the bot. The bot keeps per-person memory, rewrites hard messages politely, and delivers only what the sender approves. Partners do not talk directly through it.

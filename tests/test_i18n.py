@@ -9,7 +9,7 @@ class TestI18n:
     def test_english_key(self):
         result = t("en", "welcome", code="ABC123")
         assert "ABC123" in result
-        assert "Couples Mediator" in result
+        assert "pAIrtner" in result
 
     def test_telugu_key(self):
         result = t("te", "welcome", code="XYZ")
@@ -22,7 +22,7 @@ class TestI18n:
         # Use a key that exists in both — but test with a fake lang
         result = t("xx", "welcome", code="TEST")
         assert "TEST" in result
-        assert "Couples Mediator" in result
+        assert "pAIrtner" in result
 
     def test_missing_key(self):
         """Completely missing key returns the key itself."""

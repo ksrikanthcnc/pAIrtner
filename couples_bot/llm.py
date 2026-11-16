@@ -1,4 +1,4 @@
-"""LLM client — protocol + Gemini implementation with fallback and backoff."""
+"""LLM client — protocol + Gemini and OpenAI-compatible implementations."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from google import genai
 from google.genai import types as genai_types
+from openai import AsyncOpenAI
 
 from couples_bot.config import Config
 from couples_bot import db as db_mod
@@ -172,3 +173,82 @@ class GeminiClient:
                 except (TypeError, ValueError):
                     pass
         return 60.0
+
+
+# ---------------------------------------------------------------------------
+# OpenAI-compatible implementation
+# ---------------------------------------------------------------------------
+
+class OpenAICompatClient:
+    """LLM client for any OpenAI-compatible API (Groq, Together, etc.)."""
+
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        default_model: str,
+        db_path: str,
+        model_heavy: list[str] | None = None,
+    ) -> None:
+        self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        self._default_model = default_model
+        self._model_heavy = model_heavy or []
+        self._db_path = db_path
+
+    async def generate(
+        self,
+        user_content: str,
+        system_prompt: str,
+        model: str | None = None,
+    ) -> LLMResponse:
+        model = model or self._default_model
+        models_to_try = self._build_model_list(model)
+
+        for candidate in models_to_try:
+            try:
+                response = await self._client.chat.completions.create(
+                    model=candidate,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content},
+                    ],
+                    response_format={"type": "json_object"},
+                )
+                raw = response.choices[0].message.content or ""
+                await db_mod.increment_usage(self._db_path, candidate)
+                return parse_llm_response(raw)
+            except Exception as exc:
+                code = _get_error_code(exc)
+                if code in (404, 429, 503):
+                    logger.warning("%d on %s — trying next model", code, candidate)
+                    continue
+                raise
+
+        return {
+            "reply": "I'm having trouble connecting right now. Please try again in a moment.",
+            "new_facts": [],
+            "relay_draft": None,
+        }
+
+    def _build_model_list(self, requested: str) -> list[str]:
+        if requested in self._model_heavy:
+            others = [m for m in self._model_heavy if m != requested]
+            return [requested, *others]
+        return [requested]
+
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
+
+def create_llm_client(config: Config, db_path: str) -> LLMClient:
+    """Return the right LLM client based on config.llm_provider."""
+    if config.llm_provider == "openai_compat":
+        return OpenAICompatClient(
+            base_url=config.llm_base_url,
+            api_key=config.llm_api_key,
+            default_model=config.llm_model_default or config.model_default,
+            db_path=db_path,
+            model_heavy=config.llm_model_heavy or config.model_heavy,
+        )
+    return GeminiClient(config, db_path)

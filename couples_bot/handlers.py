@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from couples_bot import db as db_mod
-from couples_bot.config import Config
+from couples_bot.config import Config, is_user_allowed
 from couples_bot.i18n import t
 from couples_bot.llm import LLMClient
 from couples_bot.prompts import (
@@ -132,6 +132,9 @@ class BotService:
     async def handle_start(
         self, user_id: int, user_name: str | None
     ) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
         user = await db_mod.ensure_user(self.db_path, user_id, user_name)
         lang = user.get("lang") or "en"
 
@@ -159,6 +162,9 @@ class BotService:
     async def handle_join(
         self, user_id: int, user_name: str | None, code: str | None
     ) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
         user = await db_mod.ensure_user(self.db_path, user_id, user_name)
         lang = user.get("lang") or "en"
 
@@ -200,6 +206,9 @@ class BotService:
     async def handle_tell(
         self, user_id: int, text: str | None
     ) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
         lang = await self._get_lang(user_id)
         user = await db_mod.get_user(self.db_path, user_id)
         if not user or not user.get("partner_id"):
@@ -236,6 +245,9 @@ class BotService:
     # ── /mediate ─────────────────────────────────────────────────────────
 
     async def handle_mediate(self, user_id: int) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
         lang = await self._get_lang(user_id)
         user = await db_mod.get_user(self.db_path, user_id)
         if not user or not user.get("partner_id"):
@@ -255,6 +267,13 @@ class BotService:
         result = await self.llm.generate(content, system, model=model)
 
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
+
+        # Check usage warning (duck-typed — not all clients have this)
+        if model and hasattr(self.llm, "check_usage_warning"):
+            warning = await self.llm.check_usage_warning(model)
+            if warning:
+                result["reply"] += "\n\n" + warning
+
         return [BotResponse(result["reply"])]
 
     @property
@@ -264,6 +283,9 @@ class BotService:
     # ── /whatdoyouknow ───────────────────────────────────────────────────
 
     async def handle_whatdoyouknow(self, user_id: int) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
         lang = await self._get_lang(user_id)
 
         private_facts = await db_mod.get_facts(self.db_path, user_id, "private")
@@ -291,6 +313,9 @@ class BotService:
     async def handle_forget(
         self, user_id: int, arg: str | None
     ) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
         lang = await self._get_lang(user_id)
 
         if not arg or not arg.strip():
@@ -324,6 +349,9 @@ class BotService:
     # ── /export ──────────────────────────────────────────────────────────
 
     async def handle_export(self, user_id: int) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
         lang = await self._get_lang(user_id)
 
         facts = await db_mod.get_facts(self.db_path, user_id)
@@ -337,13 +365,16 @@ class BotService:
 
         content = "".join(lines)
         return [BotResponse(
-            t(lang, "fact_saved", count=len(facts)),
+            t(lang, "export_caption", count=len(facts)),
             document=("my_facts.txt", content),
         )]
 
     # ── /help ────────────────────────────────────────────────────────────
 
     async def handle_help(self, user_id: int) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
         lang = await self._get_lang(user_id)
         parts = [
             t(lang, "help"),
@@ -352,11 +383,31 @@ class BotService:
         ]
         return [BotResponse("\n\n".join(parts))]
 
+    # ── /lang ────────────────────────────────────────────────────────────
+
+    async def handle_lang(
+        self, user_id: int, arg: str | None
+    ) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+
+        if not arg or arg.strip().lower() not in ("en", "te"):
+            return [BotResponse(t(lang, "lang_usage"))]
+
+        new_lang = arg.strip().lower()
+        await db_mod.update_user_lang(self.db_path, user_id, new_lang)
+        return [BotResponse(t(new_lang, "lang_changed"))]
+
     # ── plain message ────────────────────────────────────────────────────
 
     async def handle_message(
         self, user_id: int, user_name: str | None, text: str
     ) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
         await db_mod.ensure_user(self.db_path, user_id, user_name)
 
         # Clear any stale forget-confirm state on new message
@@ -383,6 +434,9 @@ class BotService:
     async def handle_callback(
         self, user_id: int, callback_data: str
     ) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
         lang = await self._get_lang(user_id)
 
         if callback_data.startswith("ap:") or callback_data.startswith("apn:"):
@@ -459,6 +513,12 @@ class BotService:
         result = await self.llm.generate(content, system, model=model)
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
+        # Check usage warning (duck-typed — not all clients have this)
+        if model and hasattr(self.llm, "check_usage_warning"):
+            warning = await self.llm.check_usage_warning(model)
+            if warning:
+                result["reply"] += "\n\n" + warning
+
         count = await self._save_facts(user_id, result.get("new_facts", []))
 
         replies: list[BotResponse] = [BotResponse(result["reply"])]
@@ -507,6 +567,11 @@ class BotService:
         skip_cooldown = data.startswith("apn:")
         pending_id = int(data.split(":")[1])
 
+        # Verify sender owns this pending row
+        pending = await db_mod.get_pending(self.db_path, pending_id)
+        if not pending or pending["sender_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+
         if skip_cooldown:
             send_after = datetime.now(timezone.utc).isoformat()
             msg = t(lang, "approved_now")
@@ -526,6 +591,12 @@ class BotService:
         self, user_id: int, data: str, lang: str
     ) -> list[BotResponse]:
         pending_id = int(data.split(":")[1])
+
+        # Verify sender owns this pending row
+        pending = await db_mod.get_pending(self.db_path, pending_id)
+        if not pending or pending["sender_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+
         self._edit_state[user_id] = pending_id
         return [BotResponse(t(lang, "edit_prompt"))]
 
@@ -533,6 +604,12 @@ class BotService:
         self, user_id: int, data: str, lang: str
     ) -> list[BotResponse]:
         pending_id = int(data.split(":")[1])
+
+        # Verify sender owns this pending row
+        pending = await db_mod.get_pending(self.db_path, pending_id)
+        if not pending or pending["sender_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+
         await db_mod.update_pending_status(
             self.db_path, pending_id, "discarded"
         )

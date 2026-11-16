@@ -12,7 +12,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "en": {
         # Onboarding
         "welcome": (
-            "👋 Welcome to Couples Mediator Bot!\n\n"
+            "👋 Welcome to pAIrtner!\n\n"
             "I help partners communicate more gently. "
             "Each of you chats with me privately — I'll soften messages "
             "and only pass along what you approve.\n\n"
@@ -77,10 +77,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         # Export
         "export_empty": "No facts to export yet.",
         "export_header": "# My Facts Export\n\n",
+        "export_caption": "Here are your exported facts ({count} total).",
 
         # Help
         "help": (
-            "📖 <b>Commands:</b>\n"
+            "📖 <b>pAIrtner Commands:</b>\n"
             "/start — Get a pairing code\n"
             "/join &lt;code&gt; — Pair with your partner\n"
             "/tell &lt;message&gt; — Draft a gentle message for your partner\n"
@@ -88,6 +89,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/whatdoyouknow — See what I remember about you\n"
             "/forget &lt;id|all&gt; — Delete your facts\n"
             "/export — Download your facts as a file\n"
+            "/lang &lt;en|te&gt; — Switch language\n"
             "/help — Show this message\n\n"
             "<b>Tags (in regular messages):</b>\n"
             "#keep — Save only, no relay\n"
@@ -96,6 +98,10 @@ _STRINGS: dict[str, dict[str, str]] = {
             "#now — Skip cooldown on an approved relay\n\n"
             "Just send a plain message to chat with me!"
         ),
+
+        # Language
+        "lang_changed": "✅ Language switched to English.",
+        "lang_usage": "Usage: /lang <en|te>",
 
         # Approval buttons
         "btn_approve": "✅ Approve",
@@ -131,7 +137,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "te": {
         # Onboarding
         "welcome": (
-            "👋 కపుల్స్ మీడియేటర్ బాట్‌కి స్వాగతం!\n\n"
+            "👋 pAIrtner కి స్వాగతం!\n\n"
             "మీ జత కోడ్: <b>{code}</b>\n"
             "మీ భాగస్వామికి ఈ కోడ్ ఇవ్వండి: /join {code}"
         ),
@@ -183,10 +189,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         # Export
         "export_empty": "ఎగుమతి చేయడానికి విషయాలు లేవు.",
         "export_header": "# నా విషయాల ఎగుమతి\n\n",
+        "export_caption": "మీ ఎగుమతి చేసిన విషయాలు ({count} మొత్తం).",
 
         # Help
         "help": (
-            "📖 <b>ఆదేశాలు:</b>\n"
+            "📖 <b>pAIrtner ఆదేశాలు:</b>\n"
             "/start — జత కోడ్ పొందండి\n"
             "/join — భాగస్వామితో జత చేయండి\n"
             "/tell — భాగస్వామికి మృదువుగా సందేశం పంపండి\n"
@@ -194,8 +201,13 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/whatdoyouknow — నేను ఏమి గుర్తుంచుకుంటున్నాను\n"
             "/forget — మీ విషయాలు తొలగించండి\n"
             "/export — మీ విషయాలు డౌన్‌లోడ్ చేయండి\n"
+            "/lang — భాష మార్చండి\n"
             "/help — ఈ సందేశం చూపించండి"
         ),
+
+        # Language
+        "lang_changed": "✅ భాష తెలుగుకు మార్చబడింది.",
+        "lang_usage": "వాడకం: /lang <en|te>",
 
         # Approval buttons
         "btn_approve": "✅ ఆమోదించు",
