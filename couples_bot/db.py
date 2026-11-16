@@ -46,7 +46,9 @@ CREATE TABLE IF NOT EXISTS pending (
                   CHECK(status IN ('awaiting_approval','approved','sent','discarded')),
     send_after    TIMESTAMP,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    sent_at       TIMESTAMP
+    sent_at       TIMESTAMP,
+    feedback      TEXT CHECK(feedback IN ('yes','not_sure','no')),
+    acknowledged_at TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -290,6 +292,18 @@ async def init_db(db_path: str) -> None:
         if "pattern_type" not in pattern_columns:
             await db.execute(
                 "ALTER TABLE user_patterns ADD COLUMN pattern_type TEXT DEFAULT 'communication'"
+            )
+
+        # Migration: add feedback/acknowledged_at columns to pending if missing
+        async with db.execute("PRAGMA table_info(pending)") as cur:
+            pending_columns = {row[1] for row in await cur.fetchall()}
+        if "feedback" not in pending_columns:
+            await db.execute(
+                "ALTER TABLE pending ADD COLUMN feedback TEXT"
+            )
+        if "acknowledged_at" not in pending_columns:
+            await db.execute(
+                "ALTER TABLE pending ADD COLUMN acknowledged_at TIMESTAMP"
             )
 
         await db.commit()
@@ -1694,3 +1708,75 @@ async def get_recent_pending_count(
         (sender_id, since),
     )
     return row["cnt"] if row else 0
+
+
+# ---------------------------------------------------------------------------
+# Feedback on relays (FEAT-003 batch4)
+# ---------------------------------------------------------------------------
+
+async def update_pending_feedback(
+    db_path: str, pending_id: int, feedback: str
+) -> None:
+    """Record the sender's feedback on a delivered relay."""
+    if feedback not in ("yes", "not_sure", "no"):
+        feedback = "not_sure"
+    await _execute(
+        db_path,
+        "UPDATE pending SET feedback = ? WHERE id = ?",
+        (feedback, pending_id),
+    )
+
+
+async def mark_pending_acknowledged(
+    db_path: str, pending_id: int
+) -> None:
+    """Set acknowledged_at to now on a delivered relay."""
+    now = _now_iso()
+    await _execute(
+        db_path,
+        "UPDATE pending SET acknowledged_at = ? WHERE id = ?",
+        (now, pending_id),
+    )
+
+
+async def get_pending_needing_feedback(
+    db_path: str, sender_id: int
+) -> list[dict[str, Any]]:
+    """Return sent relays FROM this sender where feedback is NULL and within 24h."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM pending "
+        "WHERE sender_id = ? AND status = 'sent' "
+        "AND feedback IS NULL AND sent_at >= ? "
+        "ORDER BY sent_at DESC",
+        (sender_id, cutoff),
+    )
+
+
+async def get_feedback_stats(
+    db_path: str, user_id: int
+) -> dict[str, int]:
+    """Return counts of yes/not_sure/no feedback for a sender."""
+    rows = await _fetch_all(
+        db_path,
+        "SELECT feedback, COUNT(*) AS cnt FROM pending "
+        "WHERE sender_id = ? AND feedback IS NOT NULL "
+        "GROUP BY feedback",
+        (user_id,),
+    )
+    return {row["feedback"]: row["cnt"] for row in rows}
+
+
+async def get_unacknowledged_relays_to_user(
+    db_path: str, receiver_id: int
+) -> list[dict[str, Any]]:
+    """Return sent relays TO this user that are not yet acknowledged."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM pending "
+        "WHERE receiver_id = ? AND status = 'sent' "
+        "AND acknowledged_at IS NULL "
+        "ORDER BY sent_at DESC",
+        (receiver_id,),
+    )

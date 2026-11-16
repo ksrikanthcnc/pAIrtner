@@ -369,6 +369,23 @@ _STRINGS: dict[str, dict[str, str]] = {
         "conflicts_item": "• <b>{theme}</b> — open for {duration} ({relay_count} relays)\n",
         "conflicts_resolved_note": "✅ Resolved: {theme}",
         "checkin_conflicts_summary": "This week, {resolved} out of {total} discussion topics were resolved. Still open: {open_themes}.",
+
+        # Feedback loop (FEAT-003 batch4)
+        "feedback_ask": "🔄 Your relay about \"{topic}\" was delivered. Did it land well?",
+        "feedback_yes": "👍 Yes",
+        "feedback_not_sure": "🤷 Not sure",
+        "feedback_no": "👎 No",
+        "feedback_thanks": "Thanks for the feedback! This helps me calibrate better. 🙏",
+
+        # A/B rewrite (FEAT-003 batch4)
+        "ab_option_header": "📝 Here are two versions for your partner:\n\n",
+        "ab_option_a": "<b>Option A</b> (lighter touch):\n{draft}\n\n",
+        "ab_option_b": "<b>Option B</b> (more softened):\n{draft}",
+        "btn_send_a": "📤 Send A",
+        "btn_send_b": "📤 Send B",
+
+        # Read receipts (FEAT-003 batch4)
+        "history_acknowledged": " ✓",
     },
 
     "te": {
@@ -708,6 +725,23 @@ _STRINGS: dict[str, dict[str, str]] = {
         "conflicts_item": "• <b>{theme}</b> — {duration} నుండి ఓపెన్ ({relay_count} రిలేలు)\n",
         "conflicts_resolved_note": "✅ పరిష్కరించబడింది: {theme}",
         "checkin_conflicts_summary": "ఈ వారం, {total} చర్చా అంశాలలో {resolved} పరిష్కరించబడ్డాయి. ఇంకా ఓపెన్: {open_themes}.",
+
+        # Feedback loop (FEAT-003 batch4)
+        "feedback_ask": "🔄 మీ రిలే \"{topic}\" గురించి డెలివరీ అయింది. బాగా చేరిందా?",
+        "feedback_yes": "👍 అవును",
+        "feedback_not_sure": "🤷 తెలియదు",
+        "feedback_no": "👎 కాదు",
+        "feedback_thanks": "ఫీడ్‌బ్యాక్ కోసం ధన్యవాదాలు! ఇది మెరుగుపరచడంలో సహాయపడుతుంది. 🙏",
+
+        # A/B rewrite (FEAT-003 batch4)
+        "ab_option_header": "📝 మీ భాగస్వామి కోసం రెండు వెర్షన్లు:\n\n",
+        "ab_option_a": "<b>ఆప్షన్ A</b> (తేలికైన):\n{draft}\n\n",
+        "ab_option_b": "<b>ఆప్షన్ B</b> (మరింత మృదువైన):\n{draft}",
+        "btn_send_a": "📤 A పంపు",
+        "btn_send_b": "📤 B పంపు",
+
+        # Read receipts (FEAT-003 batch4)
+        "history_acknowledged": " ✓",
     },
 }
 

@@ -10,7 +10,7 @@ import uuid
 
 from couples_bot import db as db_mod
 from couples_bot.conflict_detector import detect_conflict_opening
-from couples_bot.dampening import resolve_dampening
+from couples_bot.dampening import get_dampening_instruction, resolve_dampening
 from couples_bot.i18n import t
 from couples_bot.profile_updater import process_llm_extras
 from couples_bot.prompts import (
@@ -24,7 +24,7 @@ from couples_bot.prompts import (
     load_voice,
 )
 
-from .models import BotResponse
+from .models import BotResponse, InlineButton
 
 
 class TagsMixin:
@@ -142,7 +142,64 @@ class TagsMixin:
             if is_conflict and theme:
                 await db_mod.create_conflict(self.db_path, couple_id, theme)
 
+        # Soft read receipts: mark relays sent TO this user as acknowledged
+        await self._acknowledge_relays(user_id)
+
         draft = result.get("relay_draft") or result["reply"]
+
+        # A/B rewrite: if dampening is in mid-range, offer two variants
+        damp_level, _ = await resolve_dampening(
+            self.db_path, user_id, self.config,
+        )
+        lo, hi = self.config.ab_rewrite_dampening_range
+        if (
+            self.config.ab_rewrite_enabled
+            and lo <= damp_level <= hi
+        ):
+            lighter_level = max(0.0, damp_level - 0.15)
+            lighter_instr = get_dampening_instruction(lighter_level)
+            system_b, content_b = build_tell_prompt(
+                ctx, text, voice_text=voice_text,
+                dampening_instruction=lighter_instr,
+                partner_summary=partner_summary,
+                goals_text=goals_text,
+            )
+            result_b = await self.llm.generate(
+                content_b, system_b, api_key_override=api_key,
+            )
+            draft_a = result_b.get("relay_draft") or result_b["reply"]
+            draft_b = draft  # original (more transformed)
+
+            ab_id = uuid.uuid4().hex[:8]
+            self._ab_choices[ab_id] = {
+                "user_id": user_id,
+                "partner_id": user["partner_id"],
+                "draft_a": draft_a,
+                "draft_b": draft_b,
+                "skip_cooldown": skip_cooldown,
+            }
+
+            text_msg = (
+                t(lang, "ab_option_header")
+                + t(lang, "ab_option_a", draft=draft_a)
+                + t(lang, "ab_option_b", draft=draft_b)
+            )
+
+            # Articulation tip (if enabled and present)
+            art_note = result.get("articulation_note")
+            if art_note and self.config.articulation_enabled:
+                text_msg += "\n\n" + t(lang, "articulation_tip", tip=art_note)
+
+            buttons = [[
+                InlineButton(t(lang, "btn_send_a"), f"ab_a:{ab_id}"),
+                InlineButton(t(lang, "btn_send_b"), f"ab_b:{ab_id}"),
+                InlineButton(t(lang, "btn_edit"), f"ed:__ab_placeholder__"),
+                InlineButton(t(lang, "btn_discard"), f"di:__ab_placeholder__"),
+            ]]
+            responses = [BotResponse(text_msg, buttons=buttons)]
+            responses.extend(self._drain_contradictions())
+            return responses
+
         pending_id = await db_mod.create_pending(
             self.db_path, user_id, user["partner_id"], draft
         )
@@ -271,6 +328,9 @@ class TagsMixin:
                 if is_conflict and theme:
                     await db_mod.create_conflict(self.db_path, couple_id, theme)
 
+        # Soft read receipts: mark relays sent TO this user as acknowledged
+        await self._acknowledge_relays(user_id)
+
         reply_text = result["reply"]
         if count:
             reply_text += "\n\n" + t(lang, "fact_saved", count=count)
@@ -294,8 +354,46 @@ class TagsMixin:
                 buttons=buttons,
             )]
             responses.extend(self._drain_contradictions())
+
+            # Feedback check: after relay delivery, ask sender for feedback
+            feedback_responses = await self._check_feedback(user_id, lang)
+            responses.extend(feedback_responses)
+
             return responses
 
         responses = [BotResponse(reply_text)]
         responses.extend(self._drain_contradictions())
+
+        # Feedback check: after relay delivery, ask sender for feedback
+        feedback_responses = await self._check_feedback(user_id, lang)
+        responses.extend(feedback_responses)
+
         return responses
+
+    async def _acknowledge_relays(self, user_id: int) -> None:
+        """Mark any unacknowledged relays sent TO this user as acknowledged."""
+        unacked = await db_mod.get_unacknowledged_relays_to_user(
+            self.db_path, user_id,
+        )
+        for relay in unacked:
+            await db_mod.mark_pending_acknowledged(self.db_path, relay["id"])
+
+    async def _check_feedback(
+        self, user_id: int, lang: str
+    ) -> list[BotResponse]:
+        """Check if feedback should be requested for recently delivered relays."""
+        if not self.config.feedback_enabled:
+            return []
+        from couples_bot.feedback import (
+            check_for_feedback_opportunity,
+            generate_feedback_request,
+        )
+        pending = await check_for_feedback_opportunity(self.db_path, user_id)
+        if not pending:
+            return []
+        text, button_rows = generate_feedback_request(pending, lang)
+        buttons = [
+            [InlineButton(label, data) for label, data in row]
+            for row in button_rows
+        ]
+        return [BotResponse(text, buttons=buttons)]

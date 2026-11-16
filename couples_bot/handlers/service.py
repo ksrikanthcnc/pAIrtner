@@ -55,6 +55,7 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
         self._batch_item_edit_state: dict[int, int] = {}
         self._pending_contradictions: list[BotResponse] = []
         self._profile_edit_state: dict[int, str] = {}
+        self._ab_choices: dict[str, dict[str, Any]] = {}
 
         # No instance-level check-in state needed; handle_message uses
         # a local list + closure to avoid concurrency issues.
@@ -574,5 +575,19 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
             return await self._cb_mood_set(user_id, callback_data, lang)
         if callback_data == "sm_clear":
             return await self._cb_mood_clear(user_id, callback_data, lang)
+
+        # Feedback callbacks (FEAT-003)
+        if callback_data.startswith("fb_y:"):
+            return await self._cb_feedback_yes(user_id, callback_data, lang)
+        if callback_data.startswith("fb_m:"):
+            return await self._cb_feedback_not_sure(user_id, callback_data, lang)
+        if callback_data.startswith("fb_n:"):
+            return await self._cb_feedback_no(user_id, callback_data, lang)
+
+        # A/B rewrite callbacks (FEAT-003)
+        if callback_data.startswith("ab_a:"):
+            return await self._cb_ab_choose_a(user_id, callback_data, lang)
+        if callback_data.startswith("ab_b:"):
+            return await self._cb_ab_choose_b(user_id, callback_data, lang)
 
         return [BotResponse(t(lang, "error_generic"))]

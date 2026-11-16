@@ -118,8 +118,12 @@ class CommandsMixin:
             except (ValueError, TypeError):
                 date_str = "?"
 
+            ack_mark = ""
+            if row["sender_id"] == user_id and row.get("acknowledged_at"):
+                ack_mark = t(lang, "history_acknowledged")
+
             if row["sender_id"] == user_id:
-                parts.append(t(lang, "history_sent", date=date_str, message=text))
+                parts.append(t(lang, "history_sent", date=date_str, message=text) .rstrip("\n") + ack_mark + "\n")
             else:
                 parts.append(t(lang, "history_received", date=date_str, message=text))
 

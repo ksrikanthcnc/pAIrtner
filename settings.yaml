@@ -115,3 +115,13 @@ conflicts:
   enabled: true
   auto_detect: true
   resolution_timeout_hours: 48
+
+# Relay feedback loop — ask sender how the relay landed.
+feedback:
+  enabled: true
+  timeout_hours: 24
+
+# A/B rewrite — show two dampening variants for relays in mid-range.
+ab_rewrite:
+  enabled: true
+  dampening_range: [0.3, 0.7]

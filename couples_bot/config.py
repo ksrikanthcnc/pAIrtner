@@ -131,6 +131,16 @@ class Config:
     conflicts_auto_detect: bool = True
     conflicts_resolution_timeout_hours: int = 48
 
+    # Relay feedback loop (FEAT-003 batch4)
+    feedback_enabled: bool = True
+    feedback_timeout_hours: int = 24
+
+    # A/B rewrite (FEAT-003 batch4)
+    ab_rewrite_enabled: bool = True
+    ab_rewrite_dampening_range: list[float] = field(
+        default_factory=lambda: [0.3, 0.7]
+    )
+
 
 def is_user_allowed(config: Config, user_id: int) -> bool:
     """Check if a user is allowed.  Empty allowlist = open mode (everyone)."""
@@ -400,5 +410,22 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
                 "CONFLICTS_RESOLUTION_TIMEOUT_HOURS",
                 str(yaml_cfg.get("conflicts", {}).get("resolution_timeout_hours", 48)),
             )
+        ),
+        feedback_enabled=_parse_bool(
+            os.environ.get("FEEDBACK_ENABLED"),
+            yaml_cfg.get("feedback", {}).get("enabled", True),
+        ),
+        feedback_timeout_hours=int(
+            os.getenv(
+                "FEEDBACK_TIMEOUT_HOURS",
+                str(yaml_cfg.get("feedback", {}).get("timeout_hours", 24)),
+            )
+        ),
+        ab_rewrite_enabled=_parse_bool(
+            os.environ.get("AB_REWRITE_ENABLED"),
+            yaml_cfg.get("ab_rewrite", {}).get("enabled", True),
+        ),
+        ab_rewrite_dampening_range=yaml_cfg.get("ab_rewrite", {}).get(
+            "dampening_range", [0.3, 0.7]
         ),
     )

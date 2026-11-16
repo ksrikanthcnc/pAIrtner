@@ -645,3 +645,78 @@ class CallbacksMixin:
         """Clear all moods for this user (active and expired)."""
         await db_mod.clear_user_mood(self.db_path, user_id)
         return [BotResponse(t(lang, "mood_none"))]
+
+    # ── feedback callbacks (FEAT-003) ────────────────────────────────────
+
+    async def _cb_feedback_yes(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Record positive feedback on a relay."""
+        pending_id = int(data.split(":")[1])
+        await db_mod.update_pending_feedback(self.db_path, pending_id, "yes")
+        return [BotResponse(t(lang, "feedback_thanks"))]
+
+    async def _cb_feedback_not_sure(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Record uncertain feedback on a relay."""
+        pending_id = int(data.split(":")[1])
+        await db_mod.update_pending_feedback(self.db_path, pending_id, "not_sure")
+        return [BotResponse(t(lang, "feedback_thanks"))]
+
+    async def _cb_feedback_no(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Record negative feedback on a relay."""
+        pending_id = int(data.split(":")[1])
+        await db_mod.update_pending_feedback(self.db_path, pending_id, "no")
+        return [BotResponse(t(lang, "feedback_thanks"))]
+
+    # ── A/B rewrite callbacks (FEAT-003) ─────────────────────────────────
+
+    async def _cb_ab_choose_a(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Send the lighter (option A) draft."""
+        ab_id = data.split(":")[1]
+        return await self._process_ab_choice(user_id, ab_id, "a", lang)
+
+    async def _cb_ab_choose_b(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Send the more transformed (option B) draft."""
+        ab_id = data.split(":")[1]
+        return await self._process_ab_choice(user_id, ab_id, "b", lang)
+
+    async def _process_ab_choice(
+        self, user_id: int, ab_id: str, choice: str, lang: str
+    ) -> list[BotResponse]:
+        """Create pending relay from A/B choice and track preference."""
+        ab = self._ab_choices.pop(ab_id, None)
+        if not ab or ab["user_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+
+        draft = ab["draft_a"] if choice == "a" else ab["draft_b"]
+        partner_id = ab["partner_id"]
+        skip_cooldown = ab.get("skip_cooldown", False)
+
+        pending_id = await db_mod.create_pending(
+            self.db_path, user_id, partner_id, draft,
+        )
+
+        # Track preference in couple_config
+        couple_id = db_mod.make_couple_id(user_id, partner_id)
+        pref_key = f"ab_preference_count_{choice}"
+        current = await db_mod.get_couple_config(
+            self.db_path, couple_id, pref_key,
+        )
+        new_count = int(current or 0) + 1
+        await db_mod.set_couple_config(
+            self.db_path, couple_id, pref_key, str(new_count),
+        )
+
+        buttons = self._approval_buttons(pending_id, lang, skip_cooldown)
+        return [BotResponse(
+            t(lang, "tell_draft_header") + draft,
+            buttons=buttons,
+        )]
