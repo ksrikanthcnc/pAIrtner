@@ -405,19 +405,19 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
         if user_id in self._edit_state:
             return await self._handle_edit_input(user_id, text)
 
+        # Emergency / crisis detection — fires FIRST, before rate limits,
+        # tags, LLM, or any other processing.
+        is_crisis, _crisis_pattern = detect_crisis(text)
+        if is_crisis:
+            lang = await self._get_lang(user_id)
+            return [BotResponse(t(lang, "emergency_response"))]
+
         # Rate limiting (for actual message processing, not edit inputs)
         rate_resp = await self._check_rate_limit(user_id)
         if rate_resp:
             return rate_resp
 
         await self._increment_rate_counters(user_id)
-
-        # Emergency / crisis detection — fires FIRST, before any LLM or tag
-        # processing, regardless of tags, mood, or settings.
-        is_crisis, _crisis_pattern = detect_crisis(text)
-        if is_crisis:
-            lang = await self._get_lang(user_id)
-            return [BotResponse(t(lang, "emergency_response"))]
 
         tags, clean = parse_tags(text)
 

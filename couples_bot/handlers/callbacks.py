@@ -464,16 +464,34 @@ class CallbacksMixin:
     async def _cb_shared_goal_achieved(
         self, user_id: int, data: str, lang: str
     ) -> list[BotResponse]:
-        """Mark a shared goal as achieved."""
+        """Mark a shared goal as achieved (with ownership check)."""
         goal_id = int(data.split(":")[1])
+        goal = await db_mod.get_shared_goal_by_id(self.db_path, goal_id)
+        if not goal:
+            return [BotResponse(t(lang, "error_generic"))]
+        user = await db_mod.get_user(self.db_path, user_id)
+        if not user or not user.get("partner_id"):
+            return [BotResponse(t(lang, "error_generic"))]
+        couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
+        if goal["couple_id"] != couple_id:
+            return [BotResponse(t(lang, "error_generic"))]
         await db_mod.update_shared_goal_status(self.db_path, goal_id, "achieved")
         return [BotResponse(t(lang, "goal_achieved"))]
 
     async def _cb_shared_goal_dropped(
         self, user_id: int, data: str, lang: str
     ) -> list[BotResponse]:
-        """Mark a shared goal as dropped."""
+        """Mark a shared goal as dropped (with ownership check)."""
         goal_id = int(data.split(":")[1])
+        goal = await db_mod.get_shared_goal_by_id(self.db_path, goal_id)
+        if not goal:
+            return [BotResponse(t(lang, "error_generic"))]
+        user = await db_mod.get_user(self.db_path, user_id)
+        if not user or not user.get("partner_id"):
+            return [BotResponse(t(lang, "error_generic"))]
+        couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
+        if goal["couple_id"] != couple_id:
+            return [BotResponse(t(lang, "error_generic"))]
         await db_mod.update_shared_goal_status(self.db_path, goal_id, "dropped")
         return [BotResponse(t(lang, "goal_dropped"))]
 
@@ -624,7 +642,6 @@ class CallbacksMixin:
     async def _cb_mood_clear(
         self, user_id: int, data: str, lang: str
     ) -> list[BotResponse]:
-        """Clear the active mood."""
-        # Clear by expiring all moods for this user
-        await db_mod.clear_expired_moods(self.db_path)
+        """Clear all moods for this user (active and expired)."""
+        await db_mod.clear_user_mood(self.db_path, user_id)
         return [BotResponse(t(lang, "mood_none"))]

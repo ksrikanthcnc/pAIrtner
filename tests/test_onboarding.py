@@ -183,7 +183,7 @@ async def test_onboarding_triggered_after_join(test_db, service, mock_llm):
     code = None
     for r in resp:
         for word in r.text.split():
-            if len(word) == 6 and word.isalnum() and word.isupper():
+            if len(word) == 6 and word.isalnum() and word == word.upper():
                 code = word
     assert code is not None
 

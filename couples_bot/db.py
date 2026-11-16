@@ -1161,6 +1161,16 @@ async def clear_expired_moods(db_path: str) -> int:
         return cur.rowcount
 
 
+async def clear_user_mood(db_path: str, user_id: int) -> int:
+    """Delete all mood rows for a user (active and expired). Returns count deleted."""
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "DELETE FROM user_mood_styles WHERE user_id = ?", (user_id,)
+        )
+        await db.commit()
+        return cur.rowcount
+
+
 # ---------------------------------------------------------------------------
 # Active facts (non-archived)
 # ---------------------------------------------------------------------------
