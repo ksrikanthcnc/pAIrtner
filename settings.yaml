@@ -1,0 +1,32 @@
+# pAIrtner Bot — tunables
+# Secrets (API keys, tokens, encryption keys) belong in .env, NOT here.
+
+# Message delivery cooldown in minutes.
+# After a relay is approved, it waits this long before being sent.
+cooldown_minutes: 15
+
+# Daily cap for heavy (expensive) model calls per model.
+heavy_daily_cap: 10
+
+# How often the delivery loop checks for approved messages (seconds).
+delivery_check_interval_seconds: 30
+
+# Rate limiting — per-user thresholds.
+rate_limit_per_minute: 10
+rate_limit_per_day: 200
+
+# If true, relay messages require explicit approval before delivery.
+review_before_send: true
+
+# LLM models — override via MODEL_DEFAULT / MODEL_HEAVY env vars.
+models:
+  default: "gemini-3.1-flash-lite"
+  heavy:
+    - "gemini-3-flash-preview"
+    - "gemini-3.8-flash"
+
+# Cooldown behavior when multiple messages are approved within the window.
+#   "accumulate" — messages queue up and each keeps its own timer.
+#   "reset"      — timer resets on each new approval (future).
+cooldown:
+  behavior: "accumulate"

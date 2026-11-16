@@ -22,7 +22,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "not_therapy": (
             "⚠️ <b>This bot is not a substitute for professional therapy "
             "or counseling.</b> If you or someone you know is in crisis, "
-            "please reach out to professional help."
+            "please reach out to professional help.\n\n"
+            "🔒 <b>Privacy note:</b> Messages pass through Telegram servers "
+            "(not end-to-end encrypted) and are processed by Google Gemini AI. "
+            "Your facts are stored locally on the bot server."
         ),
         "crisis_resources": (
             "🆘 <b>Crisis Resources (India):</b>\n"
@@ -142,7 +145,10 @@ _STRINGS: dict[str, dict[str, str]] = {
             "మీ భాగస్వామికి ఈ కోడ్ ఇవ్వండి: /join {code}"
         ),
         "not_therapy": (
-            "⚠️ <b>ఈ బాట్ వృత్తిపరమైన థెరపీకి ప్రత్యామ్నాయం కాదు.</b>"
+            "⚠️ <b>ఈ బాట్ వృత్తిపరమైన థెరపీకి ప్రత్యామ్నాయం కాదు.</b>\n\n"
+            "🔒 <b>గోప్యతా గమనిక:</b> సందేశాలు Telegram సర్వర్ల ద్వారా వెళ్తాయి "
+            "(ఎండ్-టు-ఎండ్ ఎన్‌క్రిప్ట్ చేయబడవు) మరియు Google Gemini AI ద్వారా "
+            "ప్రాసెస్ చేయబడతాయి. మీ విషయాలు బాట్ సర్వర్‌లో స్థానికంగా నిల్వ చేయబడతాయి."
         ),
         "crisis_resources": (
             "🆘 <b>సంక్షోభ సహాయం (India):</b>\n"

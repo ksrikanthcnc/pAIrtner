@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from couples_bot.config import Config
+from couples_bot.db import increment_usage
 from couples_bot.llm import (
     GeminiClient,
     OpenAICompatClient,
@@ -63,6 +66,7 @@ def _make_client(
     db_path: str,
     fail_models: dict[str, int] | None = None,
     model_heavy: list[str] | None = None,
+    heavy_daily_cap: int = 10,
 ) -> tuple[OpenAICompatClient, FakeCompletions]:
     completions = FakeCompletions(fail_models=fail_models)
     client = OpenAICompatClient(
@@ -71,6 +75,7 @@ def _make_client(
         default_model="test-model",
         db_path=db_path,
         model_heavy=model_heavy,
+        heavy_daily_cap=heavy_daily_cap,
     )
     client._client = FakeAsyncOpenAI(completions)  # type: ignore[assignment]
     return client, completions
@@ -137,10 +142,12 @@ async def test_fallback_on_429(test_db):
         fail_models={"heavy-1": 429},
         model_heavy=["heavy-1", "heavy-2"],
     )
-    result = await client.generate("Hello", "System", model="heavy-1")
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        result = await client.generate("Hello", "System", model="heavy-1")
 
     assert result["reply"] == "ok"
-    assert completions.calls == ["heavy-1", "heavy-2"]
+    # Retries once on heavy-1 (backoff), then falls through to heavy-2
+    assert completions.calls == ["heavy-1", "heavy-1", "heavy-2"]
 
 
 @pytest.mark.asyncio
@@ -175,3 +182,101 @@ def test_factory_returns_openai_compat(test_db):
     )
     client = create_llm_client(cfg, test_db)
     assert isinstance(client, OpenAICompatClient)
+
+
+# ---------------------------------------------------------------------------
+# check_usage_warning
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_check_usage_warning_under_cap(test_db):
+    """No warning when usage is well below the cap."""
+    client, _ = _make_client(
+        test_db, model_heavy=["heavy-model"], heavy_daily_cap=10,
+    )
+    result = await client.check_usage_warning("heavy-model")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_check_usage_warning_near_cap(test_db):
+    """Warning appears when usage reaches cap - 2."""
+    client, _ = _make_client(
+        test_db, model_heavy=["heavy-model"], heavy_daily_cap=10,
+    )
+    for _ in range(8):  # cap-2 = 8
+        await increment_usage(test_db, "heavy-model")
+
+    result = await client.check_usage_warning("heavy-model")
+    assert result is not None
+    assert "8/10" in result
+
+
+@pytest.mark.asyncio
+async def test_check_usage_warning_non_heavy_model(test_db):
+    """Non-heavy models should never trigger a warning."""
+    client, _ = _make_client(
+        test_db, model_heavy=["heavy-model"], heavy_daily_cap=10,
+    )
+    result = await client.check_usage_warning("some-other-model")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# 429 backoff
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_429_backoff_sleeps_and_retries(test_db):
+    """On 429, should sleep for the parsed delay and retry once."""
+    client, completions = _make_client(
+        test_db,
+        fail_models={"heavy-1": 429},
+        model_heavy=["heavy-1", "heavy-2"],
+    )
+    mock_sleep = AsyncMock()
+    with patch("asyncio.sleep", mock_sleep):
+        result = await client.generate("Hello", "System", model="heavy-1")
+
+    assert result["reply"] == "ok"
+    # asyncio.sleep should be called once for the backoff
+    mock_sleep.assert_called_once_with(60.0)  # default delay
+    # heavy-1 tried twice (original + retry), then heavy-2
+    assert completions.calls == ["heavy-1", "heavy-1", "heavy-2"]
+
+
+@pytest.mark.asyncio
+async def test_429_backoff_uses_retry_after(test_db):
+    """If the exception has a retry_after attribute, use that delay."""
+    completions = FakeCompletions()
+    call_count = 0
+
+    async def create_with_retry_after(*, model, messages, **kwargs):
+        nonlocal call_count
+        completions.calls.append(model)
+        call_count += 1
+        if model == "heavy-1" and call_count <= 2:
+            exc = Exception("Rate limited")
+            exc.status_code = 429  # type: ignore[attr-defined]
+            exc.retry_after = 5.0  # type: ignore[attr-defined]
+            raise exc
+        return FakeCompletion(
+            '{"reply":"ok","new_facts":[],"relay_draft":null}'
+        )
+
+    client = OpenAICompatClient(
+        base_url="https://api.example.com/v1",
+        api_key="test-key",
+        default_model="test-model",
+        db_path=test_db,
+        model_heavy=["heavy-1", "heavy-2"],
+    )
+    client._client = FakeAsyncOpenAI(completions)  # type: ignore[assignment]
+    client._client.chat.completions.create = create_with_retry_after  # type: ignore[assignment]
+
+    mock_sleep = AsyncMock()
+    with patch("asyncio.sleep", mock_sleep):
+        result = await client.generate("Hello", "System", model="heavy-1")
+
+    assert result["reply"] == "ok"
+    mock_sleep.assert_called_once_with(5.0)

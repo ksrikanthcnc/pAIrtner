@@ -391,6 +391,7 @@ class BotService:
         if not is_user_allowed(self.config, user_id):
             return []
 
+        await db_mod.ensure_user(self.db_path, user_id)
         lang = await self._get_lang(user_id)
 
         if not arg or arg.strip().lower() not in ("en", "te"):

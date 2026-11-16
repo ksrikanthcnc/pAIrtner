@@ -189,11 +189,15 @@ class OpenAICompatClient:
         default_model: str,
         db_path: str,
         model_heavy: list[str] | None = None,
+        heavy_daily_cap: int = 10,
     ) -> None:
         self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         self._default_model = default_model
         self._model_heavy = model_heavy or []
         self._db_path = db_path
+        self._heavy_daily_cap = heavy_daily_cap
+
+    # ----- public -----
 
     async def generate(
         self,
@@ -219,10 +223,31 @@ class OpenAICompatClient:
                 return parse_llm_response(raw)
             except Exception as exc:
                 code = _get_error_code(exc)
-                if code in (404, 429, 503):
+                if code == 429:
+                    delay = self._parse_retry_delay(exc)
+                    logger.warning("429 on %s — backing off %ss", candidate, delay)
+                    await asyncio.sleep(delay)
+                    # Retry once on the same model
+                    try:
+                        response = await self._client.chat.completions.create(
+                            model=candidate,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_content},
+                            ],
+                            response_format={"type": "json_object"},
+                        )
+                        raw = response.choices[0].message.content or ""
+                        await db_mod.increment_usage(self._db_path, candidate)
+                        return parse_llm_response(raw)
+                    except Exception:
+                        logger.warning("Retry on %s also failed, trying next", candidate)
+                        continue
+                elif code in (404, 503):
                     logger.warning("%d on %s — trying next model", code, candidate)
                     continue
-                raise
+                else:
+                    raise
 
         return {
             "reply": "I'm having trouble connecting right now. Please try again in a moment.",
@@ -230,11 +255,35 @@ class OpenAICompatClient:
             "relay_draft": None,
         }
 
+    async def check_usage_warning(self, model: str) -> str | None:
+        """Return a warning string if usage is approaching the cap, else None."""
+        if model not in self._model_heavy:
+            return None
+        count = await db_mod.get_usage_count(self._db_path, model)
+        cap = self._heavy_daily_cap
+        if count >= cap - 2:  # warn at cap-2
+            return f"⚠️ Heavy model usage: {count}/{cap} today."
+        return None
+
+    # ----- private -----
+
     def _build_model_list(self, requested: str) -> list[str]:
         if requested in self._model_heavy:
             others = [m for m in self._model_heavy if m != requested]
             return [requested, *others]
         return [requested]
+
+    @staticmethod
+    def _parse_retry_delay(exc: Exception) -> float:
+        """Try to read a retry delay from the exception; default to 60s."""
+        for attr in ("retry_delay", "retry_after"):
+            val = getattr(exc, attr, None)
+            if val is not None:
+                try:
+                    return float(val)
+                except (TypeError, ValueError):
+                    pass
+        return 60.0
 
 
 # ---------------------------------------------------------------------------
@@ -250,5 +299,6 @@ def create_llm_client(config: Config, db_path: str) -> LLMClient:
             default_model=config.llm_model_default or config.model_default,
             db_path=db_path,
             model_heavy=config.llm_model_heavy or config.model_heavy,
+            heavy_daily_cap=config.heavy_daily_cap,
         )
     return GeminiClient(config, db_path)

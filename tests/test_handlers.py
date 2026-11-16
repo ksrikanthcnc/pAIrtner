@@ -375,3 +375,23 @@ async def test_help(service: BotService, test_db, paired_users):
     assert "/start" in text
     assert "/tell" in text
     assert "not" in text.lower() and "therapy" in text.lower()
+
+
+# ---------------------------------------------------------------------------
+# /lang
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_lang_creates_user_if_not_exists(service: BotService, test_db):
+    """Calling /lang for a new user should create the user row first."""
+    user_id = 9999
+    # User does not exist yet
+    user = await get_user(test_db, user_id)
+    assert user is None
+
+    responses = await service.handle_lang(user_id, "en")
+    assert len(responses) == 1
+
+    # User should now exist in DB
+    user = await get_user(test_db, user_id)
+    assert user is not None

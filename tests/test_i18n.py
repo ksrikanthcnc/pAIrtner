@@ -56,3 +56,14 @@ class TestI18n:
         result = t("en", "not_therapy")
         assert "not" in result.lower()
         assert "therapy" in result.lower()
+
+    def test_privacy_disclaimer_en(self):
+        result = t("en", "not_therapy")
+        assert "telegram" in result.lower()
+        assert "gemini" in result.lower()
+        assert "stored locally" in result.lower()
+
+    def test_privacy_disclaimer_te(self):
+        result = t("te", "not_therapy")
+        assert "Telegram" in result
+        assert "Gemini" in result

@@ -189,7 +189,10 @@ async def _post_init(app: Application) -> None:
     async def _send(user_id: int, text: str) -> None:
         await app.bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
 
-    app.create_task(delivery_loop(_service.db_path, _send))
+    app.create_task(delivery_loop(
+        _service.db_path, _send,
+        poll_interval=_config.delivery_check_interval_seconds,
+    ))
     logger.info("Delivery loop started")
 
 
