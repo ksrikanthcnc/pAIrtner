@@ -141,6 +141,10 @@ class Config:
         default_factory=lambda: [0.3, 0.7]
     )
 
+    # Timeline (FEAT-004 batch4)
+    timeline_enabled: bool = True
+    timeline_max_events: int = 500
+
 
 def is_user_allowed(config: Config, user_id: int) -> bool:
     """Check if a user is allowed.  Empty allowlist = open mode (everyone)."""
@@ -427,5 +431,15 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         ),
         ab_rewrite_dampening_range=yaml_cfg.get("ab_rewrite", {}).get(
             "dampening_range", [0.3, 0.7]
+        ),
+        timeline_enabled=_parse_bool(
+            os.environ.get("TIMELINE_ENABLED"),
+            yaml_cfg.get("timeline", {}).get("enabled", True),
+        ),
+        timeline_max_events=int(
+            os.getenv(
+                "TIMELINE_MAX_EVENTS",
+                str(yaml_cfg.get("timeline", {}).get("max_events", 500)),
+            )
         ),
     )

@@ -485,13 +485,40 @@ class CommandsMixin:
 
     # ── /export ──────────────────────────────────────────────────────────
 
-    async def handle_export(self, user_id: int) -> list[BotResponse]:
-        """Export the user's facts as a text file."""
+    async def handle_export(
+        self, user_id: int, arg: str | None = None
+    ) -> list[BotResponse]:
+        """Export facts or therapy report as a text file."""
         if not is_user_allowed(self.config, user_id):
             return []
 
         lang = await self._get_lang(user_id)
 
+        # /export therapy → structured therapy report
+        if arg and arg.strip().lower() == "therapy":
+            from couples_bot.therapy_export import generate_therapy_report
+
+            user = await db_mod.get_user(self.db_path, user_id)
+            if not user or not user.get("partner_id"):
+                return [BotResponse(t(lang, "not_paired"))]
+
+            generating_msg = t(lang, "export_therapy_generating")
+            report = await generate_therapy_report(
+                self.db_path, self.llm, user_id,
+                prompts_dir=self.config.prompts_dir,
+            )
+            if not report:
+                return [BotResponse(t(lang, "export_therapy_empty"))]
+
+            from datetime import datetime, timezone
+            date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+            filename = f"therapy_report_{date_str}.txt"
+            return [BotResponse(
+                t(lang, "export_therapy_caption"),
+                document=(filename, report),
+            )]
+
+        # Default: /export (facts)
         facts = await db_mod.get_facts(self.db_path, user_id)
         if not facts:
             return [BotResponse(t(lang, "export_empty"))]
@@ -612,6 +639,15 @@ class CommandsMixin:
 
         text = text.strip()
         await db_mod.add_user_goal(self.db_path, user_id, text)
+
+        # Record 'goal' event on the timeline (FEAT-004)
+        user = await db_mod.get_user(self.db_path, user_id)
+        if user and user.get("partner_id"):
+            couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
+            await db_mod.add_timeline_event(
+                self.db_path, couple_id, "goal", f"Personal goal: {text}",
+            )
+
         return [BotResponse(t(lang, "goal_created", text=text))]
 
     # ── /together ────────────────────────────────────────────────────────
@@ -635,6 +671,11 @@ class CommandsMixin:
         partner_id = user["partner_id"]
         couple_id = db_mod.make_couple_id(user_id, partner_id)
         await db_mod.add_shared_goal(self.db_path, couple_id, user_id, text)
+
+        # Record 'goal' event on the timeline (FEAT-004)
+        await db_mod.add_timeline_event(
+            self.db_path, couple_id, "goal", f"Shared goal: {text}",
+        )
 
         # Notify partner
         user_name = user.get("name") or "Your partner"
@@ -779,4 +820,82 @@ class CommandsMixin:
                 relay_count=len(relay_ids),
             ))
 
+        return [BotResponse("".join(parts))]
+
+    # ── /timeline ────────────────────────────────────────────────────────
+
+    async def handle_timeline(
+        self, user_id: int, arg: str | None
+    ) -> list[BotResponse]:
+        """Show the couple's relationship timeline events."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+        user = await db_mod.get_user(self.db_path, user_id)
+        if not user or not user.get("partner_id"):
+            return [BotResponse(t(lang, "not_paired"))]
+
+        couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
+
+        _emoji = {
+            "paired": "✨",
+            "conflict": "⚡",
+            "resolution": "✅",
+            "milestone": "🏆",
+            "goal": "🎯",
+            "relay": "💌",
+            "checkin": "🔄",
+        }
+
+        if arg and arg.strip().lower() == "month":
+            # Current month filter
+            now = datetime.now(timezone.utc)
+            start = now.strftime("%Y-%m-01")
+            # Next month start
+            if now.month == 12:
+                end = f"{now.year + 1}-01-01"
+            else:
+                end = f"{now.year}-{now.month + 1:02d}-01"
+
+            events = await db_mod.get_timeline_events_range(
+                self.db_path, couple_id, start, end,
+            )
+            if not events:
+                return [BotResponse(t(lang, "timeline_empty"))]
+
+            month_name = now.strftime("%B %Y")
+            parts = [t(lang, "timeline_month_header", month=month_name) + "\n"]
+            for ev in events:
+                emoji = _emoji.get(ev["event_type"], "📌")
+                try:
+                    dt = datetime.fromisoformat(ev["created_at"])
+                    date_str = dt.strftime("%b %d")
+                except (ValueError, TypeError):
+                    date_str = "?"
+                parts.append(
+                    t(lang, "timeline_event_item",
+                      emoji=emoji, date=date_str, summary=ev["summary"])
+                )
+            return [BotResponse("".join(parts))]
+
+        # Default: last 20 events
+        events = await db_mod.get_timeline_events(
+            self.db_path, couple_id, limit=20,
+        )
+        if not events:
+            return [BotResponse(t(lang, "timeline_empty"))]
+
+        parts = [t(lang, "timeline_header") + "\n"]
+        for ev in reversed(events):  # chronological order
+            emoji = _emoji.get(ev["event_type"], "📌")
+            try:
+                dt = datetime.fromisoformat(ev["created_at"])
+                date_str = dt.strftime("%b %d")
+            except (ValueError, TypeError):
+                date_str = "?"
+            parts.append(
+                t(lang, "timeline_event_item",
+                  emoji=emoji, date=date_str, summary=ev["summary"])
+            )
         return [BotResponse("".join(parts))]

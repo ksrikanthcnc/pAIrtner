@@ -448,6 +448,16 @@ class CallbacksMixin:
         if not goal or goal["user_id"] != user_id:
             return [BotResponse(t(lang, "error_generic"))]
         await db_mod.update_goal_status(self.db_path, goal_id, "achieved")
+
+        # Record 'milestone' event on the timeline (FEAT-004)
+        user = await db_mod.get_user(self.db_path, user_id)
+        if user and user.get("partner_id"):
+            couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
+            await db_mod.add_timeline_event(
+                self.db_path, couple_id, "milestone",
+                f"Goal achieved: {goal['text']}",
+            )
+
         return [BotResponse(t(lang, "goal_achieved"))]
 
     async def _cb_goal_dropped(
@@ -476,6 +486,13 @@ class CallbacksMixin:
         if goal["couple_id"] != couple_id:
             return [BotResponse(t(lang, "error_generic"))]
         await db_mod.update_shared_goal_status(self.db_path, goal_id, "achieved")
+
+        # Record 'milestone' event on the timeline (FEAT-004)
+        await db_mod.add_timeline_event(
+            self.db_path, couple_id, "milestone",
+            f"Shared goal achieved: {goal['text']}",
+        )
+
         return [BotResponse(t(lang, "goal_achieved"))]
 
     async def _cb_shared_goal_dropped(

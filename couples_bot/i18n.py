@@ -108,11 +108,13 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/pause — Pause relay delivery\n"
             "/resume — Resume relay delivery\n"
             "/history — View recent sent and received messages\n"
-            "/conflicts — View open discussion topics\n\n"
+            "/conflicts — View open discussion topics\n"
+            "/timeline — View your relationship timeline\n\n"
             "<b>Memory</b>\n"
             "/whatdoyouknow — See what I remember about you\n"
             "/forget &lt;id|all&gt; — Delete your facts\n"
             "/export — Download your facts as a file\n"
+            "/export therapy — Download a therapy report\n"
             "/remember — Revisit a positive shared memory\n"
             "/goal &lt;text&gt; — Set a personal goal\n"
             "/together &lt;text&gt; — Set a shared goal with your partner\n"
@@ -386,6 +388,17 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # Read receipts (FEAT-003 batch4)
         "history_acknowledged": " ✓",
+
+        # Timeline (FEAT-004 batch4)
+        "timeline_header": "📅 <b>Relationship Timeline</b>",
+        "timeline_empty": "No timeline events yet. Your story is just beginning! ✨",
+        "timeline_event_item": "[{date}] {emoji} {summary}\n",
+        "timeline_month_header": "📅 <b>Timeline — {month}</b>",
+
+        # Therapy export (FEAT-004 batch4)
+        "export_therapy_caption": "📋 Here's your therapy report. Share it with your therapist.",
+        "export_therapy_generating": "⏳ Generating your therapy report...",
+        "export_therapy_empty": "Not enough data yet to generate a therapy report. Keep chatting!",
     },
 
     "te": {
@@ -474,11 +487,13 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/pause — డెలివరీ ఆపు\n"
             "/resume — డెలివరీ కొనసాగించు\n"
             "/history — ఇటీవల పంపిన/అందుకున్న సందేశాలు\n"
-            "/conflicts — ఓపెన్ చర్చా అంశాలు చూడండి\n\n"
+            "/conflicts — ఓపెన్ చర్చా అంశాలు చూడండి\n"
+            "/timeline — మీ సంబంధ టైమ్‌లైన్ చూడండి\n\n"
             "<b>జ్ఞాపకం</b>\n"
             "/whatdoyouknow — నేను ఏమి గుర్తుంచుకుంటున్నాను\n"
             "/forget — మీ విషయాలు తొలగించండి\n"
             "/export — మీ విషయాలు డౌన్‌లోడ్ చేయండి\n"
+            "/export therapy — థెరపీ రిపోర్ట్ డౌన్‌లోడ్ చేయండి\n"
             "/remember — మంచి జ్ఞాపకాన్ని చూడండి\n"
             "/goal — వ్యక్తిగత లక్ష్యం సెట్ చేయండి\n"
             "/together — భాగస్వామ్య లక్ష్యం సెట్ చేయండి\n"
@@ -742,6 +757,17 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # Read receipts (FEAT-003 batch4)
         "history_acknowledged": " ✓",
+
+        # Timeline (FEAT-004 batch4)
+        "timeline_header": "📅 <b>సంబంధ టైమ్‌లైన్</b>",
+        "timeline_empty": "ఇంకా టైమ్‌లైన్ ఈవెంట్‌లు లేవు. మీ కథ ఇప్పుడే మొదలవుతోంది! ✨",
+        "timeline_event_item": "[{date}] {emoji} {summary}\n",
+        "timeline_month_header": "📅 <b>టైమ్‌లైన్ — {month}</b>",
+
+        # Therapy export (FEAT-004 batch4)
+        "export_therapy_caption": "📋 మీ థెరపీ రిపోర్ట్ ఇక్కడ ఉంది. మీ థెరపిస్ట్‌తో పంచుకోండి.",
+        "export_therapy_generating": "⏳ మీ థెరపీ రిపోర్ట్ తయారవుతోంది...",
+        "export_therapy_empty": "థెరపీ రిపోర్ట్ తయారు చేయడానికి తగినంత డేటా లేదు. చాట్ చేస్తూ ఉండండి!",
     },
 }
 

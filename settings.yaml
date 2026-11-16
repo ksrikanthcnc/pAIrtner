@@ -125,3 +125,8 @@ feedback:
 ab_rewrite:
   enabled: true
   dampening_range: [0.3, 0.7]
+
+# Relationship timeline — event logging and display.
+timeline:
+  enabled: true
+  max_events: 500

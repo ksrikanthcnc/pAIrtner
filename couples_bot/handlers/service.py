@@ -319,9 +319,15 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
         del self._pairing_codes[code]
         await db_mod.set_partner(self.db_path, user_id, partner_id)
 
+        # Record 'paired' event on the timeline (FEAT-004)
+        couple_id = db_mod.make_couple_id(user_id, partner_id)
         partner = await db_mod.get_user(self.db_path, partner_id)
         pname = (partner or {}).get("name") or "your partner"
         uname = user_name or user.get("name") or "your partner"
+        await db_mod.add_timeline_event(
+            self.db_path, couple_id, "paired",
+            f"{uname} and {pname} paired up",
+        )
 
         responses: list[BotResponse] = [
             BotResponse(t(lang, "join_success", partner_name=pname)),

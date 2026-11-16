@@ -94,6 +94,12 @@ async def delivery_loop(
                     slang = (sender or {}).get("lang") or "en"
                     await send_func(sender_id, t(slang, "relay_delivered"))
 
+                    # Record 'relay' event on the timeline (FEAT-004)
+                    draft_text = text[:80] + "..." if len(text) > 80 else text
+                    await db_mod.add_timeline_event(
+                        db_path, cid, "relay", draft_text,
+                    )
+
                     logger.info(
                         "Delivered pending %d from %d to %d",
                         row["id"], sender_id, receiver_id,

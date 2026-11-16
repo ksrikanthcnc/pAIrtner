@@ -238,6 +238,19 @@ CREATE TABLE IF NOT EXISTS conflicts (
 
 CREATE INDEX IF NOT EXISTS idx_conflicts_couple_status
     ON conflicts(couple_id, status);
+
+CREATE TABLE IF NOT EXISTS timeline_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    couple_id   TEXT NOT NULL,
+    event_type  TEXT NOT NULL
+                CHECK(event_type IN ('paired','conflict','resolution','milestone','goal','relay','checkin')),
+    summary     TEXT NOT NULL,
+    metadata    TEXT,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_timeline_couple_created
+    ON timeline_events(couple_id, created_at);
 """
 
 
@@ -1780,3 +1793,78 @@ async def get_unacknowledged_relays_to_user(
         "ORDER BY sent_at DESC",
         (receiver_id,),
     )
+
+
+# ---------------------------------------------------------------------------
+# Timeline events (FEAT-004 batch4)
+# ---------------------------------------------------------------------------
+
+async def add_timeline_event(
+    db_path: str,
+    couple_id: str,
+    event_type: str,
+    summary: str,
+    metadata: str | None = None,
+) -> int:
+    """Record a timeline event; return its id."""
+    valid = ("paired", "conflict", "resolution", "milestone", "goal", "relay", "checkin")
+    if event_type not in valid:
+        event_type = "milestone"
+    return await _execute(
+        db_path,
+        "INSERT INTO timeline_events (couple_id, event_type, summary, metadata) "
+        "VALUES (?, ?, ?, ?)",
+        (couple_id, event_type, summary, metadata),
+    )
+
+
+async def get_timeline_events(
+    db_path: str,
+    couple_id: str,
+    limit: int = 20,
+    event_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return recent timeline events, optionally filtered by type."""
+    if event_type:
+        return await _fetch_all(
+            db_path,
+            "SELECT * FROM timeline_events "
+            "WHERE couple_id = ? AND event_type = ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (couple_id, event_type, limit),
+        )
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM timeline_events "
+        "WHERE couple_id = ? ORDER BY created_at DESC LIMIT ?",
+        (couple_id, limit),
+    )
+
+
+async def get_timeline_events_range(
+    db_path: str,
+    couple_id: str,
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, Any]]:
+    """Return timeline events within a date range."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM timeline_events "
+        "WHERE couple_id = ? AND created_at >= ? AND created_at < ? "
+        "ORDER BY created_at ASC",
+        (couple_id, start_date, end_date),
+    )
+
+
+async def get_timeline_summary(
+    db_path: str, couple_id: str
+) -> dict[str, int]:
+    """Return counts by event_type for a couple's timeline."""
+    rows = await _fetch_all(
+        db_path,
+        "SELECT event_type, COUNT(*) AS cnt FROM timeline_events "
+        "WHERE couple_id = ? GROUP BY event_type",
+        (couple_id,),
+    )
+    return {row["event_type"]: row["cnt"] for row in rows}

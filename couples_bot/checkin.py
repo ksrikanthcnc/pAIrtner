@@ -283,6 +283,13 @@ async def _generate_summary(
     # Mark complete with summary
     await db_mod.mark_checkin_complete(db_path, checkin["id"], summary)
 
+    # Record 'checkin' event on the timeline (FEAT-004)
+    couple_id = db_mod.make_couple_id(user_a, user_b)
+    checkin_summary_short = summary[:80] + "..." if len(summary) > 80 else summary
+    await db_mod.add_timeline_event(
+        db_path, couple_id, "checkin", checkin_summary_short,
+    )
+
     # Send to both
     for uid in (checkin["partner_a_id"], checkin["partner_b_id"]):
         u = await db_mod.get_user(db_path, uid)
