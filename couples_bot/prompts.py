@@ -126,9 +126,13 @@ You MUST respond ONLY with valid JSON matching this schema:
 {
   "reply": "<your conversational response to the user>",
   "new_facts": [
-    {"text": "<a concise fact to remember>", "visibility": "private", "category": "relationship|household|emotional|work|health|other|null"}
+    {"text": "<a concise fact to remember>", "visibility": "private", "category": "relationship|household|emotional|work|health|other|null", "fact_type": "transient|situational|stable"}
   ],
-  "relay_draft": "<a softened version of the message for the partner>" or null
+  "relay_draft": "<a softened version of the message for the partner>" or null,
+  "detected_mood": "stressed|happy|angry|reflective|neutral" or null,
+  "patterns_observed": ["<communication pattern noticed>"],
+  "partner_themes": ["<theme about what user says regarding partner>"],
+  "articulation_note": "<tip on how the user could express themselves better>" or null
 }
 
 Rules:
@@ -137,9 +141,18 @@ Rules:
   explicitly wants their partner to know, in which case use "shared".
 - Classify each fact into one of the categories: relationship, household,
   emotional, work, health, other. Use null if uncertain.
+- "fact_type": classify each fact — "transient" (current mood/state),
+  "situational" (this week's schedule), "stable" (likes, personality traits).
 - "relay_draft": provide a kind, non-confrontational rewrite if the
   message contains something the user might want to share with their
   partner. Set to null otherwise.
+- "detected_mood": the user's apparent emotional state. null if unclear.
+- "patterns_observed": communication patterns you notice (e.g. "tends to
+  generalize", "uses blame language"). May be empty [].
+- "partner_themes": themes about what the user says regarding their
+  partner (e.g. "feels unheard about household decisions"). May be empty [].
+- "articulation_note": if the user's message could be expressed more
+  constructively, provide a brief coaching tip. null otherwise.
 - Keep facts concise (one sentence each).
 - Never include the partner's private information in your reply.
 """
@@ -149,6 +162,33 @@ _TONE = (
     "Soften harsh language while preserving the core meaning. "
     "Never take sides. Use simple, clear language."
 )
+
+
+# ---------------------------------------------------------------------------
+# Partner summary (FEAT-003)
+# ---------------------------------------------------------------------------
+
+def build_partner_summary_block(perceptions: list[dict]) -> str:
+    """Format partner perceptions into a prompt section.
+
+    PRIVACY CRITICAL: this block contains ONLY synthesized themes,
+    NEVER raw partner text.
+    """
+    if not perceptions:
+        return ""
+    lines = []
+    for p in perceptions:
+        theme = p.get("theme", "")
+        sentiment = p.get("sentiment", "neutral")
+        if theme:
+            lines.append(f"- {theme} ({sentiment})")
+    if not lines:
+        return ""
+    return (
+        "\n## What your partner seems to feel\n"
+        + "\n".join(lines)
+        + "\n"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +242,7 @@ def build_chat_prompt(
     message: str,
     voice_text: str | None = None,
     dampening_instruction: str | None = None,
+    partner_summary: str | None = None,
 ) -> tuple[str, str]:
     """Build prompt for a regular chat message.
 
@@ -214,6 +255,8 @@ def build_chat_prompt(
     parts: list[str] = []
     parts.append(_format_facts("Your private notes", ctx.private_facts))
     parts.append(_format_facts("Shared notes", ctx.shared_facts))
+    if partner_summary:
+        parts.append(partner_summary)
     parts.append(_format_history(ctx.recent_messages))
     parts.append(f"\n## Current message\n{message}")
 
@@ -225,6 +268,7 @@ def build_tell_prompt(
     message: str,
     voice_text: str | None = None,
     dampening_instruction: str | None = None,
+    partner_summary: str | None = None,
 ) -> tuple[str, str]:
     """Build prompt for /tell or #send — relay drafting.
 
@@ -253,6 +297,8 @@ def build_tell_prompt(
     parts: list[str] = []
     parts.append(_format_facts("Your private notes", ctx.private_facts))
     parts.append(_format_facts("Shared notes", ctx.shared_facts))
+    if partner_summary:
+        parts.append(partner_summary)
     parts.append(f"\n## Message to relay to partner\n{message}")
 
     return system, "".join(parts)

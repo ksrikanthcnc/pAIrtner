@@ -1701,16 +1701,15 @@ async def test_whatdoyouknow_groups_by_category(
 
 
 @pytest.mark.asyncio
-async def test_whatdoyouknow_no_categories_uses_legacy(
+async def test_whatdoyouknow_no_categories_uses_type_grouping(
     service: BotService, test_db, paired_users
 ):
-    """Without categories, /whatdoyouknow uses private/shared sections."""
+    """Without categories, /whatdoyouknow groups by fact type."""
     a_id, _ = paired_users
-    # The paired_users fixture adds facts without categories
+    # The paired_users fixture adds facts without categories — default is 'stable'
     responses = await service.handle_whatdoyouknow(a_id)
     text = responses[0].text
-    assert "Private" in text or "🔒" in text
-    assert "Shared" in text or "🔓" in text
+    assert "Stable" in text or "📌" in text
 
 
 # ---------------------------------------------------------------------------

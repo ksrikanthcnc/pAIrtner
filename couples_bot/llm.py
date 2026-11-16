@@ -32,9 +32,21 @@ def parse_llm_response(raw: str) -> LLMResponse:
             "reply": data.get("reply", raw),
             "new_facts": data.get("new_facts", []),
             "relay_draft": data.get("relay_draft"),
+            "detected_mood": data.get("detected_mood"),
+            "patterns_observed": data.get("patterns_observed", []),
+            "partner_themes": data.get("partner_themes", []),
+            "articulation_note": data.get("articulation_note"),
         }
     except (json.JSONDecodeError, TypeError):
-        return {"reply": raw, "new_facts": [], "relay_draft": None}
+        return {
+            "reply": raw,
+            "new_facts": [],
+            "relay_draft": None,
+            "detected_mood": None,
+            "patterns_observed": [],
+            "partner_themes": [],
+            "articulation_note": None,
+        }
 
 
 # ---------------------------------------------------------------------------

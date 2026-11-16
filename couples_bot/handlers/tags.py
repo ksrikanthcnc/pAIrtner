@@ -11,10 +11,12 @@ import uuid
 from couples_bot import db as db_mod
 from couples_bot.dampening import resolve_dampening
 from couples_bot.i18n import t
+from couples_bot.profile_updater import process_llm_extras
 from couples_bot.prompts import (
     build_blunt_prompt,
     build_chat_prompt,
     build_keep_prompt,
+    build_partner_summary_block,
     build_system_prompt,
     build_tell_prompt,
     load_voice,
@@ -42,6 +44,18 @@ class TagsMixin:
         )
         return voice_text, dampening_instruction
 
+    async def _get_partner_summary(self, user_id: int) -> str | None:
+        """Build the partner perception summary block for prompts."""
+        user = await db_mod.get_user(self.db_path, user_id)
+        if not user or not user.get("partner_id"):
+            return None
+        perceptions = await db_mod.get_partner_perceptions(
+            self.db_path, user_id,
+        )
+        if not perceptions:
+            return None
+        return build_partner_summary_block(perceptions)
+
     async def _handle_keep(
         self, user_id: int, text: str
     ) -> list[BotResponse]:
@@ -60,10 +74,15 @@ class TagsMixin:
 
         count = await self._save_facts(user_id, result.get("new_facts", []))
 
+        # Fire-and-forget: auto-update profiles from LLM extras
+        await process_llm_extras(self.db_path, user_id, result, self.config)
+
         reply = result["reply"]
         if count:
             reply += "\n\n" + t(lang, "fact_saved", count=count)
-        return [BotResponse(reply)]
+        responses = [BotResponse(reply)]
+        responses.extend(self._drain_contradictions())
+        return responses
 
     async def _handle_send(
         self, user_id: int, text: str, skip_cooldown: bool
@@ -76,7 +95,12 @@ class TagsMixin:
 
         ctx = await self._build_ctx(user_id)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
-        system, content = build_tell_prompt(ctx, text, voice_text=voice_text, dampening_instruction=damp_instr)
+        partner_summary = await self._get_partner_summary(user_id)
+        system, content = build_tell_prompt(
+            ctx, text, voice_text=voice_text,
+            dampening_instruction=damp_instr,
+            partner_summary=partner_summary,
+        )
 
         api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", text)
@@ -87,6 +111,9 @@ class TagsMixin:
 
         await self._save_facts(user_id, result.get("new_facts", []))
 
+        # Fire-and-forget: auto-update profiles from LLM extras
+        await process_llm_extras(self.db_path, user_id, result, self.config)
+
         draft = result.get("relay_draft") or result["reply"]
         pending_id = await db_mod.create_pending(
             self.db_path, user_id, user["partner_id"], draft
@@ -94,13 +121,20 @@ class TagsMixin:
 
         text_msg = t(lang, "tell_draft_header") + draft
 
+        # Articulation tip (if enabled and present)
+        art_note = result.get("articulation_note")
+        if art_note and self.config.articulation_enabled:
+            text_msg += "\n\n" + t(lang, "articulation_tip", tip=art_note)
+
         # Inform sender if partner is paused
         partner = await db_mod.get_user(self.db_path, user["partner_id"])
         if partner and partner.get("paused"):
             text_msg += "\n\n" + t(lang, "partner_paused_notice")
 
         buttons = self._approval_buttons(pending_id, lang, skip_cooldown)
-        return [BotResponse(text_msg, buttons=buttons)]
+        responses = [BotResponse(text_msg, buttons=buttons)]
+        responses.extend(self._drain_contradictions())
+        return responses
 
     async def _handle_deep(
         self, user_id: int, text: str
@@ -109,7 +143,12 @@ class TagsMixin:
         lang = await self._get_lang(user_id)
         ctx = await self._build_ctx(user_id)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
-        system, content = build_chat_prompt(ctx, text, voice_text=voice_text, dampening_instruction=damp_instr)
+        partner_summary = await self._get_partner_summary(user_id)
+        system, content = build_chat_prompt(
+            ctx, text, voice_text=voice_text,
+            dampening_instruction=damp_instr,
+            partner_summary=partner_summary,
+        )
 
         model = self.config.model_heavy[0] if self.config.model_heavy else None
         api_key = await self._get_couple_api_key(user_id)
@@ -126,9 +165,13 @@ class TagsMixin:
 
         count = await self._save_facts(user_id, result.get("new_facts", []))
 
+        # Fire-and-forget: auto-update profiles from LLM extras
+        await process_llm_extras(self.db_path, user_id, result, self.config)
+
         replies: list[BotResponse] = [BotResponse(result["reply"])]
         if count:
             replies[0].text += "\n\n" + t(lang, "fact_saved", count=count)
+        replies.extend(self._drain_contradictions())
         return replies
 
     async def _handle_blunt(
@@ -149,10 +192,15 @@ class TagsMixin:
 
         count = await self._save_facts(user_id, result.get("new_facts", []))
 
+        # Fire-and-forget: auto-update profiles from LLM extras
+        await process_llm_extras(self.db_path, user_id, result, self.config)
+
         reply_text = t(lang, "blunt_disclaimer") + "\n\n" + result["reply"]
         if count:
             reply_text += "\n\n" + t(lang, "fact_saved", count=count)
-        return [BotResponse(reply_text)]
+        responses = [BotResponse(reply_text)]
+        responses.extend(self._drain_contradictions())
+        return responses
 
     async def _handle_plain(
         self, user_id: int, text: str
@@ -161,7 +209,12 @@ class TagsMixin:
         lang = await self._get_lang(user_id)
         ctx = await self._build_ctx(user_id)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
-        system, content = build_chat_prompt(ctx, text, voice_text=voice_text, dampening_instruction=damp_instr)
+        partner_summary = await self._get_partner_summary(user_id)
+        system, content = build_chat_prompt(
+            ctx, text, voice_text=voice_text,
+            dampening_instruction=damp_instr,
+            partner_summary=partner_summary,
+        )
 
         api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", text)
@@ -172,9 +225,17 @@ class TagsMixin:
 
         count = await self._save_facts(user_id, result.get("new_facts", []))
 
+        # Fire-and-forget: auto-update profiles from LLM extras
+        await process_llm_extras(self.db_path, user_id, result, self.config)
+
         reply_text = result["reply"]
         if count:
             reply_text += "\n\n" + t(lang, "fact_saved", count=count)
+
+        # Articulation tip (if enabled and relay_draft present)
+        art_note = result.get("articulation_note")
+        if art_note and result.get("relay_draft") and self.config.articulation_enabled:
+            reply_text += "\n\n" + t(lang, "articulation_tip", tip=art_note)
 
         # If user is paired and LLM suggested a relay, offer save/relay choice
         user = await db_mod.get_user(self.db_path, user_id)
@@ -185,9 +246,13 @@ class TagsMixin:
                 "relay_draft": result["relay_draft"],
             }
             buttons = self._choice_buttons(choice_id, lang)
-            return [BotResponse(
+            responses = [BotResponse(
                 reply_text + "\n\n" + t(lang, "ask_action"),
                 buttons=buttons,
             )]
+            responses.extend(self._drain_contradictions())
+            return responses
 
-        return [BotResponse(reply_text)]
+        responses = [BotResponse(reply_text)]
+        responses.extend(self._drain_contradictions())
+        return responses

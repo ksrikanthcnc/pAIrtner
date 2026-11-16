@@ -402,3 +402,29 @@ class CallbacksMixin:
             self.db_path, user_id, voice_intensity=intensity,
         )
         return [BotResponse(t(lang, "style_intensity_set", intensity=intensity))]
+
+    # ── fact contradiction callbacks ─────────────────────────────────────
+
+    async def _cb_fact_keep_new(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Keep the new fact, archive the old one."""
+        parts = data.split(":")
+        new_id, old_id = int(parts[1]), int(parts[2])
+        await db_mod.supersede_fact(self.db_path, old_id, new_id)
+        return [BotResponse(t(lang, "fact_contradiction_resolved"))]
+
+    async def _cb_fact_keep_both(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Keep both facts — no action needed."""
+        return [BotResponse(t(lang, "fact_contradiction_resolved"))]
+
+    async def _cb_fact_keep_old(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Keep the old fact, archive the new one."""
+        parts = data.split(":")
+        new_id, old_id = int(parts[1]), int(parts[2])
+        await db_mod.archive_fact(self.db_path, new_id)
+        return [BotResponse(t(lang, "fact_contradiction_resolved"))]

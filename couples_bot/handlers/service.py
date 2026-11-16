@@ -53,6 +53,7 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
         self._relay_choices: dict[str, dict[str, Any]] = {}
         self._forget_confirm: set[int] = set()
         self._batch_item_edit_state: dict[int, int] = {}
+        self._pending_contradictions: list[BotResponse] = []
 
         # No instance-level check-in state needed; handle_message uses
         # a local list + closure to avoid concurrency issues.
@@ -111,21 +112,105 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
     async def _save_facts(
         self, user_id: int, new_facts: list[dict[str, str]]
     ) -> int:
-        """Persist LLM-extracted facts and return the count saved."""
+        """Persist LLM-extracted facts and return the count saved.
+
+        Any detected contradictions are appended to
+        ``self._pending_contradictions`` for the caller to pick up.
+        """
         count = 0
+        lang = await self._get_lang(user_id)
+        self._pending_contradictions = []
+
         for fact in new_facts:
             text = fact.get("text", "").strip()
             vis = fact.get("visibility", "private")
             if vis not in ("private", "shared"):
                 vis = "private"
             category = fact.get("category") or None
+            fact_type = fact.get("fact_type", "stable")
+            if fact_type not in ("transient", "situational", "stable"):
+                fact_type = "stable"
             if text:
-                await db_mod.add_fact(
+                new_id = await db_mod.add_fact(
                     self.db_path, user_id, text, vis, source="llm",
-                    category=category,
+                    category=category, fact_type=fact_type,
                 )
                 count += 1
+
+                contradiction = await self._check_contradiction(
+                    user_id, new_id, text, category, lang,
+                )
+                if contradiction:
+                    self._pending_contradictions.append(contradiction)
+
         return count
+
+    def _drain_contradictions(self) -> list[BotResponse]:
+        """Return and clear any pending contradiction responses."""
+        result = list(self._pending_contradictions)
+        self._pending_contradictions = []
+        return result
+
+    async def _check_contradiction(
+        self,
+        user_id: int,
+        new_fact_id: int,
+        new_text: str,
+        category: str | None,
+        lang: str,
+    ) -> BotResponse | None:
+        """Check if a new fact contradicts an existing active fact."""
+        if not category:
+            return None
+
+        existing = await db_mod.get_active_facts(self.db_path, user_id)
+        new_lower = new_text.lower()
+
+        # Simple heuristic: opposite sentiment words
+        opposites = [
+            ("likes", "dislikes"),
+            ("happy", "unhappy"),
+            ("wants", "doesn't want"),
+            ("loves", "hates"),
+            ("enjoys", "avoids"),
+            ("prefers", "dislikes"),
+            ("comfortable", "uncomfortable"),
+        ]
+
+        for fact in existing:
+            if fact["id"] == new_fact_id:
+                continue
+            if (fact.get("category") or None) != category:
+                continue
+            old_lower = fact["text"].lower()
+            for pos, neg in opposites:
+                if (pos in new_lower and neg in old_lower) or \
+                   (neg in new_lower and pos in old_lower):
+                    from .models import InlineButton
+                    buttons = [[
+                        InlineButton(
+                            t(lang, "btn_keep_new"),
+                            f"fc_new:{new_fact_id}:{fact['id']}",
+                        ),
+                        InlineButton(
+                            t(lang, "btn_keep_both"),
+                            f"fc_both:{new_fact_id}:{fact['id']}",
+                        ),
+                        InlineButton(
+                            t(lang, "btn_keep_old"),
+                            f"fc_old:{new_fact_id}:{fact['id']}",
+                        ),
+                    ]]
+                    return BotResponse(
+                        t(
+                            lang,
+                            "fact_contradiction",
+                            old_fact=fact["text"],
+                            new_fact=new_text,
+                        ),
+                        buttons=buttons,
+                    )
+        return None
 
     async def _check_rate_limit(self, user_id: int) -> list[BotResponse] | None:
         """Check per-minute and per-day rate limits.
@@ -425,5 +510,13 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
             return await self._cb_style_voice(user_id, callback_data, lang)
         if callback_data.startswith("si:"):
             return await self._cb_style_intensity(user_id, callback_data, lang)
+
+        # Fact contradiction callbacks
+        if callback_data.startswith("fc_new:"):
+            return await self._cb_fact_keep_new(user_id, callback_data, lang)
+        if callback_data.startswith("fc_both:"):
+            return await self._cb_fact_keep_both(user_id, callback_data, lang)
+        if callback_data.startswith("fc_old:"):
+            return await self._cb_fact_keep_old(user_id, callback_data, lang)
 
         return [BotResponse(t(lang, "error_generic"))]

@@ -186,3 +186,37 @@ async def test_bob_prompt_excludes_alice_private(test_db, paired_users):
     # Alice's private must NOT appear
     assert "stressed about work" not in content
     assert "morning walks" not in content
+
+
+@pytest.mark.asyncio
+async def test_partner_perceptions_only_themes_in_prompt(test_db, paired_users):
+    """Partner perception themes (not raw text) appear in prompt."""
+    from couples_bot.db import add_partner_perception
+    from couples_bot.prompts import build_partner_summary_block
+
+    a_id, b_id = paired_users
+
+    # Bob says something raw (stored in messages, NOT perceptions)
+    await log_message(test_db, b_id, "user", "I am so frustrated with money")
+
+    # A synthesized theme is stored as a perception
+    await add_partner_perception(
+        test_db, user_id=b_id, about_id=a_id,
+        theme="concerned about financial stress",
+        sentiment="frustrated",
+    )
+
+    # Build Alice's prompt with partner summary
+    from couples_bot.db import get_partner_perceptions as get_pp
+    perceptions = await get_pp(test_db, a_id)
+    summary = build_partner_summary_block(perceptions)
+
+    data = await get_user_context_data(test_db, a_id)
+    ctx = UserContext(**data)
+    _, content = build_chat_prompt(ctx, "Hi", partner_summary=summary)
+
+    # Synthesized theme appears
+    assert "concerned about financial stress" in content
+
+    # Raw partner messages must never appear
+    assert "I am so frustrated with money" not in content

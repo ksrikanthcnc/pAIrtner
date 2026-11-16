@@ -13,6 +13,7 @@ from couples_bot import db as db_mod
 from couples_bot.config import is_user_allowed
 from couples_bot.crypto import decrypt_value, encrypt_value, mask_key
 from couples_bot.i18n import t
+from couples_bot.profile_updater import process_llm_extras
 from couples_bot.prompts import build_mediate_prompt, build_tell_prompt
 
 from .models import BotResponse, InlineButton, format_fact_date, format_relative_time, parse_tags
@@ -69,6 +70,9 @@ class CommandsMixin:
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
         await self._save_facts(user_id, result.get("new_facts", []))
+
+        # Fire-and-forget: auto-update profiles from LLM extras
+        await process_llm_extras(self.db_path, user_id, result, self.config)
 
         draft = result.get("relay_draft") or result["reply"]
 
@@ -160,71 +164,91 @@ class CommandsMixin:
     # ── /whatdoyouknow ───────────────────────────────────────────────────
 
     async def handle_whatdoyouknow(self, user_id: int) -> list[BotResponse]:
-        """List all stored facts for the user, grouped by category if present."""
+        """List all stored facts for the user, grouped by fact type and category."""
         if not is_user_allowed(self.config, user_id):
             return []
 
         lang = await self._get_lang(user_id)
 
-        private_facts = await db_mod.get_facts(self.db_path, user_id, "private")
-        shared_facts = await db_mod.get_facts(self.db_path, user_id, "shared")
+        private_facts = await db_mod.get_active_facts(self.db_path, user_id, "private")
+        shared_facts = await db_mod.get_active_facts(self.db_path, user_id, "shared")
 
         if not private_facts and not shared_facts:
             return [BotResponse(t(lang, "whatdoyouknow_empty"))]
 
         all_facts = private_facts + shared_facts
-        has_categories = any(f.get("category") for f in all_facts)
 
         parts = [t(lang, "whatdoyouknow_header")]
 
-        if has_categories:
-            # Group by category
-            grouped: dict[str | None, list[dict]] = {}
-            for f in all_facts:
-                cat = f.get("category") or None
-                grouped.setdefault(cat, []).append(f)
+        # Group by fact_type first, then by category within each type
+        type_order = ["stable", "situational", "transient"]
+        type_labels = {
+            "stable": t(lang, "fact_type_stable"),
+            "situational": t(lang, "fact_type_situational"),
+            "transient": t(lang, "fact_type_transient"),
+        }
+        cat_order = [
+            "relationship", "household", "emotional",
+            "work", "health", "other", None,
+        ]
 
-            # Ordered category display
-            cat_order = [
-                "relationship", "household", "emotional",
-                "work", "health", "other", None,
+        for ftype in type_order:
+            facts_of_type = [
+                f for f in all_facts
+                if (f.get("fact_type") or "stable") == ftype
             ]
-            for cat in cat_order:
-                facts_in_cat = grouped.get(cat)
-                if not facts_in_cat:
-                    continue
-                i18n_key = _CATEGORY_I18N.get(cat, "cat_other")
-                parts.append(f"\n<b>{t(lang, i18n_key)}:</b>\n")
-                for f in facts_in_cat:
-                    date = format_fact_date(f.get("created_at"))
-                    parts.append(t(
-                        lang, "fact_item",
-                        id=f["id"], date=date, text=f["text"],
-                        visibility=f["visibility"],
-                    ))
-        else:
-            # Legacy: no categories, use private/shared sections
-            if private_facts:
-                parts.append(t(lang, "whatdoyouknow_private"))
-                for f in private_facts:
-                    date = format_fact_date(f.get("created_at"))
-                    parts.append(t(
-                        lang, "fact_item",
-                        id=f["id"], date=date, text=f["text"],
-                        visibility="private",
-                    ))
+            if not facts_of_type:
+                continue
 
-            if shared_facts:
-                parts.append(t(lang, "whatdoyouknow_shared"))
-                for f in shared_facts:
-                    date = format_fact_date(f.get("created_at"))
-                    parts.append(t(
-                        lang, "fact_item",
-                        id=f["id"], date=date, text=f["text"],
-                        visibility="shared",
-                    ))
+            parts.append(f"\n<b>{type_labels.get(ftype, ftype)}:</b>\n")
+
+            has_categories = any(f.get("category") for f in facts_of_type)
+            if has_categories:
+                grouped: dict[str | None, list[dict]] = {}
+                for f in facts_of_type:
+                    cat = f.get("category") or None
+                    grouped.setdefault(cat, []).append(f)
+                for cat in cat_order:
+                    facts_in_cat = grouped.get(cat)
+                    if not facts_in_cat:
+                        continue
+                    i18n_key = _CATEGORY_I18N.get(cat, "cat_other")
+                    parts.append(f"  <i>{t(lang, i18n_key)}:</i>\n")
+                    for f in facts_in_cat:
+                        parts.append(self._format_fact_line(f, lang))
+            else:
+                for f in facts_of_type:
+                    parts.append(self._format_fact_line(f, lang))
 
         return [BotResponse("".join(parts))]
+
+    def _format_fact_line(self, f: dict, lang: str) -> str:
+        """Format a single fact line with age and expiry info."""
+        age = format_relative_time(f.get("created_at"))
+        line = t(
+            lang, "fact_item",
+            id=f["id"], date=age, text=f["text"],
+            visibility=f["visibility"],
+        )
+        # Show expiry warning if approaching
+        if f.get("expires_at"):
+            from datetime import datetime, timezone
+            try:
+                exp = datetime.fromisoformat(f["expires_at"])
+                if exp.tzinfo is None:
+                    exp = exp.replace(tzinfo=timezone.utc)
+                now = datetime.now(timezone.utc)
+                remaining = exp - now
+                if remaining.total_seconds() > 0:
+                    days = remaining.days
+                    if days > 0:
+                        line = line.rstrip("\n") + f" {t(lang, 'fact_expiring', time=f'{days}d')}\n"
+                    else:
+                        hours = int(remaining.total_seconds() // 3600)
+                        line = line.rstrip("\n") + f" {t(lang, 'fact_expiring', time=f'{hours}h')}\n"
+            except (ValueError, TypeError):
+                pass
+        return line
 
     # ── /status ──────────────────────────────────────────────────────────
 

@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS facts (
     visibility  TEXT NOT NULL CHECK(visibility IN ('private', 'shared')),
     source      TEXT,
     category    TEXT DEFAULT NULL,
+    fact_type   TEXT DEFAULT 'stable' CHECK(fact_type IN ('transient','situational','stable')),
+    expires_at  TIMESTAMP,
+    archived_at TIMESTAMP,
+    supersedes_id INTEGER REFERENCES facts(id),
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -140,6 +144,30 @@ CREATE TABLE IF NOT EXISTS user_mood_styles (
 
 CREATE INDEX IF NOT EXISTS idx_mood_user_expires ON user_mood_styles(user_id, expires_at);
 
+CREATE TABLE IF NOT EXISTS partner_perceptions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(tg_id),
+    about_id    INTEGER NOT NULL REFERENCES users(tg_id),
+    theme       TEXT NOT NULL,
+    sentiment   TEXT DEFAULT 'neutral',
+    confidence  REAL DEFAULT 0.5,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_perceptions_user_about ON partner_perceptions(user_id, about_id);
+
+CREATE TABLE IF NOT EXISTS user_patterns (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(tg_id),
+    pattern     TEXT NOT NULL,
+    frequency   INTEGER DEFAULT 1,
+    first_seen  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_seen   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_patterns_user ON user_patterns(user_id);
+
 -- Indexes for efficient querying
 CREATE INDEX IF NOT EXISTS idx_facts_owner_visibility
     ON facts(owner_id, visibility);
@@ -179,6 +207,24 @@ async def init_db(db_path: str) -> None:
         if "category" not in fact_columns:
             await db.execute(
                 "ALTER TABLE facts ADD COLUMN category TEXT DEFAULT NULL"
+            )
+
+        # Migration: add fact lifecycle columns if missing (FEAT-003)
+        if "fact_type" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN fact_type TEXT DEFAULT 'stable'"
+            )
+        if "expires_at" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN expires_at TIMESTAMP"
+            )
+        if "archived_at" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN archived_at TIMESTAMP"
+            )
+        if "supersedes_id" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN supersedes_id INTEGER REFERENCES facts(id)"
             )
 
         # Create category index (after migration ensures column exists)
@@ -301,12 +347,14 @@ async def add_fact(
     visibility: str = "private",
     source: str | None = None,
     category: str | None = None,
+    fact_type: str = "stable",
 ) -> int:
     """Insert a fact; return its id."""
     return await _execute(
         db_path,
-        "INSERT INTO facts (owner_id, text, visibility, source, category) VALUES (?, ?, ?, ?, ?)",
-        (owner_id, text, visibility, source, category),
+        "INSERT INTO facts (owner_id, text, visibility, source, category, fact_type) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (owner_id, text, visibility, source, category, fact_type),
     )
 
 
@@ -615,7 +663,7 @@ async def get_user_context_data(
         }
 
     private_facts = [
-        f["text"] for f in await get_facts(db_path, user_id, "private")
+        f["text"] for f in await get_active_facts(db_path, user_id, "private")
     ]
 
     partner_id = user.get("partner_id")
@@ -623,13 +671,23 @@ async def get_user_context_data(
     if partner_id:
         shared_facts = [
             f["text"]
-            for f in await get_shared_facts_for_pair(db_path, user_id, partner_id)
+            for f in await get_active_facts(db_path, user_id, "shared")
         ]
+        partner_shared = [
+            f["text"]
+            for f in await get_active_facts(db_path, partner_id, "shared")
+        ]
+        # Merge without duplicates while preserving order
+        seen = set(shared_facts)
+        for t in partner_shared:
+            if t not in seen:
+                shared_facts.append(t)
+                seen.add(t)
         partner = await get_user(db_path, partner_id)
         partner_name = partner["name"] if partner else None
     else:
         shared_facts = [
-            f["text"] for f in await get_facts(db_path, user_id, "shared")
+            f["text"] for f in await get_active_facts(db_path, user_id, "shared")
         ]
 
     recent = await get_recent_messages(db_path, user_id)
@@ -1078,3 +1136,211 @@ async def clear_expired_moods(db_path: str) -> int:
         )
         await db.commit()
         return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Active facts (non-archived)
+# ---------------------------------------------------------------------------
+
+async def get_active_facts(
+    db_path: str,
+    owner_id: int,
+    visibility: str | None = None,
+) -> list[dict[str, Any]]:
+    """Get non-archived facts for a user, optionally filtered by visibility."""
+    if visibility:
+        return await _fetch_all(
+            db_path,
+            "SELECT * FROM facts WHERE owner_id = ? AND visibility = ? "
+            "AND archived_at IS NULL ORDER BY created_at",
+            (owner_id, visibility),
+        )
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM facts WHERE owner_id = ? AND archived_at IS NULL "
+        "ORDER BY created_at",
+        (owner_id,),
+    )
+
+
+async def archive_fact(db_path: str, fact_id: int) -> None:
+    """Set archived_at to now on a fact."""
+    now = _now_iso()
+    await _execute(
+        db_path,
+        "UPDATE facts SET archived_at = ? WHERE id = ?",
+        (now, fact_id),
+    )
+
+
+async def set_fact_expiry(
+    db_path: str, fact_id: int, expires_at: str
+) -> None:
+    """Set the expires_at timestamp on a fact."""
+    await _execute(
+        db_path,
+        "UPDATE facts SET expires_at = ? WHERE id = ?",
+        (expires_at, fact_id),
+    )
+
+
+async def get_expiring_facts(
+    db_path: str, owner_id: int
+) -> list[dict[str, Any]]:
+    """Get facts where expires_at is within 24 hours from now."""
+    now = datetime.now(timezone.utc)
+    soon = (now + timedelta(hours=24)).isoformat()
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM facts WHERE owner_id = ? AND archived_at IS NULL "
+        "AND expires_at IS NOT NULL AND expires_at <= ? AND expires_at > ?",
+        (owner_id, soon, now.isoformat()),
+    )
+
+
+async def supersede_fact(
+    db_path: str, old_fact_id: int, new_fact_id: int
+) -> None:
+    """Mark old fact as superseded by new fact and archive it."""
+    now = _now_iso()
+    await _execute(
+        db_path,
+        "UPDATE facts SET supersedes_id = ?, archived_at = ? WHERE id = ?",
+        (new_fact_id, now, old_fact_id),
+    )
+
+
+async def run_fact_aging(db_path: str) -> list[dict[str, Any]]:
+    """Archive expired facts by type.
+
+    - Transient facts older than 14 days → archived automatically.
+    - Situational facts older than 30 days → returned for user confirmation.
+
+    Returns the list of situational facts that need confirmation.
+    """
+    now = datetime.now(timezone.utc)
+    transient_cutoff = (now - timedelta(days=14)).isoformat()
+    situational_cutoff = (now - timedelta(days=30)).isoformat()
+    now_iso = now.isoformat()
+
+    # Auto-archive transient facts older than 14 days
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "UPDATE facts SET archived_at = ? "
+            "WHERE fact_type = 'transient' AND archived_at IS NULL "
+            "AND created_at <= ?",
+            (now_iso, transient_cutoff),
+        )
+        await db.commit()
+
+    # Find situational facts older than 30 days that need confirmation
+    needs_confirmation = await _fetch_all(
+        db_path,
+        "SELECT * FROM facts "
+        "WHERE fact_type = 'situational' AND archived_at IS NULL "
+        "AND created_at <= ?",
+        (situational_cutoff,),
+    )
+
+    return needs_confirmation
+
+
+async def get_fact_by_id(
+    db_path: str, fact_id: int
+) -> dict[str, Any] | None:
+    """Return a single fact by its id."""
+    return await _fetch_one(
+        db_path, "SELECT * FROM facts WHERE id = ?", (fact_id,)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Partner perceptions
+# ---------------------------------------------------------------------------
+
+async def add_partner_perception(
+    db_path: str,
+    user_id: int,
+    about_id: int,
+    theme: str,
+    sentiment: str = "neutral",
+    confidence: float = 0.5,
+) -> int:
+    """Insert a partner perception; return its id."""
+    return await _execute(
+        db_path,
+        "INSERT INTO partner_perceptions "
+        "(user_id, about_id, theme, sentiment, confidence) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (user_id, about_id, theme, sentiment, confidence),
+    )
+
+
+async def get_partner_perceptions(
+    db_path: str, about_id: int
+) -> list[dict[str, Any]]:
+    """Get all perceptions ABOUT a user (for the other partner's prompt)."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM partner_perceptions WHERE about_id = ? "
+        "ORDER BY updated_at DESC",
+        (about_id,),
+    )
+
+
+async def update_perception_confidence(
+    db_path: str, perception_id: int, confidence: float
+) -> None:
+    """Update the confidence score of a perception."""
+    await _execute(
+        db_path,
+        "UPDATE partner_perceptions SET confidence = ?, "
+        "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (confidence, perception_id),
+    )
+
+
+# ---------------------------------------------------------------------------
+# User patterns
+# ---------------------------------------------------------------------------
+
+async def record_pattern(
+    db_path: str, user_id: int, pattern: str
+) -> int:
+    """Upsert a communication pattern.
+
+    If the pattern text already exists (case-insensitive), increment
+    frequency and update last_seen.  Otherwise insert a new row.
+    Returns the row id.
+    """
+    existing = await _fetch_one(
+        db_path,
+        "SELECT id, frequency FROM user_patterns "
+        "WHERE user_id = ? AND LOWER(pattern) = LOWER(?)",
+        (user_id, pattern),
+    )
+    if existing:
+        await _execute(
+            db_path,
+            "UPDATE user_patterns SET frequency = frequency + 1, "
+            "last_seen = CURRENT_TIMESTAMP WHERE id = ?",
+            (existing["id"],),
+        )
+        return existing["id"]
+    return await _execute(
+        db_path,
+        "INSERT INTO user_patterns (user_id, pattern) VALUES (?, ?)",
+        (user_id, pattern),
+    )
+
+
+async def get_user_patterns(
+    db_path: str, user_id: int, limit: int = 10
+) -> list[dict[str, Any]]:
+    """Return top patterns by frequency for a user."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM user_patterns WHERE user_id = ? "
+        "ORDER BY frequency DESC LIMIT ?",
+        (user_id, limit),
+    )

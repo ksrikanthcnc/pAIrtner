@@ -44,6 +44,35 @@ class TestParseLLMResponse:
         result = parse_llm_response(raw)
         assert result["relay_draft"] == "Please listen"
 
+    def test_extended_fields(self):
+        raw = (
+            '{"reply": "ok", "new_facts": [], "relay_draft": null, '
+            '"detected_mood": "happy", "patterns_observed": ["positive framing"], '
+            '"partner_themes": ["feels supported"], "articulation_note": "good job"}'
+        )
+        result = parse_llm_response(raw)
+        assert result["detected_mood"] == "happy"
+        assert result["patterns_observed"] == ["positive framing"]
+        assert result["partner_themes"] == ["feels supported"]
+        assert result["articulation_note"] == "good job"
+
+    def test_extended_fields_defaults(self):
+        """Missing extended fields get safe defaults."""
+        raw = '{"reply": "Hi"}'
+        result = parse_llm_response(raw)
+        assert result["detected_mood"] is None
+        assert result["patterns_observed"] == []
+        assert result["partner_themes"] == []
+        assert result["articulation_note"] is None
+
+    def test_invalid_json_extended_defaults(self):
+        """Invalid JSON returns safe defaults for all fields."""
+        result = parse_llm_response("not json")
+        assert result["detected_mood"] is None
+        assert result["patterns_observed"] == []
+        assert result["partner_themes"] == []
+        assert result["articulation_note"] is None
+
 
 # ---------------------------------------------------------------------------
 # Error code extraction

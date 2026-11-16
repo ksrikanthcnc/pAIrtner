@@ -274,6 +274,25 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mood_none": "No active mood set. Use /mood <stressed|happy|angry|reflective>.",
         "mood_expired": "Your previous mood has expired.",
         "mood_usage": "Usage: /mood [stressed|happy|angry|reflective]",
+
+        # Articulation
+        "articulation_tip": "💡 Tip: {tip}",
+
+        # Fact types
+        "fact_type_transient": "⏱️ Current / Transient",
+        "fact_type_situational": "📅 Situational",
+        "fact_type_stable": "📌 Stable",
+        "fact_expiring": "⏳ expires in {time}",
+
+        # Fact contradiction
+        "fact_contradiction": (
+            "🤔 I noticed something: you previously said \"{old_fact}\" "
+            "but now \"{new_fact}\". Which is current?"
+        ),
+        "btn_keep_new": "🆕 Keep New",
+        "btn_keep_both": "🔄 Keep Both",
+        "btn_keep_old": "⏮️ Keep Old",
+        "fact_contradiction_resolved": "✅ Got it, updated!",
     },
 
     "te": {
@@ -519,6 +538,25 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mood_none": "యాక్టివ్ మూడ్ లేదు. /mood <stressed|happy|angry|reflective> వాడండి.",
         "mood_expired": "మీ మునుపటి మూడ్ ఎక్స్‌పైర్ అయింది.",
         "mood_usage": "వాడకం: /mood [stressed|happy|angry|reflective]",
+
+        # Articulation
+        "articulation_tip": "💡 సూచన: {tip}",
+
+        # Fact types
+        "fact_type_transient": "⏱️ ప్రస్తుత / తాత్కాలిక",
+        "fact_type_situational": "📅 పరిస్థితిగత",
+        "fact_type_stable": "📌 స్థిర",
+        "fact_expiring": "⏳ {time} లో ఎక్స్‌పైర్",
+
+        # Fact contradiction
+        "fact_contradiction": (
+            "🤔 ఒక విషయం గమనించాను: మీరు ఇంతకు ముందు \"{old_fact}\" "
+            "అని చెప్పారు కానీ ఇప్పుడు \"{new_fact}\". ఏది ప్రస్తుతం?"
+        ),
+        "btn_keep_new": "🆕 కొత్తది ఉంచు",
+        "btn_keep_both": "🔄 రెండూ ఉంచు",
+        "btn_keep_old": "⏮️ పాతది ఉంచు",
+        "fact_contradiction_resolved": "✅ అర్థమైంది, అప్‌డేట్ అయింది!",
     },
 }
 
