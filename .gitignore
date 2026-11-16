@@ -1,0 +1,9 @@
+.env
+*.db
+__pycache__/
+tmp-kiro/
+agents/
+.venv/
+*.pyc
+.pytest_cache/
+.ruff_cache/
