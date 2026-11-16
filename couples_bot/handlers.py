@@ -122,6 +122,7 @@ class BotService:
         self._edit_state: dict[int, int] = {}       # user_id → pending_id
         self._relay_choices: dict[str, dict[str, Any]] = {}  # choice_id → data
         self._forget_confirm: set[int] = set()      # users who got the "are you sure?" prompt
+        self._batch_item_edit_state: dict[int, int] = {}  # user_id → batch_item_id
 
     # ── helpers ──────────────────────────────────────────────────────────
 
@@ -185,6 +186,31 @@ class BotService:
                 )
                 count += 1
         return count
+
+    async def _check_rate_limit(self, user_id: int) -> list[BotResponse] | None:
+        """Check per-minute and per-day rate limits. Returns response if exceeded."""
+        lang = await self._get_lang(user_id)
+
+        allowed, _ = await db_mod.check_rate_limit(
+            self.db_path, user_id, "minute",
+            self.config.rate_limit_per_minute, 60,
+        )
+        if not allowed:
+            return [BotResponse(t(lang, "rate_limited"))]
+
+        allowed, _ = await db_mod.check_rate_limit(
+            self.db_path, user_id, "day",
+            self.config.rate_limit_per_day, 86400,
+        )
+        if not allowed:
+            return [BotResponse(t(lang, "rate_limit_day"))]
+
+        return None
+
+    async def _increment_rate_counters(self, user_id: int) -> None:
+        """Increment both per-minute and per-day rate counters."""
+        await db_mod.increment_rate_counter(self.db_path, user_id, "minute", 60)
+        await db_mod.increment_rate_counter(self.db_path, user_id, "day", 86400)
 
     # ── /start ───────────────────────────────────────────────────────────
 
@@ -269,11 +295,19 @@ class BotService:
             return []
 
         lang = await self._get_lang(user_id)
+
+        # Rate limiting
+        rate_resp = await self._check_rate_limit(user_id)
+        if rate_resp:
+            return rate_resp
+
         user = await db_mod.get_user(self.db_path, user_id)
         if not user or not user.get("partner_id"):
             return [BotResponse(t(lang, "tell_no_partner"))]
         if not text or not text.strip():
             return [BotResponse(t(lang, "tell_need_message"))]
+
+        await self._increment_rate_counters(user_id)
 
         tags, clean = parse_tags(text)
         skip_cooldown = "#now" in tags
@@ -623,9 +657,20 @@ class BotService:
         # Clear any stale forget-confirm state on new message
         self._forget_confirm.discard(user_id)
 
+        # Check if user is in batch-item edit state
+        if user_id in self._batch_item_edit_state:
+            return await self._handle_batch_item_edit_input(user_id, text)
+
         # Check if user is in edit-pending state
         if user_id in self._edit_state:
             return await self._handle_edit_input(user_id, text)
+
+        # Rate limiting (for actual message processing, not edit inputs)
+        rate_resp = await self._check_rate_limit(user_id)
+        if rate_resp:
+            return rate_resp
+
+        await self._increment_rate_counters(user_id)
 
         tags, clean = parse_tags(text)
 
@@ -647,6 +692,11 @@ class BotService:
         if not is_user_allowed(self.config, user_id):
             return []
 
+        # Rate limiting (check only, no increment for callbacks)
+        rate_resp = await self._check_rate_limit(user_id)
+        if rate_resp:
+            return rate_resp
+
         lang = await self._get_lang(user_id)
 
         if callback_data.startswith("ap:") or callback_data.startswith("apn:"):
@@ -659,6 +709,20 @@ class BotService:
             return await self._cb_choose_relay(user_id, callback_data, lang)
         if callback_data.startswith("cs:"):
             return await self._cb_choose_save(user_id, callback_data, lang)
+
+        # Batch review callbacks
+        if callback_data.startswith("ba:"):
+            return await self._cb_batch_send_all(user_id, callback_data, lang)
+        if callback_data.startswith("br:"):
+            return await self._cb_batch_review_each(user_id, callback_data, lang)
+        if callback_data.startswith("bd:"):
+            return await self._cb_batch_discard_all(user_id, callback_data, lang)
+        if callback_data.startswith("bia:"):
+            return await self._cb_batch_item_approve(user_id, callback_data, lang)
+        if callback_data.startswith("bie:"):
+            return await self._cb_batch_item_edit(user_id, callback_data, lang)
+        if callback_data.startswith("bix:"):
+            return await self._cb_batch_item_discard(user_id, callback_data, lang)
 
         return [BotResponse(t(lang, "error_generic"))]
 
@@ -799,18 +863,30 @@ class BotService:
             return [BotResponse(t(lang, "error_generic"))]
 
         if skip_cooldown:
+            # Immediate delivery via individual row — no batch.
             send_after = datetime.now(timezone.utc).isoformat()
+            await db_mod.update_pending_status(
+                self.db_path, pending_id, "approved", send_after
+            )
             msg = t(lang, "approved_now")
         else:
+            # Batch accumulation: approve the row, add to batch, reset timer.
             send_after = (
                 datetime.now(timezone.utc)
                 + timedelta(minutes=self.config.cooldown_minutes)
             ).isoformat()
-            msg = t(lang, "approved", minutes=self.config.cooldown_minutes)
+            await db_mod.update_pending_status(
+                self.db_path, pending_id, "approved"
+            )
 
-        await db_mod.update_pending_status(
-            self.db_path, pending_id, "approved", send_after
-        )
+            draft = pending.get("edited_draft") or pending["draft"]
+            batch = await db_mod.create_or_get_active_batch(
+                self.db_path, user_id, pending["receiver_id"], send_after
+            )
+            await db_mod.add_item_to_batch(self.db_path, batch["id"], draft)
+            await db_mod.reset_batch_timer(self.db_path, batch["id"], send_after)
+
+            msg = t(lang, "approved", minutes=self.config.cooldown_minutes)
 
         # Check if delivery is paused for either party
         receiver = await db_mod.get_user(self.db_path, pending["receiver_id"])
@@ -892,6 +968,221 @@ class BotService:
         )
 
         buttons = self._approval_buttons(pending_id, lang)
+        return [BotResponse(
+            t(lang, "edit_updated", draft=text),
+            buttons=buttons,
+        )]
+
+    # ── internal: batch review callbacks ─────────────────────────────────
+
+    async def _cb_batch_send_all(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        batch_id = int(data.split(":")[1])
+        batch = await db_mod.get_batch(self.db_path, batch_id)
+        if not batch or batch["sender_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+
+        items = await db_mod.get_batch_items(self.db_path, batch_id)
+        drafts: list[str] = []
+        for item in items:
+            if item["status"] != "discarded":
+                drafts.append(item.get("edited_draft") or item["draft"])
+                if item["status"] == "pending":
+                    await db_mod.update_batch_item_status(
+                        self.db_path, item["id"], "approved"
+                    )
+
+        if not drafts:
+            await db_mod.update_batch_status(self.db_path, batch_id, "discarded")
+            return [BotResponse(t(lang, "batch_discarded"))]
+
+        merged = "\n\n".join(drafts)
+        receiver_id = batch["receiver_id"]
+
+        # Check pause status
+        receiver = await db_mod.get_user(self.db_path, receiver_id)
+        sender = await db_mod.get_user(self.db_path, user_id)
+        if (receiver and receiver.get("paused")) or (
+            sender and sender.get("paused")
+        ):
+            await db_mod.update_batch_status(self.db_path, batch_id, "approved")
+            return [BotResponse(
+                t(lang, "batch_sent") + "\n\n" + t(lang, "delivery_paused_notice")
+            )]
+
+        rlang = (receiver or {}).get("lang") or "en"
+        await db_mod.update_batch_status(self.db_path, batch_id, "sent")
+
+        return [
+            BotResponse(t(lang, "batch_sent")),
+            BotResponse(
+                t(rlang, "relay_sent_to_partner", message=merged),
+                target_user_id=receiver_id,
+            ),
+        ]
+
+    async def _cb_batch_review_each(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        batch_id = int(data.split(":")[1])
+        batch = await db_mod.get_batch(self.db_path, batch_id)
+        if not batch or batch["sender_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+
+        return await self._show_next_batch_item(user_id, batch_id, lang)
+
+    async def _cb_batch_discard_all(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        batch_id = int(data.split(":")[1])
+        batch = await db_mod.get_batch(self.db_path, batch_id)
+        if not batch or batch["sender_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+
+        items = await db_mod.get_batch_items(self.db_path, batch_id)
+        for item in items:
+            if item["status"] == "pending":
+                await db_mod.update_batch_item_status(
+                    self.db_path, item["id"], "discarded"
+                )
+        await db_mod.update_batch_status(self.db_path, batch_id, "discarded")
+        return [BotResponse(t(lang, "batch_discarded"))]
+
+    async def _cb_batch_item_approve(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        item_id = int(data.split(":")[1])
+        item = await db_mod.get_batch_item(self.db_path, item_id)
+        if not item:
+            return [BotResponse(t(lang, "error_generic"))]
+
+        batch = await db_mod.get_batch(self.db_path, item["batch_id"])
+        if not batch or batch["sender_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+
+        await db_mod.update_batch_item_status(self.db_path, item_id, "approved")
+        return await self._show_next_batch_item(user_id, item["batch_id"], lang)
+
+    async def _cb_batch_item_edit(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        item_id = int(data.split(":")[1])
+        item = await db_mod.get_batch_item(self.db_path, item_id)
+        if not item:
+            return [BotResponse(t(lang, "error_generic"))]
+
+        batch = await db_mod.get_batch(self.db_path, item["batch_id"])
+        if not batch or batch["sender_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+
+        self._batch_item_edit_state[user_id] = item_id
+        return [BotResponse(t(lang, "edit_prompt"))]
+
+    async def _cb_batch_item_discard(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        item_id = int(data.split(":")[1])
+        item = await db_mod.get_batch_item(self.db_path, item_id)
+        if not item:
+            return [BotResponse(t(lang, "error_generic"))]
+
+        batch = await db_mod.get_batch(self.db_path, item["batch_id"])
+        if not batch or batch["sender_id"] != user_id:
+            return [BotResponse(t(lang, "error_generic"))]
+
+        await db_mod.update_batch_item_status(self.db_path, item_id, "discarded")
+        return await self._show_next_batch_item(user_id, item["batch_id"], lang)
+
+    # ── internal: batch review helpers ───────────────────────────────────
+
+    async def _show_next_batch_item(
+        self, user_id: int, batch_id: int, lang: str
+    ) -> list[BotResponse]:
+        """Show the next pending item in the batch, or finalize if all reviewed."""
+        items = await db_mod.get_batch_items(self.db_path, batch_id)
+        pending = [i for i in items if i["status"] == "pending"]
+
+        if not pending:
+            return await self._finalize_batch_review(user_id, batch_id, items, lang)
+
+        item = pending[0]
+        total = len(items)
+        reviewed = total - len(pending)
+        draft = item.get("edited_draft") or item["draft"]
+
+        buttons = [[
+            InlineButton(t(lang, "btn_item_approve"), f"bia:{item['id']}"),
+            InlineButton(t(lang, "btn_item_edit"), f"bie:{item['id']}"),
+            InlineButton(t(lang, "btn_item_discard"), f"bix:{item['id']}"),
+        ]]
+
+        return [BotResponse(
+            t(lang, "batch_item_review", index=reviewed + 1, total=total, draft=draft),
+            buttons=buttons,
+        )]
+
+    async def _finalize_batch_review(
+        self,
+        user_id: int,
+        batch_id: int,
+        items: list[dict[str, Any]],
+        lang: str,
+    ) -> list[BotResponse]:
+        """After all items are reviewed, deliver approved ones as a merged message."""
+        approved = [i for i in items if i["status"] in ("approved", "edited")]
+
+        if not approved:
+            await db_mod.update_batch_status(self.db_path, batch_id, "discarded")
+            return [BotResponse(t(lang, "batch_discarded"))]
+
+        batch = await db_mod.get_batch(self.db_path, batch_id)
+        if not batch:
+            return [BotResponse(t(lang, "error_generic"))]
+
+        receiver_id = batch["receiver_id"]
+        drafts = [(i.get("edited_draft") or i["draft"]) for i in approved]
+        merged = "\n\n".join(drafts)
+
+        # Check pause
+        receiver = await db_mod.get_user(self.db_path, receiver_id)
+        sender = await db_mod.get_user(self.db_path, user_id)
+        if (receiver and receiver.get("paused")) or (
+            sender and sender.get("paused")
+        ):
+            await db_mod.update_batch_status(self.db_path, batch_id, "approved")
+            return [BotResponse(
+                t(lang, "batch_sent") + "\n\n" + t(lang, "delivery_paused_notice")
+            )]
+
+        rlang = (receiver or {}).get("lang") or "en"
+        await db_mod.update_batch_status(self.db_path, batch_id, "sent")
+
+        return [
+            BotResponse(t(lang, "batch_sent")),
+            BotResponse(
+                t(rlang, "relay_sent_to_partner", message=merged),
+                target_user_id=receiver_id,
+            ),
+        ]
+
+    async def _handle_batch_item_edit_input(
+        self, user_id: int, text: str
+    ) -> list[BotResponse]:
+        lang = await self._get_lang(user_id)
+        item_id = self._batch_item_edit_state.pop(user_id)
+
+        # Update edited_draft, keep status pending so it appears in review
+        await db_mod.update_batch_item_status(
+            self.db_path, item_id, "pending", text
+        )
+
+        buttons = [[
+            InlineButton(t(lang, "btn_item_approve"), f"bia:{item_id}"),
+            InlineButton(t(lang, "btn_item_edit"), f"bie:{item_id}"),
+            InlineButton(t(lang, "btn_item_discard"), f"bix:{item_id}"),
+        ]]
+
         return [BotResponse(
             t(lang, "edit_updated", draft=text),
             buttons=buttons,

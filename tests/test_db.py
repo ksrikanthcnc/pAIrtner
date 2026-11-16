@@ -393,3 +393,248 @@ async def test_couple_config_multiple_keys(test_db):
     await delete_couple_config(test_db, couple, "gemini_key")
     assert await get_couple_config(test_db, couple, "gemini_key") is None
     assert await get_couple_config(test_db, couple, "other_setting") == "other-val"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-004: pending_batch CRUD
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_batch_create_and_get(test_db, paired_users):
+    """Create a batch, verify it's retrievable."""
+    from couples_bot.db import (
+        add_item_to_batch,
+        create_or_get_active_batch,
+        get_active_batch_for_sender,
+        get_batch,
+        get_batch_items,
+    )
+
+    a_id, b_id = paired_users
+
+    batch = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2030-01-01T00:00:00"
+    )
+    assert batch is not None
+    assert batch["sender_id"] == a_id
+    assert batch["receiver_id"] == b_id
+    assert batch["status"] == "accumulating"
+
+    # Getting again returns the same batch
+    batch2 = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2030-02-01T00:00:00"
+    )
+    assert batch2["id"] == batch["id"]
+
+    # get_active_batch_for_sender also returns it
+    active = await get_active_batch_for_sender(test_db, a_id, b_id)
+    assert active is not None
+    assert active["id"] == batch["id"]
+
+    # get_batch by id
+    fetched = await get_batch(test_db, batch["id"])
+    assert fetched is not None
+    assert fetched["id"] == batch["id"]
+
+
+@pytest.mark.asyncio
+async def test_batch_items(test_db, paired_users):
+    """Add items to a batch, verify retrieval."""
+    from couples_bot.db import (
+        add_item_to_batch,
+        create_or_get_active_batch,
+        get_batch_item,
+        get_batch_items,
+    )
+
+    a_id, b_id = paired_users
+
+    batch = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2030-01-01T00:00:00"
+    )
+
+    item1_id = await add_item_to_batch(test_db, batch["id"], "First draft")
+    item2_id = await add_item_to_batch(test_db, batch["id"], "Second draft")
+
+    items = await get_batch_items(test_db, batch["id"])
+    assert len(items) == 2
+    assert items[0]["draft"] == "First draft"
+    assert items[1]["draft"] == "Second draft"
+    assert items[0]["status"] == "pending"
+
+    # get_batch_item by id
+    item = await get_batch_item(test_db, item1_id)
+    assert item is not None
+    assert item["draft"] == "First draft"
+
+
+@pytest.mark.asyncio
+async def test_batch_status_transitions(test_db, paired_users):
+    """Batch status can be updated."""
+    from couples_bot.db import (
+        create_or_get_active_batch,
+        get_batch,
+        update_batch_status,
+    )
+
+    a_id, b_id = paired_users
+
+    batch = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2030-01-01T00:00:00"
+    )
+    assert batch["status"] == "accumulating"
+
+    await update_batch_status(test_db, batch["id"], "reviewing")
+    updated = await get_batch(test_db, batch["id"])
+    assert updated["status"] == "reviewing"
+
+
+@pytest.mark.asyncio
+async def test_batch_item_status_with_edit(test_db, paired_users):
+    """Updating item status with an edited_draft."""
+    from couples_bot.db import (
+        add_item_to_batch,
+        create_or_get_active_batch,
+        get_batch_item,
+        update_batch_item_status,
+    )
+
+    a_id, b_id = paired_users
+
+    batch = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2030-01-01T00:00:00"
+    )
+    item_id = await add_item_to_batch(test_db, batch["id"], "Original")
+
+    await update_batch_item_status(test_db, item_id, "pending", "Edited version")
+    item = await get_batch_item(test_db, item_id)
+    assert item["status"] == "pending"
+    assert item["edited_draft"] == "Edited version"
+
+    await update_batch_item_status(test_db, item_id, "approved")
+    item = await get_batch_item(test_db, item_id)
+    assert item["status"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_reset_batch_timer(test_db, paired_users):
+    """reset_batch_timer updates send_after."""
+    from couples_bot.db import (
+        create_or_get_active_batch,
+        get_batch,
+        reset_batch_timer,
+    )
+
+    a_id, b_id = paired_users
+
+    batch = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2030-01-01T00:00:00"
+    )
+    assert batch["send_after"] == "2030-01-01T00:00:00"
+
+    await reset_batch_timer(test_db, batch["id"], "2030-06-01T00:00:00")
+    updated = await get_batch(test_db, batch["id"])
+    assert updated["send_after"] == "2030-06-01T00:00:00"
+
+
+@pytest.mark.asyncio
+async def test_get_deliverable_batches(test_db, paired_users):
+    """get_deliverable_batches returns the right batches."""
+    from couples_bot.db import (
+        add_item_to_batch,
+        create_or_get_active_batch,
+        get_deliverable_batches,
+        update_batch_status,
+    )
+
+    a_id, b_id = paired_users
+
+    # Batch 1: accumulating with past send_after → should be deliverable
+    batch1 = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2020-01-01T00:00:00"
+    )
+    await add_item_to_batch(test_db, batch1["id"], "Draft 1")
+
+    deliverable = await get_deliverable_batches(test_db)
+    assert len(deliverable) == 1
+    assert deliverable[0]["id"] == batch1["id"]
+
+    # Change to reviewing — no longer deliverable
+    await update_batch_status(test_db, batch1["id"], "reviewing")
+    deliverable = await get_deliverable_batches(test_db)
+    assert len(deliverable) == 0
+
+    # Change to approved — deliverable again (no timer check)
+    await update_batch_status(test_db, batch1["id"], "approved")
+    deliverable = await get_deliverable_batches(test_db)
+    assert len(deliverable) == 1
+
+
+# ---------------------------------------------------------------------------
+# FEAT-004: rate_limit CRUD
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_rate_limit_check_no_record(test_db):
+    """check_rate_limit with no existing record returns allowed."""
+    from couples_bot.db import check_rate_limit
+
+    allowed, remaining = await check_rate_limit(test_db, 999, "minute", 10, 60)
+    assert allowed is True
+    assert remaining == 10
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_increment_and_check(test_db):
+    """Incrementing the counter, then checking."""
+    from couples_bot.db import check_rate_limit, increment_rate_counter
+
+    uid = 42
+    await increment_rate_counter(test_db, uid, "minute", 60)
+    allowed, remaining = await check_rate_limit(test_db, uid, "minute", 3, 60)
+    assert allowed is True
+    assert remaining == 2
+
+    await increment_rate_counter(test_db, uid, "minute", 60)
+    await increment_rate_counter(test_db, uid, "minute", 60)
+
+    allowed, remaining = await check_rate_limit(test_db, uid, "minute", 3, 60)
+    assert allowed is False
+    assert remaining == 0
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_window_expired(test_db):
+    """After the window expires, the counter resets."""
+    from couples_bot.db import check_rate_limit, increment_rate_counter
+
+    uid = 42
+    # Use a 1-second window so it expires quickly
+    await increment_rate_counter(test_db, uid, "short", 1)
+    await increment_rate_counter(test_db, uid, "short", 1)
+
+    import asyncio
+    await asyncio.sleep(1.1)
+
+    allowed, remaining = await check_rate_limit(test_db, uid, "short", 2, 1)
+    assert allowed is True
+    assert remaining == 2
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_separate_windows(test_db):
+    """Minute and day windows are independent."""
+    from couples_bot.db import check_rate_limit, increment_rate_counter
+
+    uid = 42
+    await increment_rate_counter(test_db, uid, "minute", 60)
+    await increment_rate_counter(test_db, uid, "minute", 60)
+    await increment_rate_counter(test_db, uid, "day", 86400)
+
+    allowed_m, remaining_m = await check_rate_limit(test_db, uid, "minute", 3, 60)
+    allowed_d, remaining_d = await check_rate_limit(test_db, uid, "day", 200, 86400)
+
+    assert allowed_m is True
+    assert remaining_m == 1
+    assert allowed_d is True
+    assert remaining_d == 199

@@ -14,12 +14,19 @@ logger = logging.getLogger(__name__)
 # Type for the send callback provided by the adapter layer.
 SendFunc = Callable[[int, str], Awaitable[None]]
 
+# Type for sending a message with inline buttons.
+# buttons: [[("text", "callback_data"), ...], ...]
+ButtonRow = list[tuple[str, str]]
+SendWithButtonsFunc = Callable[[int, str, list[ButtonRow]], Awaitable[None]]
+
 
 async def delivery_loop(
     db_path: str,
     send_func: SendFunc,
     *,
+    send_buttons_func: SendWithButtonsFunc | None = None,
     poll_interval: float = 30.0,
+    review_before_send: bool = True,
 ) -> None:
     """Continuously deliver approved messages whose cooldown has elapsed.
 
@@ -32,12 +39,19 @@ async def delivery_loop(
     send_func:
         ``async def send(user_id: int, text: str) -> None`` — sends a
         Telegram message to the given user.
+    send_buttons_func:
+        Like *send_func* but also accepts inline-button rows.
     poll_interval:
         Seconds between delivery checks (default 30).
+    review_before_send:
+        If True, batch review prompt is shown before delivering accumulated
+        messages.  If False, batches are delivered directly when the
+        cooldown timer elapses.
     """
     while True:
         await asyncio.sleep(poll_interval)
         try:
+            # ── Individual pending rows (existing behaviour) ─────────
             rows = await db_mod.get_deliverable(db_path)
             for row in rows:
                 try:
@@ -81,5 +95,123 @@ async def delivery_loop(
                     logger.exception(
                         "Failed to deliver pending %d", row["id"]
                     )
+
+            # ── Batch delivery ───────────────────────────────────────
+            batches = await db_mod.get_deliverable_batches(db_path)
+            for batch in batches:
+                try:
+                    await _process_batch(
+                        db_path,
+                        batch,
+                        send_func,
+                        send_buttons_func,
+                        review_before_send,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to process batch %d", batch["id"]
+                    )
+
         except Exception:
             logger.exception("Error in delivery loop")
+
+
+async def _process_batch(
+    db_path: str,
+    batch: dict,
+    send_func: SendFunc,
+    send_buttons_func: SendWithButtonsFunc | None,
+    review_before_send: bool,
+) -> None:
+    """Handle a single batch that is ready for delivery or review."""
+    sender_id = batch["sender_id"]
+    receiver_id = batch["receiver_id"]
+
+    receiver = await db_mod.get_user(db_path, receiver_id)
+    sender = await db_mod.get_user(db_path, sender_id)
+
+    # Skip if either party is paused
+    if (receiver and receiver.get("paused")) or (
+        sender and sender.get("paused")
+    ):
+        logger.debug("Skipping batch %d — paused", batch["id"])
+        return
+
+    if batch["status"] == "accumulating":
+        if review_before_send:
+            # Transition to review — notify sender with buttons
+            await db_mod.update_batch_status(db_path, batch["id"], "reviewing")
+            items = await db_mod.get_batch_items(db_path, batch["id"])
+            count = len(items)
+            slang = (sender or {}).get("lang") or "en"
+            partner_name = (receiver or {}).get("name") or "your partner"
+
+            prompt = t(
+                slang, "batch_review_prompt",
+                count=count, partner=partner_name,
+            )
+
+            if send_buttons_func:
+                buttons: list[ButtonRow] = [[
+                    (t(slang, "btn_send_all"), f"ba:{batch['id']}"),
+                    (t(slang, "btn_review_each"), f"br:{batch['id']}"),
+                    (t(slang, "btn_discard_all"), f"bd:{batch['id']}"),
+                ]]
+                await send_buttons_func(sender_id, prompt, buttons)
+            else:
+                await send_func(sender_id, prompt)
+
+            logger.info(
+                "Batch %d moved to reviewing, sender %d notified",
+                batch["id"], sender_id,
+            )
+        else:
+            # Direct delivery — skip review
+            await _deliver_batch(
+                db_path, batch, sender, receiver, send_func
+            )
+
+    elif batch["status"] == "approved":
+        # Already reviewed and approved — deliver
+        await _deliver_batch(
+            db_path, batch, sender, receiver, send_func
+        )
+
+
+async def _deliver_batch(
+    db_path: str,
+    batch: dict,
+    sender: dict | None,
+    receiver: dict | None,
+    send_func: SendFunc,
+) -> None:
+    """Merge batch items and deliver as a single message."""
+    items = await db_mod.get_batch_items(db_path, batch["id"])
+    # Collect drafts from non-discarded items
+    drafts = [
+        (i.get("edited_draft") or i["draft"])
+        for i in items
+        if i["status"] != "discarded"
+    ]
+
+    if not drafts:
+        await db_mod.update_batch_status(db_path, batch["id"], "discarded")
+        return
+
+    merged = "\n\n".join(drafts)
+    receiver_id = batch["receiver_id"]
+    sender_id = batch["sender_id"]
+
+    rlang = (receiver or {}).get("lang") or "en"
+    await send_func(
+        receiver_id, t(rlang, "relay_sent_to_partner", message=merged)
+    )
+    await db_mod.update_batch_status(db_path, batch["id"], "sent")
+
+    slang = (sender or {}).get("lang") or "en"
+    await send_func(sender_id, t(slang, "relay_delivered"))
+
+    logger.info(
+        "Delivered batch %d (%d items) from %d to %d",
+        batch["id"], len(drafts), sender_id, receiver_id,
+    )

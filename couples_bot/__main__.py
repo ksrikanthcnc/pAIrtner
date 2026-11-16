@@ -226,9 +226,24 @@ async def _post_init(app: Application) -> None:
     async def _send(user_id: int, text: str) -> None:
         await app.bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
 
+    async def _send_with_buttons(
+        user_id: int, text: str, buttons: list[list[tuple[str, str]]]
+    ) -> None:
+        rows = [
+            [InlineKeyboardButton(btn_text, callback_data=btn_data)
+             for btn_text, btn_data in row]
+            for row in buttons
+        ]
+        markup = InlineKeyboardMarkup(rows)
+        await app.bot.send_message(
+            chat_id=user_id, text=text, reply_markup=markup, parse_mode="HTML",
+        )
+
     app.create_task(delivery_loop(
         _service.db_path, _send,
+        send_buttons_func=_send_with_buttons,
         poll_interval=_config.delivery_check_interval_seconds,
+        review_before_send=_config.review_before_send,
     ))
     logger.info("Delivery loop started")
 

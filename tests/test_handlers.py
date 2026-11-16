@@ -818,3 +818,482 @@ async def test_no_couple_key_uses_none_override(
 
     assert len(mock.calls) == 1
     assert mock.calls[0]["api_key_override"] is None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-004: batch accumulation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_batch_accumulation_two_relays(service: BotService, test_db, paired_users):
+    """Approving two relays within cooldown window puts both in the same batch."""
+    from couples_bot.db import get_active_batch_for_sender, get_batch_items
+
+    a_id, b_id = paired_users
+
+    # First relay
+    service.llm = MockLLMClient([
+        {"reply": "Ok", "new_facts": [], "relay_draft": "First draft"},
+    ])
+    responses = await service.handle_tell(a_id, "First message")
+    approve_btn = responses[0].buttons[0][0]
+    assert approve_btn.callback_data.startswith("ap:")
+    await service.handle_callback(a_id, approve_btn.callback_data)
+
+    batch = await get_active_batch_for_sender(test_db, a_id, b_id)
+    assert batch is not None
+    assert batch["status"] == "accumulating"
+    items = await get_batch_items(test_db, batch["id"])
+    assert len(items) == 1
+    assert items[0]["draft"] == "First draft"
+
+    # Second relay (within cooldown)
+    service.llm = MockLLMClient([
+        {"reply": "Ok", "new_facts": [], "relay_draft": "Second draft"},
+    ])
+    responses = await service.handle_tell(a_id, "Second message")
+    approve_btn = responses[0].buttons[0][0]
+    await service.handle_callback(a_id, approve_btn.callback_data)
+
+    # Same batch, now with 2 items
+    batch2 = await get_active_batch_for_sender(test_db, a_id, b_id)
+    assert batch2["id"] == batch["id"]
+    items = await get_batch_items(test_db, batch["id"])
+    assert len(items) == 2
+    assert items[1]["draft"] == "Second draft"
+
+
+@pytest.mark.asyncio
+async def test_batch_timer_reset(service: BotService, test_db, paired_users):
+    """Second approval resets the batch timer to a later time."""
+    from couples_bot.db import get_active_batch_for_sender
+
+    a_id, b_id = paired_users
+
+    # First relay
+    service.llm = MockLLMClient([
+        {"reply": "Ok", "new_facts": [], "relay_draft": "D1"},
+    ])
+    responses = await service.handle_tell(a_id, "Msg 1")
+    await service.handle_callback(a_id, responses[0].buttons[0][0].callback_data)
+    batch = await get_active_batch_for_sender(test_db, a_id, b_id)
+    first_send_after = batch["send_after"]
+
+    # Small delay to ensure timer moves forward
+    import asyncio
+    await asyncio.sleep(0.05)
+
+    # Second relay
+    service.llm = MockLLMClient([
+        {"reply": "Ok", "new_facts": [], "relay_draft": "D2"},
+    ])
+    responses = await service.handle_tell(a_id, "Msg 2")
+    await service.handle_callback(a_id, responses[0].buttons[0][0].callback_data)
+    batch = await get_active_batch_for_sender(test_db, a_id, b_id)
+    second_send_after = batch["send_after"]
+
+    assert second_send_after >= first_send_after
+
+
+@pytest.mark.asyncio
+async def test_skip_cooldown_bypasses_batch(service: BotService, test_db, paired_users):
+    """#now approval creates an individual deliverable row, no batch."""
+    from couples_bot.db import get_active_batch_for_sender, get_deliverable
+
+    a_id, b_id = paired_users
+
+    service.llm = MockLLMClient([
+        {"reply": "Ok", "new_facts": [], "relay_draft": "Urgent"},
+    ])
+    responses = await service.handle_tell(a_id, "#now Tell them urgently")
+    approve_btn = responses[0].buttons[0][0]
+    assert approve_btn.callback_data.startswith("apn:")
+    await service.handle_callback(a_id, approve_btn.callback_data)
+
+    # No batch created
+    batch = await get_active_batch_for_sender(test_db, a_id, b_id)
+    assert batch is None
+
+    # Individual row is deliverable
+    deliverable = await get_deliverable(test_db)
+    assert len(deliverable) == 1
+
+
+# ---------------------------------------------------------------------------
+# FEAT-004: batch review (Send All / Review Each / Discard All)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_batch_send_all(service: BotService, test_db, paired_users):
+    """Send All merges batch items and delivers as one message."""
+    from couples_bot.db import (
+        add_item_to_batch,
+        create_or_get_active_batch,
+        get_batch,
+        update_batch_status,
+    )
+
+    a_id, b_id = paired_users
+
+    batch = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2020-01-01T00:00:00"
+    )
+    await add_item_to_batch(test_db, batch["id"], "Draft 1")
+    await add_item_to_batch(test_db, batch["id"], "Draft 2")
+    await update_batch_status(test_db, batch["id"], "reviewing")
+
+    responses = await service.handle_callback(a_id, f"ba:{batch['id']}")
+    assert len(responses) == 2
+    # First response: confirmation to sender
+    assert "batch" in responses[0].text.lower() or "✅" in responses[0].text
+    # Second response: delivery to receiver
+    assert responses[1].target_user_id == b_id
+    assert "Draft 1" in responses[1].text
+    assert "Draft 2" in responses[1].text
+
+    updated = await get_batch(test_db, batch["id"])
+    assert updated["status"] == "sent"
+
+
+@pytest.mark.asyncio
+async def test_batch_discard_all(service: BotService, test_db, paired_users):
+    """Discard All discards the entire batch."""
+    from couples_bot.db import (
+        add_item_to_batch,
+        create_or_get_active_batch,
+        get_batch,
+        get_batch_items,
+        update_batch_status,
+    )
+
+    a_id, b_id = paired_users
+
+    batch = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2020-01-01T00:00:00"
+    )
+    await add_item_to_batch(test_db, batch["id"], "Draft 1")
+    await update_batch_status(test_db, batch["id"], "reviewing")
+
+    responses = await service.handle_callback(a_id, f"bd:{batch['id']}")
+    assert len(responses) == 1
+    assert "discard" in responses[0].text.lower() or "🗑️" in responses[0].text
+
+    updated = await get_batch(test_db, batch["id"])
+    assert updated["status"] == "discarded"
+
+    items = await get_batch_items(test_db, batch["id"])
+    assert all(i["status"] == "discarded" for i in items)
+
+
+@pytest.mark.asyncio
+async def test_batch_review_each(service: BotService, test_db, paired_users):
+    """Review Each shows items one at a time; approve some, discard others."""
+    from couples_bot.db import (
+        add_item_to_batch,
+        create_or_get_active_batch,
+        get_batch,
+        get_batch_items,
+        update_batch_status,
+    )
+
+    a_id, b_id = paired_users
+
+    batch = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2020-01-01T00:00:00"
+    )
+    await add_item_to_batch(test_db, batch["id"], "Draft A")
+    await add_item_to_batch(test_db, batch["id"], "Draft B")
+    await update_batch_status(test_db, batch["id"], "reviewing")
+
+    # Start review each
+    responses = await service.handle_callback(a_id, f"br:{batch['id']}")
+    assert len(responses) == 1
+    assert responses[0].buttons is not None
+    assert "1/2" in responses[0].text
+    assert "Draft A" in responses[0].text
+
+    items = await get_batch_items(test_db, batch["id"])
+    item_a_id = items[0]["id"]
+    item_b_id = items[1]["id"]
+
+    # Approve first item
+    responses = await service.handle_callback(a_id, f"bia:{item_a_id}")
+    assert len(responses) == 1
+    # Should show second item
+    assert "2/2" in responses[0].text
+    assert "Draft B" in responses[0].text
+
+    # Discard second item
+    responses = await service.handle_callback(a_id, f"bix:{item_b_id}")
+    # All reviewed → should finalize (only Draft A was approved)
+    assert len(responses) == 2  # confirmation + delivery
+    assert responses[1].target_user_id == b_id
+    assert "Draft A" in responses[1].text
+    assert "Draft B" not in responses[1].text
+
+    updated = await get_batch(test_db, batch["id"])
+    assert updated["status"] == "sent"
+
+
+@pytest.mark.asyncio
+async def test_batch_review_all_discarded(service: BotService, test_db, paired_users):
+    """If all items are discarded during Review Each, batch is discarded."""
+    from couples_bot.db import (
+        add_item_to_batch,
+        create_or_get_active_batch,
+        get_batch,
+        update_batch_status,
+    )
+
+    a_id, b_id = paired_users
+
+    batch = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2020-01-01T00:00:00"
+    )
+    await add_item_to_batch(test_db, batch["id"], "Draft X")
+    await update_batch_status(test_db, batch["id"], "reviewing")
+
+    # Start review
+    responses = await service.handle_callback(a_id, f"br:{batch['id']}")
+    from couples_bot.db import get_batch_items as get_items
+    items_data = await get_items(test_db, batch["id"])
+    item_id = items_data[0]["id"]
+
+    # Discard the only item
+    responses = await service.handle_callback(a_id, f"bix:{item_id}")
+    assert any("discard" in r.text.lower() or "🗑️" in r.text for r in responses)
+
+    updated = await get_batch(test_db, batch["id"])
+    assert updated["status"] == "discarded"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-004: delivery loop — batch handling
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delivery_loop_batch_review_prompt(test_db, paired_users):
+    """delivery_loop sends review prompt with buttons when review_before_send=True."""
+    import asyncio
+
+    from couples_bot.approval import delivery_loop
+    from couples_bot.db import add_item_to_batch, create_or_get_active_batch
+
+    a_id, b_id = paired_users
+
+    batch = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2020-01-01T00:00:00"
+    )
+    await add_item_to_batch(test_db, batch["id"], "Queued draft")
+
+    sent: list[tuple[int, str]] = []
+    buttons_sent: list[tuple[int, str, list]] = []
+
+    async def mock_send(uid: int, text: str) -> None:
+        sent.append((uid, text))
+
+    async def mock_send_buttons(uid: int, text: str, buttons: list) -> None:
+        buttons_sent.append((uid, text, buttons))
+
+    task = asyncio.create_task(delivery_loop(
+        test_db, mock_send,
+        send_buttons_func=mock_send_buttons,
+        poll_interval=0.01,
+        review_before_send=True,
+    ))
+    await asyncio.sleep(0.1)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    # Sender should get a review prompt with buttons
+    assert len(buttons_sent) >= 1
+    assert buttons_sent[0][0] == a_id
+    assert "queued" in buttons_sent[0][1].lower() or "message" in buttons_sent[0][1].lower()
+
+    # Batch should be in reviewing state now
+    from couples_bot.db import get_batch
+    updated = await get_batch(test_db, batch["id"])
+    assert updated["status"] == "reviewing"
+
+
+@pytest.mark.asyncio
+async def test_delivery_loop_direct_delivery_no_review(test_db, paired_users):
+    """With review_before_send=False, delivery_loop delivers batch directly."""
+    import asyncio
+
+    from couples_bot.approval import delivery_loop
+    from couples_bot.db import add_item_to_batch, create_or_get_active_batch
+
+    a_id, b_id = paired_users
+
+    batch = await create_or_get_active_batch(
+        test_db, a_id, b_id, "2020-01-01T00:00:00"
+    )
+    await add_item_to_batch(test_db, batch["id"], "Direct draft 1")
+    await add_item_to_batch(test_db, batch["id"], "Direct draft 2")
+
+    sent: list[tuple[int, str]] = []
+
+    async def mock_send(uid: int, text: str) -> None:
+        sent.append((uid, text))
+
+    task = asyncio.create_task(delivery_loop(
+        test_db, mock_send,
+        poll_interval=0.01,
+        review_before_send=False,
+    ))
+    await asyncio.sleep(0.1)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    # Receiver should get the merged message
+    receiver_msgs = [s for s in sent if s[0] == b_id]
+    assert len(receiver_msgs) >= 1
+    assert "Direct draft 1" in receiver_msgs[0][1]
+    assert "Direct draft 2" in receiver_msgs[0][1]
+
+    # Sender should get delivery notification
+    sender_msgs = [s for s in sent if s[0] == a_id]
+    assert len(sender_msgs) >= 1
+
+    from couples_bot.db import get_batch
+    updated = await get_batch(test_db, batch["id"])
+    assert updated["status"] == "sent"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-004: rate limiting
+# ---------------------------------------------------------------------------
+
+
+def _make_rate_limited_service(test_db, mock_llm, *, per_minute=2, per_day=200):
+    """Create a BotService with low rate limits for testing."""
+    from couples_bot.config import Config
+    cfg = Config(
+        telegram_token="test-token",
+        gemini_api_key="test-key",
+        model_default="test-default",
+        model_heavy=["test-heavy-1"],
+        cooldown_minutes=5,
+        db_path=test_db,
+        heavy_daily_cap=10,
+        rate_limit_per_minute=per_minute,
+        rate_limit_per_day=per_day,
+    )
+    return BotService(config=cfg, db_path=test_db, llm=mock_llm)
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_per_minute(test_db, paired_users):
+    """Messages beyond per-minute limit get a rate_limited response."""
+    a_id, _ = paired_users
+
+    mock = MockLLMClient([
+        {"reply": "R1", "new_facts": [], "relay_draft": None},
+        {"reply": "R2", "new_facts": [], "relay_draft": None},
+        {"reply": "R3", "new_facts": [], "relay_draft": None},
+    ])
+    svc = _make_rate_limited_service(test_db, mock, per_minute=2)
+
+    # First two messages succeed
+    r1 = await svc.handle_message(a_id, "Alice", "Hello 1")
+    assert "R1" in r1[0].text
+    r2 = await svc.handle_message(a_id, "Alice", "Hello 2")
+    assert "R2" in r2[0].text
+
+    # Third message should be rate limited
+    r3 = await svc.handle_message(a_id, "Alice", "Hello 3")
+    assert "breather" in r3[0].text.lower() or "limit" in r3[0].text.lower()
+
+    # LLM should only have been called twice
+    assert len(mock.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_per_day(test_db, paired_users):
+    """Messages beyond daily limit get the daily limit message."""
+    a_id, _ = paired_users
+
+    mock = MockLLMClient([
+        {"reply": f"R{i}", "new_facts": [], "relay_draft": None}
+        for i in range(5)
+    ])
+    svc = _make_rate_limited_service(test_db, mock, per_minute=100, per_day=2)
+
+    await svc.handle_message(a_id, "Alice", "Msg 1")
+    await svc.handle_message(a_id, "Alice", "Msg 2")
+
+    # Third message hits daily limit
+    r3 = await svc.handle_message(a_id, "Alice", "Msg 3")
+    assert "tomorrow" in r3[0].text.lower() or "daily" in r3[0].text.lower()
+    assert len(mock.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_on_tell(test_db, paired_users):
+    """handle_tell is also rate limited."""
+    a_id, _ = paired_users
+
+    mock = MockLLMClient([
+        {"reply": "Ok", "new_facts": [], "relay_draft": "Draft"},
+        {"reply": "Ok", "new_facts": [], "relay_draft": "Draft"},
+    ])
+    svc = _make_rate_limited_service(test_db, mock, per_minute=1)
+
+    r1 = await svc.handle_tell(a_id, "First tell")
+    assert r1[0].buttons is not None  # approval buttons
+
+    r2 = await svc.handle_tell(a_id, "Second tell")
+    assert "breather" in r2[0].text.lower() or "limit" in r2[0].text.lower()
+    assert len(mock.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_on_callback(test_db, paired_users):
+    """handle_callback is rate-checked (but doesn't increment)."""
+    from couples_bot.db import increment_rate_counter
+
+    a_id, _ = paired_users
+
+    mock = MockLLMClient()
+    svc = _make_rate_limited_service(test_db, mock, per_minute=1)
+
+    # Exhaust the per-minute limit externally
+    await increment_rate_counter(test_db, a_id, "minute", 60)
+
+    r = await svc.handle_callback(a_id, "ap:999")
+    assert "breather" in r[0].text.lower() or "limit" in r[0].text.lower()
+
+
+@pytest.mark.asyncio
+async def test_edit_not_rate_limited(service: BotService, test_db, paired_users):
+    """Edit input (when in edit state) is not rate limited."""
+    from couples_bot.db import increment_rate_counter
+
+    a_id, _ = paired_users
+
+    # Set up an edit state
+    service.llm = MockLLMClient([
+        {"reply": "Ok", "new_facts": [], "relay_draft": "Draft"},
+    ])
+    responses = await service.handle_tell(a_id, "Tell them")
+    edit_btn = responses[0].buttons[0][1]
+    await service.handle_callback(a_id, edit_btn.callback_data)
+
+    # Exhaust rate limit
+    for _ in range(15):
+        await increment_rate_counter(test_db, a_id, "minute", 60)
+
+    # Edit input should still work (not rate limited)
+    responses = await service.handle_message(a_id, "Alice", "My edited text")
+    assert len(responses) >= 1
+    assert responses[0].buttons is not None  # re-shows approval buttons

@@ -175,6 +175,28 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
 
         "no_user": "Please run /start first to set up.",
+
+        # Batch review (cooldown accumulation)
+        "batch_review_prompt": (
+            "📦 You have {count} message(s) queued for {partner}. "
+            "Review before sending?"
+        ),
+        "btn_send_all": "📤 Send All",
+        "btn_review_each": "🔍 Review Each",
+        "btn_discard_all": "🗑️ Discard All",
+        "btn_item_approve": "✅",
+        "btn_item_edit": "✏️",
+        "btn_item_discard": "❌",
+        "batch_sent": "✅ Batch delivered to your partner!",
+        "batch_discarded": "🗑️ Batch discarded.",
+        "batch_item_review": "📝 Message {index}/{total}:\n\n{draft}",
+
+        # Rate limiting
+        "rate_limited": (
+            "You're sending a lot of messages. "
+            "Take a breather — I'll be here when you're ready."
+        ),
+        "rate_limit_day": "Daily message limit reached. See you tomorrow!",
     },
 
     "te": {
@@ -321,6 +343,28 @@ _STRINGS: dict[str, dict[str, str]] = {
         ),
 
         "no_user": "ముందు /start నొక్కండి.",
+
+        # Batch review (cooldown accumulation)
+        "batch_review_prompt": (
+            "📦 {partner} కోసం {count} సందేశం(లు) క్యూలో ఉన్నాయి. "
+            "పంపే ముందు సమీక్షించాలా?"
+        ),
+        "btn_send_all": "📤 అన్నీ పంపు",
+        "btn_review_each": "🔍 ఒక్కొక్కటి చూడు",
+        "btn_discard_all": "🗑️ అన్నీ రద్దు",
+        "btn_item_approve": "✅",
+        "btn_item_edit": "✏️",
+        "btn_item_discard": "❌",
+        "batch_sent": "✅ బ్యాచ్ మీ భాగస్వామికి డెలివరీ అయింది!",
+        "batch_discarded": "🗑️ బ్యాచ్ రద్దు చేయబడింది.",
+        "batch_item_review": "📝 సందేశం {index}/{total}:\n\n{draft}",
+
+        # Rate limiting
+        "rate_limited": (
+            "మీరు చాలా సందేశాలు పంపుతున్నారు. "
+            "కొంచెం విశ్రాంతి తీసుకోండి — నేను ఇక్కడే ఉంటాను."
+        ),
+        "rate_limit_day": "రోజువారీ సందేశ పరిమితి చేరుకుంది. రేపు కలుద్దాం!",
     },
 }
 

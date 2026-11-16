@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiosqlite
@@ -68,6 +68,34 @@ CREATE TABLE IF NOT EXISTS couple_config (
     PRIMARY KEY (couple_id, config_key)
 );
 
+CREATE TABLE IF NOT EXISTS pending_batch (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id   INTEGER NOT NULL REFERENCES users(tg_id),
+    receiver_id INTEGER NOT NULL REFERENCES users(tg_id),
+    status      TEXT NOT NULL DEFAULT 'accumulating'
+                CHECK(status IN ('accumulating','reviewing','approved','sent','discarded')),
+    send_after  TIMESTAMP,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS pending_batch_items (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id     INTEGER NOT NULL REFERENCES pending_batch(id),
+    draft        TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'pending'
+                 CHECK(status IN ('pending','approved','edited','discarded')),
+    edited_draft TEXT,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rate_limit (
+    user_id   INTEGER NOT NULL,
+    window    TEXT NOT NULL,
+    count     INTEGER NOT NULL DEFAULT 0,
+    reset_at  TIMESTAMP NOT NULL,
+    PRIMARY KEY (user_id, window)
+);
+
 -- Indexes for efficient querying
 CREATE INDEX IF NOT EXISTS idx_facts_owner_visibility
     ON facts(owner_id, visibility);
@@ -79,6 +107,12 @@ CREATE INDEX IF NOT EXISTS idx_pending_sender_status
     ON pending(sender_id, status);
 CREATE INDEX IF NOT EXISTS idx_pending_status_send_after
     ON pending(status, send_after);
+CREATE INDEX IF NOT EXISTS idx_batch_sender_status
+    ON pending_batch(sender_id, status);
+CREATE INDEX IF NOT EXISTS idx_batch_status_send_after
+    ON pending_batch(status, send_after);
+CREATE INDEX IF NOT EXISTS idx_batch_items_batch
+    ON pending_batch_items(batch_id);
 """
 
 
@@ -541,3 +575,217 @@ async def get_user_context_data(
         "recent_messages": recent_messages,
         "lang": user.get("lang") or "en",
     }
+
+
+# ---------------------------------------------------------------------------
+# Pending batches (cooldown accumulation)
+# ---------------------------------------------------------------------------
+
+async def get_active_batch_for_sender(
+    db_path: str, sender_id: int, receiver_id: int
+) -> dict[str, Any] | None:
+    """Get the currently accumulating batch for a sender→receiver pair."""
+    return await _fetch_one(
+        db_path,
+        "SELECT * FROM pending_batch "
+        "WHERE sender_id = ? AND receiver_id = ? AND status = 'accumulating'",
+        (sender_id, receiver_id),
+    )
+
+
+async def create_or_get_active_batch(
+    db_path: str, sender_id: int, receiver_id: int, send_after: str
+) -> dict[str, Any]:
+    """Return the active batch for this pair, creating one if none exists."""
+    batch = await get_active_batch_for_sender(db_path, sender_id, receiver_id)
+    if batch:
+        return batch
+    batch_id = await _execute(
+        db_path,
+        "INSERT INTO pending_batch (sender_id, receiver_id, send_after) "
+        "VALUES (?, ?, ?)",
+        (sender_id, receiver_id, send_after),
+    )
+    return await _fetch_one(  # type: ignore[return-value]
+        db_path, "SELECT * FROM pending_batch WHERE id = ?", (batch_id,)
+    )
+
+
+async def add_item_to_batch(
+    db_path: str, batch_id: int, draft: str
+) -> int:
+    """Add an item to a batch; return the item id."""
+    return await _execute(
+        db_path,
+        "INSERT INTO pending_batch_items (batch_id, draft) VALUES (?, ?)",
+        (batch_id, draft),
+    )
+
+
+async def get_batch(db_path: str, batch_id: int) -> dict[str, Any] | None:
+    return await _fetch_one(
+        db_path, "SELECT * FROM pending_batch WHERE id = ?", (batch_id,)
+    )
+
+
+async def get_batch_item(db_path: str, item_id: int) -> dict[str, Any] | None:
+    return await _fetch_one(
+        db_path, "SELECT * FROM pending_batch_items WHERE id = ?", (item_id,)
+    )
+
+
+async def get_batch_items(
+    db_path: str, batch_id: int
+) -> list[dict[str, Any]]:
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM pending_batch_items WHERE batch_id = ? ORDER BY created_at",
+        (batch_id,),
+    )
+
+
+async def update_batch_status(
+    db_path: str, batch_id: int, status: str
+) -> None:
+    await _execute(
+        db_path,
+        "UPDATE pending_batch SET status = ? WHERE id = ?",
+        (status, batch_id),
+    )
+
+
+async def update_batch_item_status(
+    db_path: str,
+    item_id: int,
+    status: str,
+    edited_draft: str | None = None,
+) -> None:
+    if edited_draft is not None:
+        await _execute(
+            db_path,
+            "UPDATE pending_batch_items SET status = ?, edited_draft = ? WHERE id = ?",
+            (status, edited_draft, item_id),
+        )
+    else:
+        await _execute(
+            db_path,
+            "UPDATE pending_batch_items SET status = ? WHERE id = ?",
+            (status, item_id),
+        )
+
+
+async def reset_batch_timer(
+    db_path: str, batch_id: int, send_after: str
+) -> None:
+    """Reset the batch's send_after (cooldown timer)."""
+    await _execute(
+        db_path,
+        "UPDATE pending_batch SET send_after = ? WHERE id = ?",
+        (send_after, batch_id),
+    )
+
+
+async def get_deliverable_batches(db_path: str) -> list[dict[str, Any]]:
+    """Get batches ready for delivery or review.
+
+    Returns accumulating batches whose timer has elapsed, plus approved
+    batches that are ready to send.
+    """
+    now = _now_iso()
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM pending_batch WHERE "
+        "(status = 'accumulating' AND send_after <= ?) OR status = 'approved'",
+        (now,),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+
+async def check_rate_limit(
+    db_path: str,
+    user_id: int,
+    window: str,
+    max_count: int,
+    window_seconds: int,
+) -> tuple[bool, int]:
+    """Check if a user is within the rate limit for *window*.
+
+    Returns ``(allowed, remaining)`` where *remaining* is how many more
+    actions are permitted in the current window.
+    """
+    now = datetime.now(timezone.utc)
+
+    row = await _fetch_one(
+        db_path,
+        "SELECT count, reset_at FROM rate_limit WHERE user_id = ? AND window = ?",
+        (user_id, window),
+    )
+
+    if row is None:
+        return True, max_count
+
+    reset_at = datetime.fromisoformat(row["reset_at"])
+    if reset_at.tzinfo is None:
+        reset_at = reset_at.replace(tzinfo=timezone.utc)
+
+    if now >= reset_at:
+        # Window has expired — user has a fresh budget.
+        return True, max_count
+
+    count = row["count"]
+    if count >= max_count:
+        return False, 0
+
+    return True, max_count - count
+
+
+async def increment_rate_counter(
+    db_path: str,
+    user_id: int,
+    window: str,
+    window_seconds: int,
+) -> None:
+    """Increment the rate counter for *user_id* + *window*.
+
+    Creates the row if missing; resets count when the window has expired.
+    """
+    now = datetime.now(timezone.utc)
+    reset_at = (now + timedelta(seconds=window_seconds)).isoformat()
+
+    row = await _fetch_one(
+        db_path,
+        "SELECT count, reset_at FROM rate_limit WHERE user_id = ? AND window = ?",
+        (user_id, window),
+    )
+
+    if row is None:
+        await _execute(
+            db_path,
+            "INSERT INTO rate_limit (user_id, window, count, reset_at) "
+            "VALUES (?, ?, 1, ?)",
+            (user_id, window, reset_at),
+        )
+        return
+
+    existing_reset = datetime.fromisoformat(row["reset_at"])
+    if existing_reset.tzinfo is None:
+        existing_reset = existing_reset.replace(tzinfo=timezone.utc)
+
+    if now >= existing_reset:
+        # Window expired — start fresh.
+        await _execute(
+            db_path,
+            "UPDATE rate_limit SET count = 1, reset_at = ? "
+            "WHERE user_id = ? AND window = ?",
+            (reset_at, user_id, window),
+        )
+    else:
+        await _execute(
+            db_path,
+            "UPDATE rate_limit SET count = count + 1 "
+            "WHERE user_id = ? AND window = ?",
+            (user_id, window),
+        )
