@@ -159,6 +159,16 @@ async def _cmd_lang(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _send_response(ctx.bot, update.effective_chat.id, r)
 
 
+async def _cmd_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not is_user_allowed(_config, user.id):
+        return
+    arg = " ".join(ctx.args) if ctx.args else None
+    responses = await _service.handle_setup(user.id, arg)
+    for r in responses:
+        await _send_response(ctx.bot, update.effective_chat.id, r)
+
+
 async def _cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not is_user_allowed(_config, user.id):
@@ -257,6 +267,7 @@ def main() -> None:
     app.add_handler(CommandHandler("forget", _cmd_forget))
     app.add_handler(CommandHandler("export", _cmd_export))
     app.add_handler(CommandHandler("lang", _cmd_lang))
+    app.add_handler(CommandHandler("setup", _cmd_setup))
     app.add_handler(CommandHandler("status", _cmd_status))
     app.add_handler(CommandHandler("pause", _cmd_pause))
     app.add_handler(CommandHandler("resume", _cmd_resume))

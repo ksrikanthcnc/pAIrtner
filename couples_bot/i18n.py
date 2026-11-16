@@ -92,6 +92,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/whatdoyouknow — See what I remember about you\n"
             "/forget &lt;id|all&gt; — Delete your facts\n"
             "/export — Download your facts as a file\n"
+            "/setup — Configure your couple's Gemini API key\n"
             "/status — Check your relationship dashboard\n"
             "/pause — Pause relay delivery\n"
             "/resume — Resume relay delivery\n"
@@ -159,6 +160,18 @@ _STRINGS: dict[str, dict[str, str]] = {
         "delivery_paused_notice": (
             "ℹ️ Note: Delivery is currently paused. Your message is "
             "approved and will be delivered when resumed."
+        ),
+
+        # Setup (multi-tenant BYO key)
+        "setup_usage": "Usage: /setup gemini_key &lt;your-key&gt; or /setup gemini_key clear",
+        "setup_key_stored": "🔑 Gemini API key stored: {api_key}",
+        "setup_key_cleared": "🔑 Gemini API key removed. The global key will be used.",
+        "setup_key_not_set": "🔑 No custom Gemini API key set. Using the global key.",
+        "setup_show_config": "🔑 Current Gemini API key: {api_key}",
+        "setup_not_paired": "You need to pair with a partner first. Use /start to get a code.",
+        "setup_no_encryption_key": (
+            "⚠️ DB_ENCRYPTION_KEY is not configured on the server. "
+            "Cannot store API keys securely. Contact the bot admin."
         ),
 
         "no_user": "Please run /start first to set up.",
@@ -234,6 +247,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/whatdoyouknow — నేను ఏమి గుర్తుంచుకుంటున్నాను\n"
             "/forget — మీ విషయాలు తొలగించండి\n"
             "/export — మీ విషయాలు డౌన్‌లోడ్ చేయండి\n"
+            "/setup — మీ Gemini API కీ సెట్ చేయండి\n"
             "/status — మీ స్థితి చూడండి\n"
             "/pause — డెలివరీ ఆపు\n"
             "/resume — డెలివరీ కొనసాగించు\n"
@@ -292,6 +306,18 @@ _STRINGS: dict[str, dict[str, str]] = {
         "delivery_paused_notice": (
             "ℹ️ డెలివరీ ప్రస్తుతం ఆపబడింది. మెసేజ్ ఆమోదించబడింది, "
             "resume చేసిన తర్వాత డెలివరీ అవుతుంది."
+        ),
+
+        # Setup (multi-tenant BYO key)
+        "setup_usage": "వాడకం: /setup gemini_key <మీ-కీ> లేదా /setup gemini_key clear",
+        "setup_key_stored": "🔑 Gemini API కీ సేవ్ అయింది: {api_key}",
+        "setup_key_cleared": "🔑 Gemini API కీ తొలగించబడింది. గ్లోబల్ కీ వాడబడుతుంది.",
+        "setup_key_not_set": "🔑 కస్టమ్ Gemini API కీ సెట్ చేయబడలేదు. గ్లోబల్ కీ వాడబడుతుంది.",
+        "setup_show_config": "🔑 ప్రస్తుత Gemini API కీ: {api_key}",
+        "setup_not_paired": "ముందు భాగస్వామితో జత చేయండి. /start వాడండి.",
+        "setup_no_encryption_key": (
+            "⚠️ సర్వర్‌లో DB_ENCRYPTION_KEY సెట్ చేయబడలేదు. "
+            "API కీలను భద్రంగా నిల్వ చేయలేము. బాట్ అడ్మిన్‌ను సంప్రదించండి."
         ),
 
         "no_user": "ముందు /start నొక్కండి.",

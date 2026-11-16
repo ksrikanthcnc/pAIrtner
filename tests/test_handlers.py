@@ -629,3 +629,192 @@ async def test_approve_shows_pause_notice(service: BotService, test_db, paired_u
     responses = await service.handle_callback(a_id, approve_btn.callback_data)
     text = responses[0].text
     assert "paused" in text.lower() or "ℹ️" in text
+
+
+# ---------------------------------------------------------------------------
+# FEAT-003: /setup — multi-tenant BYO Gemini key
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fernet_key():
+    """Generate a test Fernet key."""
+    from cryptography.fernet import Fernet
+    return Fernet.generate_key().decode()
+
+
+@pytest.mark.asyncio
+async def test_setup_not_paired(service: BotService, test_db):
+    """/setup when not paired returns not-paired message."""
+    user_id = 7777
+    responses = await service.handle_setup(user_id, None)
+    assert len(responses) == 1
+    assert "pair" in responses[0].text.lower() or "/start" in responses[0].text
+
+
+@pytest.mark.asyncio
+async def test_setup_store_key(
+    service: BotService, test_db, paired_users, fernet_key, monkeypatch
+):
+    """/setup gemini_key <key> stores the encrypted key."""
+    monkeypatch.setenv("DB_ENCRYPTION_KEY", fernet_key)
+    a_id, _ = paired_users
+
+    responses = await service.handle_setup(a_id, "gemini_key AIzaSyD-test-key-1234567890")
+    assert len(responses) == 1
+    text = responses[0].text
+    assert "AIza" in text  # masked prefix
+    assert "7890" in text  # masked suffix
+    assert "stored" in text.lower() or "🔑" in text
+
+
+@pytest.mark.asyncio
+async def test_setup_show_config(
+    service: BotService, test_db, paired_users, fernet_key, monkeypatch
+):
+    """/setup with no args shows the masked key."""
+    monkeypatch.setenv("DB_ENCRYPTION_KEY", fernet_key)
+    a_id, _ = paired_users
+
+    # Store a key first
+    await service.handle_setup(a_id, "gemini_key AIzaSyD-test-key-1234567890")
+
+    # Now show config
+    responses = await service.handle_setup(a_id, None)
+    assert len(responses) == 1
+    text = responses[0].text
+    assert "AIza" in text
+    assert "7890" in text
+
+
+@pytest.mark.asyncio
+async def test_setup_show_config_no_key(
+    service: BotService, test_db, paired_users, fernet_key, monkeypatch
+):
+    """/setup with no args and no stored key shows 'not set'."""
+    monkeypatch.setenv("DB_ENCRYPTION_KEY", fernet_key)
+    a_id, _ = paired_users
+
+    responses = await service.handle_setup(a_id, None)
+    assert len(responses) == 1
+    assert "not set" in responses[0].text.lower() or "global" in responses[0].text.lower()
+
+
+@pytest.mark.asyncio
+async def test_setup_clear_key(
+    service: BotService, test_db, paired_users, fernet_key, monkeypatch
+):
+    """/setup gemini_key clear removes the stored key."""
+    monkeypatch.setenv("DB_ENCRYPTION_KEY", fernet_key)
+    a_id, _ = paired_users
+
+    # Store first
+    await service.handle_setup(a_id, "gemini_key AIzaSyD-test-key-1234567890")
+
+    # Clear
+    responses = await service.handle_setup(a_id, "gemini_key clear")
+    assert len(responses) == 1
+    assert "removed" in responses[0].text.lower() or "cleared" in responses[0].text.lower()
+
+    # Verify cleared
+    responses = await service.handle_setup(a_id, None)
+    assert "not set" in responses[0].text.lower() or "global" in responses[0].text.lower()
+
+
+@pytest.mark.asyncio
+async def test_setup_both_partners_share_config(
+    service: BotService, test_db, paired_users, fernet_key, monkeypatch
+):
+    """Both partners see the same stored key (canonical couple_id)."""
+    monkeypatch.setenv("DB_ENCRYPTION_KEY", fernet_key)
+    a_id, b_id = paired_users
+
+    # Alice stores a key
+    await service.handle_setup(a_id, "gemini_key AIzaSyD-shared-key-9999")
+
+    # Bob should see it too
+    responses = await service.handle_setup(b_id, None)
+    assert len(responses) == 1
+    text = responses[0].text
+    assert "AIza" in text
+    assert "9999" in text
+
+
+@pytest.mark.asyncio
+async def test_setup_no_encryption_key_env(
+    service: BotService, test_db, paired_users, monkeypatch
+):
+    """/setup when DB_ENCRYPTION_KEY is not set returns an error."""
+    monkeypatch.delenv("DB_ENCRYPTION_KEY", raising=False)
+    a_id, _ = paired_users
+
+    responses = await service.handle_setup(a_id, "gemini_key some-key")
+    assert len(responses) == 1
+    assert "DB_ENCRYPTION_KEY" in responses[0].text or "encryption" in responses[0].text.lower()
+
+
+@pytest.mark.asyncio
+async def test_setup_invalid_subcommand(
+    service: BotService, test_db, paired_users, fernet_key, monkeypatch
+):
+    """/setup with unknown sub-command shows usage."""
+    monkeypatch.setenv("DB_ENCRYPTION_KEY", fernet_key)
+    a_id, _ = paired_users
+
+    responses = await service.handle_setup(a_id, "unknown_thing foo")
+    assert len(responses) == 1
+    assert "usage" in responses[0].text.lower() or "gemini_key" in responses[0].text.lower()
+
+
+@pytest.mark.asyncio
+async def test_setup_usage_no_key_value(
+    service: BotService, test_db, paired_users, fernet_key, monkeypatch
+):
+    """/setup gemini_key with no value shows usage."""
+    monkeypatch.setenv("DB_ENCRYPTION_KEY", fernet_key)
+    a_id, _ = paired_users
+
+    responses = await service.handle_setup(a_id, "gemini_key")
+    assert len(responses) == 1
+    assert "usage" in responses[0].text.lower() or "gemini_key" in responses[0].text.lower()
+
+
+@pytest.mark.asyncio
+async def test_couple_api_key_passed_to_llm(
+    service: BotService, test_db, paired_users, fernet_key, monkeypatch
+):
+    """When a couple has a BYO key, LLM calls receive api_key_override."""
+    monkeypatch.setenv("DB_ENCRYPTION_KEY", fernet_key)
+    a_id, _ = paired_users
+
+    # Store a BYO key
+    await service.handle_setup(a_id, "gemini_key my-custom-gemini-key")
+
+    mock = MockLLMClient([{
+        "reply": "Response", "new_facts": [], "relay_draft": None,
+    }])
+    service.llm = mock
+
+    await service.handle_message(a_id, "Alice", "Hello bot")
+
+    assert len(mock.calls) == 1
+    assert mock.calls[0]["api_key_override"] == "my-custom-gemini-key"
+
+
+@pytest.mark.asyncio
+async def test_no_couple_key_uses_none_override(
+    service: BotService, test_db, paired_users, monkeypatch
+):
+    """Without a BYO key, api_key_override is None (uses global key)."""
+    monkeypatch.delenv("DB_ENCRYPTION_KEY", raising=False)
+    a_id, _ = paired_users
+
+    mock = MockLLMClient([{
+        "reply": "Response", "new_facts": [], "relay_draft": None,
+    }])
+    service.llm = mock
+
+    await service.handle_message(a_id, "Alice", "Hello bot")
+
+    assert len(mock.calls) == 1
+    assert mock.calls[0]["api_key_override"] is None

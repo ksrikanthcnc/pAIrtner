@@ -17,11 +17,13 @@ class MockLLMClient:
         user_content: str,
         system_prompt: str,
         model: str | None = None,
+        api_key_override: str | None = None,
     ) -> LLMResponse:
         self.calls.append({
             "user_content": user_content,
             "system_prompt": system_prompt,
             "model": model,
+            "api_key_override": api_key_override,
         })
         if self.responses:
             return self.responses.pop(0)

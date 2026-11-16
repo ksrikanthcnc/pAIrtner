@@ -59,6 +59,15 @@ CREATE TABLE IF NOT EXISTS usage (
     PRIMARY KEY (date, model)
 );
 
+CREATE TABLE IF NOT EXISTS couple_config (
+    couple_id   TEXT NOT NULL,
+    config_key  TEXT NOT NULL,
+    config_value TEXT NOT NULL,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (couple_id, config_key)
+);
+
 -- Indexes for efficient querying
 CREATE INDEX IF NOT EXISTS idx_facts_owner_visibility
     ON facts(owner_id, visibility);
@@ -426,6 +435,57 @@ async def get_partner_last_active(
         (partner_id,),
     )
     return row["last_active"] if row and row["last_active"] else None
+
+
+# ---------------------------------------------------------------------------
+# Couple config (multi-tenant settings)
+# ---------------------------------------------------------------------------
+
+
+def make_couple_id(user_a: int, user_b: int) -> str:
+    """Canonical couple identifier — ensures both partners share one config."""
+    return f"{min(user_a, user_b)}:{max(user_a, user_b)}"
+
+
+async def set_couple_config(
+    db_path: str, couple_id: str, key: str, value: str
+) -> None:
+    """Insert or update a couple config entry."""
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """INSERT INTO couple_config (couple_id, config_key, config_value, updated_at)
+               VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(couple_id, config_key) DO UPDATE
+               SET config_value = excluded.config_value,
+                   updated_at = CURRENT_TIMESTAMP""",
+            (couple_id, key, value),
+        )
+        await db.commit()
+
+
+async def get_couple_config(
+    db_path: str, couple_id: str, key: str
+) -> str | None:
+    """Return a single config value for a couple, or None."""
+    row = await _fetch_one(
+        db_path,
+        "SELECT config_value FROM couple_config WHERE couple_id = ? AND config_key = ?",
+        (couple_id, key),
+    )
+    return row["config_value"] if row else None
+
+
+async def delete_couple_config(
+    db_path: str, couple_id: str, key: str
+) -> bool:
+    """Delete a couple config entry. Returns True if something was deleted."""
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "DELETE FROM couple_config WHERE couple_id = ? AND config_key = ?",
+            (couple_id, key),
+        )
+        await db.commit()
+        return cur.rowcount > 0
 
 
 # ---------------------------------------------------------------------------

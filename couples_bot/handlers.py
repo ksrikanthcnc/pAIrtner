@@ -6,6 +6,7 @@ in ``__main__`` converts these into Telegram-specific API calls.
 
 from __future__ import annotations
 
+import os
 import secrets
 import uuid
 from dataclasses import dataclass, field
@@ -14,6 +15,7 @@ from typing import Any
 
 from couples_bot import db as db_mod
 from couples_bot.config import Config, is_user_allowed
+from couples_bot.crypto import decrypt_value, encrypt_value, mask_key
 from couples_bot.i18n import t
 from couples_bot.llm import LLMClient
 from couples_bot.prompts import (
@@ -126,6 +128,25 @@ class BotService:
     async def _get_lang(self, user_id: int) -> str:
         user = await db_mod.get_user(self.db_path, user_id)
         return (user or {}).get("lang") or "en"
+
+    async def _get_couple_api_key(self, user_id: int) -> str | None:
+        """Resolve the BYO Gemini key for this user's couple, or None."""
+        user = await db_mod.get_user(self.db_path, user_id)
+        if not user or not user.get("partner_id"):
+            return None
+        couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
+        encrypted = await db_mod.get_couple_config(
+            self.db_path, couple_id, "gemini_key"
+        )
+        if not encrypted:
+            return None
+        encryption_key = os.environ.get("DB_ENCRYPTION_KEY", "")
+        if not encryption_key:
+            return None
+        try:
+            return decrypt_value(encrypted, encryption_key)
+        except Exception:
+            return None
 
     async def _build_ctx(self, user_id: int) -> UserContext:
         data = await db_mod.get_user_context_data(self.db_path, user_id)
@@ -260,8 +281,11 @@ class BotService:
         ctx = await self._build_ctx(user_id)
         system, content = build_tell_prompt(ctx, clean)
 
+        api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", clean)
-        result = await self.llm.generate(content, system)
+        result = await self.llm.generate(
+            content, system, api_key_override=api_key,
+        )
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
         # Save any extracted facts
@@ -302,7 +326,10 @@ class BotService:
 
         # Use heavy model
         model = self._config.model_heavy[0] if self._config.model_heavy else None
-        result = await self.llm.generate(content, system, model=model)
+        api_key = await self._get_couple_api_key(user_id)
+        result = await self.llm.generate(
+            content, system, model=model, api_key_override=api_key,
+        )
 
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
@@ -423,6 +450,72 @@ class BotService:
 
         await db_mod.set_user_paused(self.db_path, user_id, False)
         return [BotResponse(t(lang, "resumed_confirm"))]
+
+    # ── /setup ────────────────────────────────────────────────────────────
+
+    async def handle_setup(
+        self, user_id: int, arg: str | None
+    ) -> list[BotResponse]:
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        user = await db_mod.ensure_user(self.db_path, user_id)
+        lang = user.get("lang") or "en"
+
+        if not user.get("partner_id"):
+            return [BotResponse(t(lang, "setup_not_paired"))]
+
+        couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
+
+        # No arg → show current config
+        if not arg or not arg.strip():
+            stored = await db_mod.get_couple_config(
+                self.db_path, couple_id, "gemini_key"
+            )
+            if stored:
+                encryption_key = os.environ.get("DB_ENCRYPTION_KEY", "")
+                if not encryption_key:
+                    return [BotResponse(t(lang, "setup_no_encryption_key"))]
+                try:
+                    plaintext = decrypt_value(stored, encryption_key)
+                    masked = mask_key(plaintext)
+                except Exception:
+                    masked = "****"
+                return [BotResponse(
+                    t(lang, "setup_show_config", api_key=masked)
+                )]
+            return [BotResponse(t(lang, "setup_key_not_set"))]
+
+        parts = arg.strip().split(None, 1)
+        sub_cmd = parts[0].lower()
+
+        if sub_cmd != "gemini_key":
+            return [BotResponse(t(lang, "setup_usage"))]
+
+        # /setup gemini_key clear
+        if len(parts) == 2 and parts[1].strip().lower() == "clear":
+            deleted = await db_mod.delete_couple_config(
+                self.db_path, couple_id, "gemini_key"
+            )
+            if deleted:
+                return [BotResponse(t(lang, "setup_key_cleared"))]
+            return [BotResponse(t(lang, "setup_key_not_set"))]
+
+        # /setup gemini_key <key>
+        if len(parts) < 2 or not parts[1].strip():
+            return [BotResponse(t(lang, "setup_usage"))]
+
+        api_key = parts[1].strip()
+        encryption_key = os.environ.get("DB_ENCRYPTION_KEY", "")
+        if not encryption_key:
+            return [BotResponse(t(lang, "setup_no_encryption_key"))]
+
+        encrypted = encrypt_value(api_key, encryption_key)
+        await db_mod.set_couple_config(
+            self.db_path, couple_id, "gemini_key", encrypted
+        )
+        masked = mask_key(api_key)
+        return [BotResponse(t(lang, "setup_key_stored", api_key=masked))]
 
     # ── /forget ──────────────────────────────────────────────────────────
 
@@ -578,8 +671,11 @@ class BotService:
         ctx = await self._build_ctx(user_id)
         system, content = build_keep_prompt(ctx, text)
 
+        api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", text)
-        result = await self.llm.generate(content, system)
+        result = await self.llm.generate(
+            content, system, api_key_override=api_key,
+        )
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
         count = await self._save_facts(user_id, result.get("new_facts", []))
@@ -600,8 +696,11 @@ class BotService:
         ctx = await self._build_ctx(user_id)
         system, content = build_tell_prompt(ctx, text)
 
+        api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", text)
-        result = await self.llm.generate(content, system)
+        result = await self.llm.generate(
+            content, system, api_key_override=api_key,
+        )
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
         await self._save_facts(user_id, result.get("new_facts", []))
@@ -630,8 +729,11 @@ class BotService:
         system, content = build_chat_prompt(ctx, text)
 
         model = self._config.model_heavy[0] if self._config.model_heavy else None
+        api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", text)
-        result = await self.llm.generate(content, system, model=model)
+        result = await self.llm.generate(
+            content, system, model=model, api_key_override=api_key,
+        )
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
         # Check usage warning (duck-typed — not all clients have this)
@@ -654,8 +756,11 @@ class BotService:
         ctx = await self._build_ctx(user_id)
         system, content = build_chat_prompt(ctx, text)
 
+        api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", text)
-        result = await self.llm.generate(content, system)
+        result = await self.llm.generate(
+            content, system, api_key_override=api_key,
+        )
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
         count = await self._save_facts(user_id, result.get("new_facts", []))

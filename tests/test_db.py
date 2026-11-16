@@ -9,8 +9,10 @@ from couples_bot.db import (
     create_pending,
     create_user,
     delete_all_facts,
+    delete_couple_config,
     delete_fact,
     ensure_user,
+    get_couple_config,
     get_deliverable,
     get_facts,
     get_partner_last_active,
@@ -24,7 +26,9 @@ from couples_bot.db import (
     increment_usage,
     init_db,
     log_message,
+    make_couple_id,
     mark_as_sent,
+    set_couple_config,
     set_partner,
     set_user_paused,
     update_pending_edited_draft,
@@ -315,3 +319,77 @@ async def test_paused_column_migration(tmp_path):
     await set_user_paused(db_path, 1, True)
     user = await get_user(db_path, 1)
     assert user["paused"] == 1
+
+
+# ---------------------------------------------------------------------------
+# FEAT-003: couple_config CRUD and make_couple_id
+# ---------------------------------------------------------------------------
+
+
+class TestMakeCoupleId:
+    def test_canonical_ordering(self):
+        assert make_couple_id(100, 200) == "100:200"
+        assert make_couple_id(200, 100) == "100:200"
+
+    def test_same_user(self):
+        assert make_couple_id(42, 42) == "42:42"
+
+    def test_deterministic(self):
+        assert make_couple_id(5, 3) == make_couple_id(3, 5)
+
+
+@pytest.mark.asyncio
+async def test_couple_config_set_and_get(test_db):
+    """set_couple_config stores a value, get_couple_config retrieves it."""
+    couple = "10:20"
+    await set_couple_config(test_db, couple, "gemini_key", "encrypted-token")
+    val = await get_couple_config(test_db, couple, "gemini_key")
+    assert val == "encrypted-token"
+
+
+@pytest.mark.asyncio
+async def test_couple_config_upsert(test_db):
+    """set_couple_config updates on conflict."""
+    couple = "10:20"
+    await set_couple_config(test_db, couple, "gemini_key", "old-value")
+    await set_couple_config(test_db, couple, "gemini_key", "new-value")
+    val = await get_couple_config(test_db, couple, "gemini_key")
+    assert val == "new-value"
+
+
+@pytest.mark.asyncio
+async def test_couple_config_get_missing(test_db):
+    """get_couple_config returns None for missing keys."""
+    val = await get_couple_config(test_db, "999:888", "gemini_key")
+    assert val is None
+
+
+@pytest.mark.asyncio
+async def test_couple_config_delete(test_db):
+    """delete_couple_config removes the entry."""
+    couple = "10:20"
+    await set_couple_config(test_db, couple, "gemini_key", "some-token")
+    assert await delete_couple_config(test_db, couple, "gemini_key") is True
+    assert await get_couple_config(test_db, couple, "gemini_key") is None
+
+
+@pytest.mark.asyncio
+async def test_couple_config_delete_missing(test_db):
+    """delete_couple_config returns False for non-existent key."""
+    assert await delete_couple_config(test_db, "1:2", "nope") is False
+
+
+@pytest.mark.asyncio
+async def test_couple_config_multiple_keys(test_db):
+    """Different config_key values for the same couple are independent."""
+    couple = "10:20"
+    await set_couple_config(test_db, couple, "gemini_key", "key-val")
+    await set_couple_config(test_db, couple, "other_setting", "other-val")
+
+    assert await get_couple_config(test_db, couple, "gemini_key") == "key-val"
+    assert await get_couple_config(test_db, couple, "other_setting") == "other-val"
+
+    # Deleting one doesn't affect the other
+    await delete_couple_config(test_db, couple, "gemini_key")
+    assert await get_couple_config(test_db, couple, "gemini_key") is None
+    assert await get_couple_config(test_db, couple, "other_setting") == "other-val"

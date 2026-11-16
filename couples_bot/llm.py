@@ -50,6 +50,7 @@ class LLMClient(Protocol):
         user_content: str,
         system_prompt: str,
         model: str | None = None,
+        api_key_override: str | None = None,
     ) -> LLMResponse: ...
 
 
@@ -85,19 +86,26 @@ class GeminiClient:
         user_content: str,
         system_prompt: str,
         model: str | None = None,
+        api_key_override: str | None = None,
     ) -> LLMResponse:
         """Call Gemini and return parsed JSON response.
 
         If *model* is ``None`` the default model is used.  When a model
         in *config.model_heavy* is requested the daily cap is checked
         and fallback models are tried on 404/503.
+
+        *api_key_override*: when provided, a temporary genai Client is
+        created with this key for the call (BYO key support).
         """
         model = model or self._config.model_default
         models_to_try = self._build_model_list(model)
 
         for candidate in models_to_try:
             try:
-                raw = await self._call(candidate, user_content, system_prompt)
+                raw = await self._call(
+                    candidate, user_content, system_prompt,
+                    api_key_override=api_key_override,
+                )
                 await db_mod.increment_usage(self._db_path, candidate)
                 return parse_llm_response(raw)
             except Exception as exc:
@@ -108,7 +116,10 @@ class GeminiClient:
                     await asyncio.sleep(delay)
                     # Retry once on the same model
                     try:
-                        raw = await self._call(candidate, user_content, system_prompt)
+                        raw = await self._call(
+                            candidate, user_content, system_prompt,
+                            api_key_override=api_key_override,
+                        )
                         await db_mod.increment_usage(self._db_path, candidate)
                         return parse_llm_response(raw)
                     except Exception:
@@ -148,14 +159,19 @@ class GeminiClient:
         return [requested]
 
     async def _call(
-        self, model: str, user_content: str, system_prompt: str
+        self, model: str, user_content: str, system_prompt: str,
+        *, api_key_override: str | None = None,
     ) -> str:
+        client = self._client
+        if api_key_override:
+            client = genai.Client(api_key=api_key_override)
+
         config = genai_types.GenerateContentConfig(
             system_instruction=system_prompt,
             thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
             response_mime_type="application/json",
         )
-        response = await self._client.aio.models.generate_content(
+        response = await client.aio.models.generate_content(
             model=model,
             contents=user_content,
             config=config,
