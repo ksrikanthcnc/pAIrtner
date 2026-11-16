@@ -10,6 +10,7 @@ RUN uv sync --frozen --no-dev
 
 # Copy application code and config
 COPY couples_bot/ couples_bot/
+COPY prompts/ prompts/
 COPY persona.md settings.yaml ./
 
 ENTRYPOINT ["uv", "run", "--no-dev", "python", "-m", "couples_bot"]

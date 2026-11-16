@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from couples_bot.sanitize import sanitize_input
+from couples_bot.sanitize import detect_crisis, sanitize_input
 
 
 class TestSanitizeInput:
@@ -90,3 +90,98 @@ class TestSanitizeInput:
         assert "ignore_previous" in stripped
         assert "pizza" in cleaned
         assert "Hey bot" in cleaned
+
+
+# ---------------------------------------------------------------------------
+# Crisis / emergency detection
+# ---------------------------------------------------------------------------
+
+
+class TestDetectCrisis:
+    def test_crisis_detection_self_harm_suicide(self):
+        is_crisis, name = detect_crisis("I want to commit suicide")
+        assert is_crisis is True
+        assert name is not None
+
+    def test_crisis_detection_self_harm_kill_myself(self):
+        is_crisis, name = detect_crisis("I want to kill myself")
+        assert is_crisis is True
+        assert "kill_myself" in name
+
+    def test_crisis_detection_self_harm_end_my_life(self):
+        is_crisis, name = detect_crisis("I just want to end my life")
+        assert is_crisis is True
+
+    def test_crisis_detection_self_harm_want_to_die(self):
+        is_crisis, name = detect_crisis("I want to die")
+        assert is_crisis is True
+
+    def test_crisis_detection_self_harm_generic(self):
+        is_crisis, name = detect_crisis("I've been self-harming")
+        assert is_crisis is True
+
+    def test_crisis_detection_self_harm_hurt_myself(self):
+        is_crisis, name = detect_crisis("I'm going to hurt myself")
+        assert is_crisis is True
+
+    def test_crisis_detection_abuse_being_hit(self):
+        is_crisis, name = detect_crisis("My partner is being hit")
+        assert is_crisis is True
+
+    def test_crisis_detection_abuse_being_beaten(self):
+        is_crisis, name = detect_crisis("I am being beaten at home")
+        assert is_crisis is True
+
+    def test_crisis_detection_abuse_domestic_violence(self):
+        is_crisis, name = detect_crisis("There is domestic violence in our home")
+        assert is_crisis is True
+
+    def test_crisis_detection_abuse_abusing_me(self):
+        is_crisis, name = detect_crisis("My partner is abusing me")
+        assert is_crisis is True
+
+    def test_crisis_detection_threat_going_to_hurt(self):
+        is_crisis, name = detect_crisis("He is going to hurt me")
+        assert is_crisis is True
+
+    def test_crisis_detection_threat_threatening_to_kill(self):
+        is_crisis, name = detect_crisis("She is threatening to kill me")
+        assert is_crisis is True
+
+    def test_crisis_detection_normal_text(self):
+        """Normal relationship complaints do NOT trigger crisis detection."""
+        is_crisis, name = detect_crisis("I am angry at my partner")
+        assert is_crisis is False
+        assert name is None
+
+    def test_crisis_detection_normal_argument(self):
+        is_crisis, _ = detect_crisis("We had a terrible fight yesterday")
+        assert is_crisis is False
+
+    def test_crisis_detection_normal_frustration(self):
+        is_crisis, _ = detect_crisis("I'm so frustrated with this relationship")
+        assert is_crisis is False
+
+    def test_crisis_false_positive_kill_time(self):
+        """'kill time' should NOT trigger crisis detection."""
+        is_crisis, _ = detect_crisis("Just trying to kill time while waiting")
+        assert is_crisis is False
+
+    def test_crisis_false_positive_dying_to_see(self):
+        """'dying to see you' should NOT trigger crisis detection."""
+        is_crisis, _ = detect_crisis("I'm dying to see you this weekend")
+        assert is_crisis is False
+
+    def test_crisis_false_positive_hurt_feelings(self):
+        """'hurt my feelings' should NOT trigger crisis detection."""
+        is_crisis, _ = detect_crisis("That really hurt my feelings")
+        assert is_crisis is False
+
+    def test_crisis_false_positive_dead_tired(self):
+        """'dead tired' should NOT trigger crisis detection."""
+        is_crisis, _ = detect_crisis("I'm dead tired after work")
+        assert is_crisis is False
+
+    def test_crisis_case_insensitive(self):
+        is_crisis, _ = detect_crisis("I WANT TO KILL MYSELF")
+        assert is_crisis is True

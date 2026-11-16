@@ -33,6 +33,17 @@ _STRINGS: dict[str, dict[str, str]] = {
             "• Vandrevala Foundation: 1860-2662-345\n"
             "• AASRA: 9820466726"
         ),
+        "emergency_response": (
+            "💛 I can see you're going through something really heavy right "
+            "now. I care about you, and I want to make sure you get the "
+            "right support.\n\n"
+            "🆘 <b>Please reach out to someone who can help:</b>\n"
+            "• <b>iCall:</b> 9152987821\n"
+            "• <b>Vandrevala Foundation:</b> 1860-2662-345\n"
+            "• <b>Emergency:</b> 112\n\n"
+            "You don't have to go through this alone. These people are "
+            "trained to help, and they're available right now."
+        ),
         "already_paired": (
             "You're already paired with {partner_name}. "
             "Use /help to see available commands."
@@ -247,6 +258,17 @@ _STRINGS: dict[str, dict[str, str]] = {
             "• iCall: 9152987821\n"
             "• Vandrevala Foundation: 1860-2662-345\n"
             "• AASRA: 9820466726"
+        ),
+        "emergency_response": (
+            "💛 మీరు ఇప్పుడు చాలా కష్టమైన సమయంలో ఉన్నారని నాకు తెలుసు. "
+            "మీ గురించి నాకు శ్రద్ధ ఉంది, మీకు సరైన సహాయం అందాలని "
+            "కోరుకుంటున్నాను.\n\n"
+            "🆘 <b>దయచేసి సహాయం కోసం సంప్రదించండి:</b>\n"
+            "• <b>iCall:</b> 9152987821\n"
+            "• <b>Vandrevala Foundation:</b> 1860-2662-345\n"
+            "• <b>Emergency:</b> 112\n\n"
+            "మీరు ఒంటరిగా ఈ పరిస్థితి ఎదుర్కొనవలసిన అవసరం లేదు. "
+            "వీరు సహాయం చేయడానికి శిక్షణ పొందారు, ఇప్పుడే అందుబాటులో ఉన్నారు."
         ),
         "already_paired": "మీరు ఇప్పటికే {partner_name} తో జత చేయబడ్డారు.",
 

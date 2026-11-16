@@ -164,6 +164,63 @@ async def test_edit_flow(service: BotService, test_db, paired_users):
 
 
 # ---------------------------------------------------------------------------
+# Emergency / crisis detection
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_emergency_skips_llm(service: BotService, test_db, paired_users):
+    """When crisis is detected, LLM is never called and response has helpline numbers."""
+    a_id, _ = paired_users
+    mock = MockLLMClient()
+    service.llm = mock
+
+    responses = await service.handle_message(a_id, "Alice", "I want to kill myself")
+    assert len(responses) == 1
+    text = responses[0].text
+    # Should contain helpline numbers
+    assert "9152987821" in text  # iCall
+    assert "1860-2662-345" in text  # Vandrevala Foundation
+    assert "112" in text  # Emergency
+    # LLM should NOT have been called
+    assert len(mock.calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_emergency_ignores_tags(service: BotService, test_db, paired_users):
+    """Crisis detection fires even with #keep, #send tags in the message."""
+    a_id, _ = paired_users
+    mock = MockLLMClient()
+    service.llm = mock
+
+    responses = await service.handle_message(
+        a_id, "Alice", "#keep #send I want to end my life"
+    )
+    assert len(responses) == 1
+    assert "9152987821" in responses[0].text
+    assert len(mock.calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_emergency_normal_anger_not_triggered(
+    service: BotService, test_db, paired_users
+):
+    """Normal relationship anger should NOT trigger crisis detection."""
+    a_id, _ = paired_users
+    service.llm = MockLLMClient([{
+        "reply": "I understand you're upset",
+        "new_facts": [],
+        "relay_draft": None,
+    }])
+
+    responses = await service.handle_message(
+        a_id, "Alice", "I am so angry at my partner right now"
+    )
+    # Should get a normal LLM response, not an emergency response
+    assert len(responses) == 1
+    assert "9152987821" not in responses[0].text
+
+
+# ---------------------------------------------------------------------------
 # Cooldown
 # ---------------------------------------------------------------------------
 

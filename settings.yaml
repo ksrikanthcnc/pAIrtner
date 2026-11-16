@@ -4,6 +4,12 @@
 # Bot personality file — loaded at startup as the system instruction base.
 persona_file: persona.md
 
+# Prompt directory structure.
+prompts_dir: prompts
+voices_dir: prompts/voices
+default_voice: casual_en
+default_voice_intensity: 0.5
+
 # Message delivery cooldown in minutes.
 # After a relay is approved, it waits this long before being sent.
 cooldown_minutes: 15

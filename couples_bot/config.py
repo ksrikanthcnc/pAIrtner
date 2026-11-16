@@ -69,6 +69,10 @@ class Config:
     delivery_check_interval_seconds: int = 30
     review_before_send: bool = True
     persona_file: str = "persona.md"
+    prompts_dir: str = "prompts"
+    voices_dir: str = "prompts/voices"
+    default_voice: str = "casual_en"
+    default_voice_intensity: float = 0.5
 
     # New tunables (FEAT-002)
     fact_categories: list[str] = field(
@@ -203,6 +207,21 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         ),
         persona_file=os.getenv(
             "PERSONA_FILE", yaml_cfg.get("persona_file", "persona.md")
+        ),
+        prompts_dir=os.getenv(
+            "PROMPTS_DIR", yaml_cfg.get("prompts_dir", "prompts")
+        ),
+        voices_dir=os.getenv(
+            "VOICES_DIR", yaml_cfg.get("voices_dir", "prompts/voices")
+        ),
+        default_voice=os.getenv(
+            "DEFAULT_VOICE", yaml_cfg.get("default_voice", "casual_en")
+        ),
+        default_voice_intensity=float(
+            os.getenv(
+                "DEFAULT_VOICE_INTENSITY",
+                str(yaml_cfg.get("default_voice_intensity", 0.5)),
+            )
         ),
         fact_categories=yaml_cfg.get(
             "fact_categories",

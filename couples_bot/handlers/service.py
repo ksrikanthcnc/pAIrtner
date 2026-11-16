@@ -18,7 +18,7 @@ from couples_bot.crypto import decrypt_value
 from couples_bot.i18n import t
 from couples_bot.llm import LLMClient
 from couples_bot.prompts import UserContext
-from couples_bot.sanitize import sanitize_input
+from couples_bot.sanitize import detect_crisis, sanitize_input
 
 from .callbacks import CallbacksMixin
 from .commands import CommandsMixin
@@ -286,6 +286,13 @@ class BotService(TagsMixin, CommandsMixin, CallbacksMixin):
             return rate_resp
 
         await self._increment_rate_counters(user_id)
+
+        # Emergency / crisis detection — fires FIRST, before any LLM or tag
+        # processing, regardless of tags, mood, or settings.
+        is_crisis, _crisis_pattern = detect_crisis(text)
+        if is_crisis:
+            lang = await self._get_lang(user_id)
+            return [BotResponse(t(lang, "emergency_response"))]
 
         tags, clean = parse_tags(text)
 

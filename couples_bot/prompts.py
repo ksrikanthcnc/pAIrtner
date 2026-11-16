@@ -10,6 +10,7 @@ PRIVACY RULES (violations are bugs):
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -43,18 +44,60 @@ _FALLBACK_PERSONA = (
 )
 
 
+def load_prompt_file(path: str) -> str | None:
+    """Read a prompt file and return its content, or ``None`` on error."""
+    try:
+        with open(path) as f:
+            content = f.read().strip()
+        return content or None
+    except (FileNotFoundError, OSError) as exc:
+        logger.warning("Could not load prompt file %r: %s", path, exc)
+        return None
+
+
+_DEFAULT_VOICE_TEXT = (
+    "Tone: friendly, warm, concise. Register: informal but respectful. "
+    "Speak like a caring friend — not a chatbot, not a therapist."
+)
+
+
+def load_voice(voice_dir: str, voice_name: str) -> str:
+    """Load a voice file from ``<voice_dir>/<voice_name>.md``.
+
+    Falls back to ``casual_en.md``, then to a built-in default string.
+    """
+    primary = os.path.join(voice_dir, f"{voice_name}.md")
+    content = load_prompt_file(primary)
+    if content:
+        return content
+
+    if voice_name != "casual_en":
+        fallback = os.path.join(voice_dir, "casual_en.md")
+        content = load_prompt_file(fallback)
+        if content:
+            logger.info(
+                "Voice %r not found — falling back to casual_en", voice_name,
+            )
+            return content
+
+    logger.info("No voice files found — using built-in default voice")
+    return _DEFAULT_VOICE_TEXT
+
+
+def load_task_prompt(prompts_dir: str, task_name: str) -> str | None:
+    """Load a task prompt from ``<prompts_dir>/tasks/<task_name>.md``."""
+    path = os.path.join(prompts_dir, "tasks", f"{task_name}.md")
+    return load_prompt_file(path)
+
+
 def load_persona(path: str) -> str:
     """Read the persona file, cache it, and return the content.
 
     Falls back to ``_FALLBACK_PERSONA`` if the file is missing or unreadable.
     """
     global _persona_text
-    try:
-        with open(path) as f:
-            _persona_text = f.read().strip()
-    except (FileNotFoundError, OSError):
-        logger.warning("Persona file %r not found — using fallback persona", path)
-        _persona_text = None
+    content = load_prompt_file(path)
+    _persona_text = content
     return _persona_text or _FALLBACK_PERSONA
 
 
@@ -131,10 +174,21 @@ def _format_history(messages: list[tuple[str, str]], limit: int = 6) -> str:
     return "\n## Recent conversation\n" + "\n".join(lines) + "\n"
 
 
-def build_system_prompt() -> str:
-    """Base system prompt shared across prompt types."""
+def build_system_prompt(
+    voice_text: str | None = None,
+    task_text: str | None = None,
+) -> str:
+    """Base system prompt shared across prompt types.
+
+    Optionally appends voice and task instructions when provided.
+    """
     persona = _get_persona()
-    return f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n{_JSON_FORMAT}"
+    parts = [persona, _ROLE, _NOT_THERAPY, _TONE, _JSON_FORMAT]
+    if voice_text:
+        parts.append(f"## Voice\n{voice_text}")
+    if task_text:
+        parts.append(f"## Task Instructions\n{task_text}")
+    return "\n\n".join(parts)
 
 
 def build_chat_prompt(ctx: UserContext, message: str) -> tuple[str, str]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from io import BytesIO
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -309,8 +310,13 @@ def main() -> None:
     logger.info("Config loaded — provider: %s, default model: %s", config.llm_provider, config.model_default)
 
     # Load persona (warm the cache; fallback used if file missing)
-    load_persona(config.persona_file)
-    logger.info("Persona loaded from %s", config.persona_file)
+    persona_path = os.path.join(config.prompts_dir, "persona.md")
+    if os.path.isfile(persona_path):
+        load_persona(persona_path)
+        logger.info("Persona loaded from %s", persona_path)
+    else:
+        load_persona(config.persona_file)
+        logger.info("Persona loaded from legacy path %s", config.persona_file)
 
     # Init DB synchronously before the event loop starts
     asyncio.run(init_db(config.db_path))

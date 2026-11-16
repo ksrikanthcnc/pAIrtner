@@ -160,3 +160,11 @@ class TestConfigDefaults:
         assert cfg.rate_limit_per_day == 200
         assert cfg.delivery_check_interval_seconds == 30
         assert cfg.review_before_send is True
+
+    def test_new_config_fields_defaults(self):
+        """prompts_dir, voices_dir, default_voice, default_voice_intensity defaults."""
+        cfg = Config(telegram_token="t")
+        assert cfg.prompts_dir == "prompts"
+        assert cfg.voices_dir == "prompts/voices"
+        assert cfg.default_voice == "casual_en"
+        assert cfg.default_voice_intensity == 0.5
