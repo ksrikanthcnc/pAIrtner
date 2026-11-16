@@ -8,6 +8,15 @@ A private Telegram bot that helps couples communicate more gently. Each partner 
 2. Install dependencies: `uv sync`
 3. Run: `uv run python -m couples_bot`
 
+## Docker Deployment
+
+1. Copy `.env.example` to `.env` and fill in your tokens
+2. Build: `docker compose build`
+3. Run: `docker compose up -d`
+4. Logs: `docker compose logs -f`
+
+The SQLite database is persisted via a volume mount (`./couples_bot.db`). Settings and persona are mounted read-only. Backups are written to `./backups/`.
+
 ## Commands
 
 - `/start` — Get a pairing code

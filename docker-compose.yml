@@ -1,0 +1,10 @@
+services:
+  pairtner:
+    build: .
+    env_file: .env
+    volumes:
+      - ./couples_bot.db:/app/couples_bot.db
+      - ./settings.yaml:/app/settings.yaml:ro
+      - ./persona.md:/app/persona.md:ro
+      - ./backups:/app/backups
+    restart: unless-stopped
