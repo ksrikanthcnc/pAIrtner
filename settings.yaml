@@ -100,7 +100,11 @@ nudges:
   quiet_start: "09:00"
   quiet_end: "21:00"
 
-# /mediate — neutral perspective from shared facts and filtered partner impressions.
+# /mediate [window] — neutral perspective from shared facts (and, unless
+# include_perceptions is false, filtered unverified partner impressions) within
+# the window. default_days applies when no window is given; max_days clamps
+# longer ones. Env overrides: MEDIATE_DEFAULT_DAYS, MEDIATE_MAX_DAYS,
+# MEDIATE_INCLUDE_PERCEPTIONS, MEDIATE_MIN_CONFIDENCE, MEDIATE_MAX_THEMES_PER_SIDE.
 mediate:
   default_days: 7
   max_days: 90

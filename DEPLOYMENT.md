@@ -17,15 +17,21 @@ All secrets go in `.env` (never in `settings.yaml`):
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Yes | From @BotFather |
+| `TELEGRAM_BOT_TOKEN` | Yes, unless `ADAPTER` has no Telegram (`rest`, `websocket`, `cli`) | From @BotFather |
 | `GEMINI_API_KEY` | Yes (if using Gemini) | From Google AI Studio |
 | `DB_PATH` | No | SQLite path (default: `couples_bot.db`) |
 | `DB_ENCRYPTION_KEY` | No | Fernet key for encrypting BYO API keys |
 | `LLM_PROVIDER` | No | `gemini` (default) or `openai_compat` |
 | `LLM_BASE_URL` | If openai_compat | e.g. `http://host.docker.internal:11434/v1` |
 | `LLM_API_KEY` | If openai_compat | API key for the provider |
-| `ADAPTER` | No | `telegram` (default), `websocket`, `cli`, `both` |
+| `ADAPTER` | No | `telegram` (default), `websocket`, `cli`, `both`, `rest`, `telegram+rest` |
 | `WS_PORT` | No | WebSocket port (default: `8080`) |
+| `REST_INVITE_CODE` | If `REST_REGISTRATION=invite` (secret) | Code a person must send to register. Env only, never in `settings.yaml`. If it is empty in invite mode, registration is refused |
+| `REST_HOST` / `REST_PORT` | No | REST listen address (defaults `127.0.0.1` / `8780`). Use `0.0.0.0` inside a container |
+| `REST_REGISTRATION` | No | `closed`, `invite` (default) or `open` |
+| `REST_MAX_TEXT_CHARS` / `REST_EVENT_RETENTION_DAYS` / `REST_LONG_POLL_MAX_SECONDS` | No | Defaults `4000` / `14` / `25` |
+| `LOOPS_DIGEST_POLL_SECONDS` / `LOOPS_CHECKIN_POLL_SECONDS` / `LOOPS_NUDGE_INTERVAL_SECONDS` / `LOOPS_BACKUP_INTERVAL_SECONDS` | No | Background loop intervals, defaults `60` / `60` / `0` (use `nudges.interval_hours`) / `3600` |
+| `ALLOWED_USER_IDS` | No | Comma-separated ids. Empty = open. REST ids start at `4503599627370496` (see below) |
 | `DASHBOARD_TOKEN` | For dashboard | Admin dashboard access token, 16+ chars (see Dashboard) |
 | `DASHBOARD_BIND` | No | Host interface for the dashboard port (default `127.0.0.1`) |
 | `DASHBOARD_HOST` / `_PORT` / `_SHOW_RAW_TEXT` / `_ADMIN_ACTIONS` / `_PAGE_SIZE` / `_SESSION_TTL_HOURS` | No | Override the `dashboard:` block in `settings.yaml` |
@@ -59,6 +65,14 @@ services:
     #   - "8080:8080"
     # environment:
     #   - ADAPTER=both
+    # Uncomment for the web app / REST API (see "Web app (PWA) / REST API"):
+    # ports:
+    #   - "127.0.0.1:8780:8780"
+    # environment:
+    #   - ADAPTER=telegram+rest      # or rest
+    #   - REST_HOST=0.0.0.0
+    #   - REST_REGISTRATION=invite
+    #   # REST_INVITE_CODE comes from .env (env_file), never from this file
 ```
 
 ### Useful commands
@@ -258,6 +272,58 @@ services:
 - On Apple Silicon, Ollama uses the GPU automatically
 - Response quality is good but not Gemini-level for nuanced relationship advice
 - Works great for testing and privacy-sensitive deployments
+
+## Web app (PWA) / REST API
+
+The REST adapter serves a JSON API and an installable web client from one port. Start it with `ADAPTER=rest` (web app only) or `ADAPTER=telegram+rest` (both, one set of background loops). API reference: [docs/REST_API.md](docs/REST_API.md).
+
+### Settings
+
+| Setting | `settings.yaml` | Env | Default |
+|---|---|---|---|
+| Bind address | `rest.host` | `REST_HOST` | `127.0.0.1` |
+| Port | `rest.port` | `REST_PORT` | `8780` |
+| Registration | `rest.registration` | `REST_REGISTRATION` | `invite` |
+| Invite code (secret) | not in YAML | `REST_INVITE_CODE` | unset |
+| Message size limit | `rest.max_text_chars` | `REST_MAX_TEXT_CHARS` | `4000` |
+| Event retention (days) | `rest.event_retention_days` | `REST_EVENT_RETENTION_DAYS` | `14` |
+| Long-poll cap (s) | `rest.long_poll_max_seconds` | `REST_LONG_POLL_MAX_SECONDS` | `25` |
+| Digest / check-in poll (s) | `loops.digest_poll_seconds`, `loops.checkin_poll_seconds` | `LOOPS_DIGEST_POLL_SECONDS`, `LOOPS_CHECKIN_POLL_SECONDS` | `60` |
+| Nudge interval (s) | `loops.nudge_interval_seconds` | `LOOPS_NUDGE_INTERVAL_SECONDS` | `0` (= `nudges.interval_hours`) |
+| Backup interval (s) | `loops.backup_interval_seconds` | `LOOPS_BACKUP_INTERVAL_SECONDS` | `3600` |
+
+Registration modes: `invite` needs the code in `REST_INVITE_CODE` (put it in `.env`; share it with your partner out of band). `open` lets anyone who can reach the port register, so use it only on loopback or a trusted LAN. `closed` stops new sign-ups. Without a Telegram adapter, `TELEGRAM_BOT_TOKEN` is not needed.
+
+### Docker
+
+Uncomment the REST lines in `docker-compose.yml` (published port, `ADAPTER`, `REST_HOST=0.0.0.0`). Publish the port on a private interface (`127.0.0.1:8780:8780`, or your Tailscale IP). `REST_INVITE_CODE` goes in `.env`.
+
+### HTTPS, Tailscale and installing the PWA
+
+The server speaks plain HTTP. A browser installs a PWA and registers its service worker only in a secure context: `https://` or `http://localhost`. A LAN address over plain HTTP works as a normal web page but cannot be installed. Options:
+
+```bash
+# Tailscale: HTTPS with a real certificate for your tailnet name, proxied to the local port
+tailscale serve --bg 8780          # then open https://<machine>.<tailnet>.ts.net/
+```
+
+or put a reverse proxy with TLS (Caddy, nginx) in front of the port. The proxy must pass `Authorization` through and must not cache `/api/`. The server does not trust `X-Forwarded-For`, so its per-IP throttles see the proxy's address; keep the proxy on the same host, private network only.
+
+Do not expose the port to the public internet. There is no per-account lockout beyond the throttles (10 registrations and 30 failed authentications per minute per peer IP), and the invite code is the only gate to sign-up.
+
+### Allowlist with REST ids
+
+REST users get ids from a reserved range starting at `4503599627370496` (`2**52`), above any Telegram id. With `ALLOWED_USER_IDS` empty, ids are assigned automatically. When it is set, a person can only register with an id you listed: put `4503599627370497,4503599627370498` in the list and have each person send `"user_id": <their id>` with `/register`. Telegram ids and REST ids can be mixed in the same list.
+
+### Privacy with a local model
+
+The notice in `/start` and `/help` is built from the running adapter and LLM. With `ADAPTER=rest` and a local model (`LLM_BASE_URL` pointing at loopback, `host.docker.internal` or a private address) it says that messages stay on this server and are processed by a local model on your network, and it names neither Telegram nor Google. With `telegram+rest` it names both transports. This describes where the bot sends data; it does not encrypt traffic. Without TLS the HTTP hop between a phone and the server is readable by anyone on that network, so use Tailscale or TLS for anything beyond loopback.
+
+Stored data: the `rest_outbox` table keeps the text of messages queued for web users for `rest.event_retention_days` (default 14) so a client that was offline can catch up. Lower it if you want less retained.
+
+### Known limitation
+
+`ADAPTER=both` (Telegram + WebSocket) runs two sets of background loops, so relays can be marked as sent by the loop that cannot reach the user. Use `telegram+rest` for combined deployments; it starts the loops once and routes each message by transport.
 
 ## Dashboard
 

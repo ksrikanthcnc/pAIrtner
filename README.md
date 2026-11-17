@@ -42,10 +42,28 @@ docker compose logs -f
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for Oracle Cloud, Tailscale, Ollama, and other hosting guides.
 
+### Web app / REST (no Telegram)
+
+The REST adapter serves an installable web client (PWA) and a JSON API from one port. It is a drop-in replacement for Telegram for people who prefer not to use it: messages stay on your server and, with a local model, never reach a third party.
+
+```bash
+# Local, zero secrets: fake LLM, throwaway DB, two-user UI at /duo.html
+uv run python dev/localtest/run_local.py --llm fake        # http://127.0.0.1:8766
+
+# Real use, REST only (needs LLM settings; no Telegram token)
+export REST_INVITE_CODE=<secret you share with your partner>
+uv run python -m couples_bot --adapter rest                # http://127.0.0.1:8780
+
+# Telegram and the web app side by side
+uv run python -m couples_bot --adapter telegram+rest
+```
+
+Open the URL in a browser, register with a name (and the invite code), then pair with `/start` and `/join <code>`. To install it on a phone you need HTTPS (see [DEPLOYMENT.md](DEPLOYMENT.md#web-app-pwa--rest-api)). Scripts and AI agents can drive the same server over HTTP: see [docs/REST_API.md](docs/REST_API.md). The scripted dev rig (`uv run python dev/localtest/run_all.py`) runs every flow end to end against the fake LLM and prints `FLAGS` for anything that broke.
+
 ## Architecture
 
 ```
-Transport (Telegram / WebSocket / CLI)           ← swappable adapter
+Transport (Telegram / REST+PWA / WebSocket / CLI) ← swappable adapter
     ↓
 BotService (handlers, business logic)            ← transport-agnostic
     ↓
@@ -114,12 +132,12 @@ prompts/
 | `/lang <en\|te>` | Switch language (English or Telugu) |
 | `/status` | Relationship dashboard |
 | `/tell <message>` | Draft a gentle message for your partner |
-| `/mediate` | Get a neutral perspective on shared issues |
+| `/mediate [window]` | Neutral perspective from shared facts and partner impressions of the last `week` (default), `month`, `14d`, `2w` |
 | `/pause` / `/resume` | Pause or resume relay delivery |
 | `/history` | View recent sent and received messages |
 | `/conflicts` | View open discussion topics |
 | `/timeline` | View your relationship timeline |
-| `/whatdoyouknow` | See what the bot remembers about you |
+| `/whatdoyouknow` | See what the bot remembers about you; each fact has a 🔓 Share / 🔒 Make private button |
 | `/forget <id\|all>` | Delete your facts |
 | `/export` | Download your facts as a file |
 | `/export therapy` | Download a therapy-ready report |
@@ -250,6 +268,21 @@ After enough messages, the bot learns your writing style (register, sentence len
 |---------|------|---------|---------|
 | Adapter | `adapter` | `ADAPTER` | `telegram` |
 | WebSocket port | `ws_port` | `WS_PORT` | `8080` |
+| REST host | `rest.host` | `REST_HOST` | `127.0.0.1` |
+| REST port | `rest.port` | `REST_PORT` | `8780` |
+| REST registration | `rest.registration` | `REST_REGISTRATION` | `invite` (`closed`, `invite`, `open`) |
+| REST invite code | secret, env only | `REST_INVITE_CODE` | unset |
+| REST text limit | `rest.max_text_chars` | `REST_MAX_TEXT_CHARS` | `4000` |
+| REST event retention (days) | `rest.event_retention_days` | `REST_EVENT_RETENTION_DAYS` | `14` |
+| REST long-poll max (s) | `rest.long_poll_max_seconds` | `REST_LONG_POLL_MAX_SECONDS` | `25` |
+| Digest poll (s) | `loops.digest_poll_seconds` | `LOOPS_DIGEST_POLL_SECONDS` | `60` |
+| Check-in poll (s) | `loops.checkin_poll_seconds` | `LOOPS_CHECKIN_POLL_SECONDS` | `60` |
+| Nudge interval (s, 0 = `nudges.interval_hours`) | `loops.nudge_interval_seconds` | `LOOPS_NUDGE_INTERVAL_SECONDS` | `0` |
+| Backup interval (s) | `loops.backup_interval_seconds` | `LOOPS_BACKUP_INTERVAL_SECONDS` | `3600` |
+| Mediate default / max days | `mediate.default_days` / `mediate.max_days` | `MEDIATE_DEFAULT_DAYS` / `MEDIATE_MAX_DAYS` | `7` / `90` |
+| Mediate uses impressions | `mediate.include_perceptions` | `MEDIATE_INCLUDE_PERCEPTIONS` | `true` |
+| Mediate min confidence | `mediate.min_confidence` | `MEDIATE_MIN_CONFIDENCE` | `0.4` |
+| Mediate themes per side | `mediate.max_themes_per_side` | `MEDIATE_MAX_THEMES_PER_SIDE` | `8` |
 | Conflicts enabled | `conflicts.enabled` | `CONFLICTS_ENABLED` | `true` |
 | Feedback enabled | `feedback.enabled` | `FEEDBACK_ENABLED` | `true` |
 | Timeline enabled | `timeline.enabled` | `TIMELINE_ENABLED` | `true` |
@@ -326,7 +359,8 @@ Any OpenAI-compatible API works (Groq, Together, LM Studio, vLLM, etc.) — just
 - Facts (user-entered notes, categorized and timestamped)
 - Pending relays (softened drafts awaiting approval)
 - Message history (sent/received relay log)
-- Auth tokens (for WebSocket adapter)
+- Auth tokens (for the WebSocket and REST adapters)
+- REST outbox: messages queued for web-app users, pruned after `rest.event_retention_days`
 - Goals, timeline events, conflict tracking
 - Monthly fact summaries (compressed older facts)
 
@@ -334,6 +368,7 @@ Any OpenAI-compatible API works (Groq, Together, LM Studio, vLLM, etc.) — just
 
 - The persona prompt + voice instructions
 - Your facts (private + shared, filtered by relevance via FTS5 when large)
+- For `/mediate`: only facts both partners explicitly shared in the window, plus filtered, unverified impressions each partner's chat produced about the other. No raw messages and no private facts
 - Partner themes summary (never partner's raw messages or private facts)
 - Your current message
 - Relationship metadata (type, duration, goals)
@@ -347,7 +382,7 @@ Any OpenAI-compatible API works (Groq, Together, LM Studio, vLLM, etc.) — just
 
 ### Partner isolation
 
-Enforced at the SQL query level. Every fact query filters by `owner_id`. Shared facts are explicitly marked. Partner summaries are theme-based abstractions, not raw data.
+Enforced at the SQL query level. Every fact query filters by `owner_id`. Facts are private until their owner presses the Share button in `/whatdoyouknow`; the model cannot publish a fact. Partner summaries are theme-based abstractions, not raw data.
 
 ## Adapters
 
@@ -363,15 +398,26 @@ uv run python -m couples_bot --adapter websocket --port 8080
 # CLI (two-user terminal REPL for testing)
 uv run python -m couples_bot --adapter cli
 
-# Both Telegram + WebSocket concurrently
+# Both Telegram + WebSocket concurrently (known limitation: each runs its own background loops)
 uv run python -m couples_bot --adapter both
+
+# REST API + web app (PWA), served from one port
+uv run python -m couples_bot --adapter rest
+
+# Telegram + REST/PWA; one shared set of background loops routes each message to the right transport
+uv run python -m couples_bot --adapter telegram+rest
 ```
+
+Each adapter tells users where their messages travel (the privacy note in `/start` and `/help` names the transport and the LLM in use). REST API reference: [docs/REST_API.md](docs/REST_API.md).
 
 ## Testing
 
 ```bash
-uv run python -m pytest --tb=short -q
+uv run python -m pytest --tb=short -q      # unit and integration tests (1000+; the JS client tests need node)
+uv run python dev/localtest/run_all.py     # scripted two-user flows against a fake LLM; expects "FLAGS" then "- none"
 ```
+
+The dev rig (`dev/localtest/`) starts the real bot with the REST adapter, a throwaway DB and a fake LLM that upper-cases input, so flows are tested without Telegram, Gemini or a local model. `run_local.py --llm ollama` uses a real local model instead; it is for flow checks only.
 
 ## License
 

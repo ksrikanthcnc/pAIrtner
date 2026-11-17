@@ -20,11 +20,11 @@ Not a therapist. Not a judge. A warm, practical friend who helps people communic
 ```
 ┌──────────────────────────────────────────────────┐
 │  Transport Layer (pluggable adapters)            │
-│  ┌──────────┐ ┌───────────┐ ┌─────┐            │
-│  │ Telegram  │ │ WebSocket │ │ CLI │            │
-│  │ (live)    │ │ (PWA/dev) │ │(dev)│            │
-│  └────┬──────┘ └─────┬─────┘ └──┬──┘            │
-│       └──────────────┼──────────┘                │
+│  ┌────────┐ ┌──────────┐ ┌───────────┐ ┌─────┐ │
+│  │Telegram│ │REST+PWA  │ │ WebSocket │ │ CLI │ │
+│  │(live)  │ │(web, API)│ │ (custom)  │ │(dev)│ │
+│  └───┬────┘ └────┬─────┘ └─────┬─────┘ └──┬──┘ │
+│      └───────────┼─────────────┼──────────┘     │
 │                      ▼                           │
 │  ┌──────────────────────────────────────┐        │
 │  │  BotService (transport-agnostic)     │        │
@@ -61,7 +61,7 @@ Not a therapist. Not a judge. A warm, practical friend who helps people communic
 │  ┌──────────────────────────────────────┐        │
 │  │  Dev Tooling (dev/localtest/)        │        │
 │  │  run_local.py · fake_llm.py ·       │        │
-│  │  scenarios.py · web chat UI          │        │
+│  │  scenarios.py · run_all.py (REST)    │        │
 │  └──────────────────────────────────────┘        │
 └──────────────────────────────────────────────────┘
 ```
@@ -70,7 +70,7 @@ Not a therapist. Not a judge. A warm, practical friend who helps people communic
 
 ### Core Tables
 - `users(tg_id, name, partner_id, lang, paused, created_at)` — paired users
-- `facts(id, owner_id, text, visibility, category, fact_type, source, expires_at, archived_at, supersedes_id, created_at)` — per-user knowledge with lifecycle
+- `facts(id, owner_id, text, visibility, category, fact_type, source, expires_at, archived_at, supersedes_id, shared_at, created_at)` — per-user knowledge with lifecycle. `shared_at` is set when the owner shares a fact and cleared when it is made private; `/mediate` windows use `COALESCE(shared_at, created_at)` so a fact shared today counts even if it was written long ago
 - `pending(id, sender_id, draft, edited_draft, status, send_after, feedback, acknowledged_at, created_at)` — relay approval pipeline
 - `messages(id, user_id, role, content, created_at)` — rolling chat history
 - `usage(date, model, count)` — per-model daily API usage
@@ -91,7 +91,8 @@ Not a therapist. Not a judge. A warm, practical friend who helps people communic
 
 ### Infrastructure Tables
 - `couple_config(couple_id, config_key, config_value)` — per-couple settings (BYO Gemini key, Fernet-encrypted)
-- `auth_tokens(user_id, token)` — WebSocket auth
+- `auth_tokens(user_id, token)` — WebSocket and REST auth (REST bearer is `<user_id>:<token>`)
+- `rest_outbox(id, user_id, kind, payload, created_at)` — durable per-user event queue for REST clients (relays, review prompts, digests, partner notifications). Read with a cursor through `GET /api/v1/events`, never deleted on read, pruned after `rest.event_retention_days`. The payload holds message text, so the dashboard classifies it as raw text
 - `pending_batch(id, sender_id, receiver_id, status, send_after)` — cooldown accumulation
 - `pending_batch_items(id, batch_id, pending_id)` — batch membership
 - `rate_limit(user_id, minute_key, minute_count, day_key, day_count)` — per-user rate limiting
@@ -102,12 +103,14 @@ Not a therapist. Not a judge. A warm, practical friend who helps people communic
 
 1. **Structural isolation at SQL level**: User X's prompt query fetches only X's private facts + shared facts. Partner's private facts are never in the query.
 2. **Partner summaries, not raw text**: The other user's perspective appears as auto-extracted themes (`partner_perceptions`), never as verbatim messages.
-3. **LLM cannot publish facts**: `_save_facts` forces `visibility=private` regardless of what the model returns. Only an explicit user action (planned [Share] button) can make a fact shared.
+3. **LLM cannot publish facts**: `_save_facts` forces `visibility=private` regardless of what the model returns. Only the owner can make a fact shared, with the 🔓 Share button under each fact in `/whatdoyouknow` (callback `fv:<id>`; the owner check is in the SQL `UPDATE`, so guessing another user's id changes nothing). The button toggles, and the reply states the resulting state.
 4. **Approval gate**: Every relay must be explicitly approved by the sender. Discarded relays are never delivered.
 5. **Sender verification**: Only the sender can approve/edit/discard their own pending relay.
 6. **Input sanitization**: Injection-pattern detection strips known prompt-injection prefixes before they reach the LLM.
 7. **Emergency override**: Crisis language detection fires before rate limits and all other processing, immediately providing helpline resources.
-8. **Allowlist**: `ALLOWED_USER_IDS` silently ignores all interaction from unrecognized Telegram users.
+8. **Allowlist**: `ALLOWED_USER_IDS` silently ignores all interaction from unrecognized Telegram users. REST users get ids from `2**52` upward; the REST API returns `403 not_allowed` for an id not on a non-empty list.
+9. **Mediate inputs are narrow**: `/mediate [window]` sends the model only (a) facts both partners marked shared within the window and (b) each partner's impressions of the other from `partner_perceptions`. Never raw messages, never private facts, never pending drafts. Impressions are unverified guesses, so they pass a deterministic filter at read time: below `mediate.min_confidence` are dropped; first-person themes ("I feel ignored") are dropped because they are the observer talking about themself; themes that closely match the observer's own facts are dropped (token Jaccard >= 0.6, or containment of 4+ words); the rest are de-duplicated, capped at `mediate.max_themes_per_side` and labelled as one person's unverified view. With no input after filtering, the bot answers without calling the model. `mediate.include_perceptions: false` makes it facts-only.
+10. **The privacy notice names the real path**: `/start` and `/help` build the notice from `BotService.privacy_info` (transport from `adapter.transport_description`, model from `llm.describe_llm(config)`), so a REST + local-model deployment says messages stay on this server and names neither Telegram nor Google.
 
 ## Prompt Assembly
 
@@ -189,11 +192,25 @@ Per-user base × mood modifier × time decay (months of use).
 | Adapter | Purpose | Entry |
 |---|---|---|
 | Telegram | Production chat | `--adapter telegram` |
-| WebSocket | PWA/web chat, dev | `--adapter websocket` (port 8080) |
+| REST + PWA | JSON API for scripts and agents, plus an installable web client for people who avoid Telegram | `--adapter rest` (port 8780) |
+| Telegram + REST | Both transports, one set of background loops | `--adapter telegram+rest` |
+| WebSocket | Custom chat clients | `--adapter websocket` (port 8080) |
 | CLI | Terminal testing | `--adapter cli` |
 | Both | Telegram + WebSocket | `--adapter both` |
+All adapters use `BotService.dispatch()` for command routing (except Telegram which has its own handler registration for Telegram-specific features like typing indicators). `BotService` is transport-unaware.
 
-All adapters use `BotService.dispatch()` for command routing (except Telegram which has its own handler registration for Telegram-specific features like typing indicators).
+### REST adapter and web client
+- `couples_bot/rest/` holds a pure `RestApi.handle(request) -> Response` (stdlib `ThreadingHTTPServer` in a daemon thread, bridged to the event loop), id range, throttles and the markup converter. `couples_bot/adapters/rest_adapter.py` runs it.
+- Auth: bearer `<user_id>:<secret>`; ids start at `REST_ID_BASE = 2**52` so they never collide with Telegram ids and stay exact in JavaScript.
+- Delivery to clients that may be offline goes through the `rest_outbox` table and long-poll (`GET /api/v1/events?after=N&wait=S`). Plain HTTP, no streaming client needed, nothing is lost if the tab is closed.
+- Bot text reaches the browser as a `Msg` with `text` (plain) and `markup` (only `b i u code pre` allowed). `couples_bot/web/render.js` builds DOM nodes and never uses `innerHTML`; the CSP forbids inline scripts. A test greps for the banned APIs.
+- The web client lives in `couples_bot/web/` (vanilla JS, no build step) and is served from a fixed file list.
+- Full contract for agents: [docs/REST_API.md](docs/REST_API.md).
+
+### MultiAdapter and background loops
+`adapters/loops.py::start_background_loops` creates the delivery, digest, check-in, nudge and backup loops (intervals from the `loops:` settings). `MultiAdapter` (`telegram+rest`) starts them once with a send function that routes by `owns_user` (REST for ids >= `2**52`, Telegram below) and starts the children without their own loops.
+
+Known limitation: `--adapter both` (Telegram + WebSocket) still starts the loops once per adapter. Two delivery loops race, and the one that cannot reach a user still marks the relay as sent. Use `telegram+rest` for combined deployments.
 
 ## Dashboard
 
@@ -209,14 +226,15 @@ Run: `uv run python -m couples_bot.dashboard` or `docker compose up dashboard`
 ## Dev & Testing
 
 ### Local test rig (`dev/localtest/`)
-- `run_local.py` — bot + WebSocket + throwaway DB + static chat UI
-  - `--llm ollama` (real model) or `--llm fake` (UPPER(input), zero latency)
-- `fake_llm.py` — deterministic OpenAI-compat endpoint, deliberately misbehaves (labels facts "shared") to exercise guards
-- `scenarios.py` — scripted two-user flows: pairing, onboarding, relay, discard, privacy guards, misc commands
-- `web/duo.html` — two-pane browser UI, connects via WebSocket
-
+- `run_local.py` — real bot with the REST adapter + throwaway DB, serving the product web client (`/`) and `/duo.html` (two panes, one per user)
+  - `--llm ollama` (real model, for flow checks only) or `--llm fake` (UPPER(input), zero latency); `--port` (8766), `--fake-port` (11435)
+- `rig.py` — shared start/stop helpers that build a `Config` directly (no `.env`, no yaml)
+- `fake_llm.py` — deterministic OpenAI-compat endpoint, deliberately misbehaves (labels facts "shared") to exercise guards; records calls at `GET /_calls` so scenarios can assert what the model was sent; markers `[theme]` and `[selfstmt]` produce fixed impressions
+- `scenarios.py` — stdlib REST client and scripted two-user flows: `pair_onboard facts_privacy relay discard misc guards rest_session mediate share_toggle relay_no_review periodic`. Prints `===== FLAGS =====`, exit 1 on any flag
+- `run_all.py` — three phases (review on, review off, periodic digest/check-in/nudge/backup) and expects `FLAGS` then `- none`
 ### Test suite
-- 801 tests across 51 test files
+- 1008 tests across 64 test files (the JS renderer tests run through `node --test tests/js/` and are skipped if Node is missing)
+- `tests/test_docs.py` keeps the docs honest: every route and error code in `rest/api.py` appears in `docs/REST_API.md` and vice versa, and every documented `REST_*`, `LOOPS_*`, `MEDIATE_*` name is read in `config.py`
 - Privacy tests verify partner data never enters the wrong prompt
 - Fact guard tests verify LLM can't publish shared facts and duplicates are rejected
 - Dashboard tests verify secrets are never rendered and destructive actions require confirmation
@@ -225,31 +243,30 @@ Run: `uv run python -m couples_bot.dashboard` or `docker compose up dashboard`
 
 `settings.yaml` — all tunables (cooldown, rate limits, digest time, check-in schedule, dampening params, voice dir, backup retention, dashboard settings)
 
-`.env` — secrets only (TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, LLM_API_KEY, DB_ENCRYPTION_KEY, DASHBOARD_TOKEN)
+`.env` — secrets only (TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, LLM_API_KEY, DB_ENCRYPTION_KEY, DASHBOARD_TOKEN, REST_INVITE_CODE). New blocks: `rest:` (host, port, registration, limits), `loops:` (background loop intervals) and `mediate:` (window and filter settings); each has `REST_*`, `LOOPS_*`, `MEDIATE_*` env overrides.
 
 ## Deployment
 
 | Target | Method |
 |---|---|
 | Local dev | `uv run python dev/localtest/run_local.py --llm fake` |
+| Web app only | `ADAPTER=rest REST_INVITE_CODE=... uv run python -m couples_bot`; HTTPS via Tailscale `serve` or a proxy to install the PWA (see DEPLOYMENT.md) |
 | Docker (Win plex-stack) | `docker compose up -d` at `/mnt/e/media/docker/pairtner/` |
 | Mac → Win sync | `bash dev/deploy.sh --rebuild` or rsync with `.rsyncignore` |
 
 ## Roadmap (next priorities)
-
-1. **PWA polish**: service worker, display names, HTML tag cleanup, provider-aware privacy text
-2. **/mediate redesign**: auto from partner_perceptions + recent activity, time-scoped
-3. **[Share] button**: explicit fact sharing from /whatdoyouknow
-4. **Periodic flow testing**: digest, check-in, nudge scenarios
-5. **Circles model**: rename couples to circles, support any relationship type (parent-child, siblings, friends)
-6. **FTS5 + smart context**: when facts exceed threshold, search instead of dump
-7. **Gemini function calling**: LLM actively queries facts via tool use
+Done in the REST + PWA batch: PWA with service worker and display names, provider-aware privacy text, time-scoped `/mediate`, the [Share] button, scripted periodic-flow scenarios.
+1. **Web Push** for the PWA (clients long-poll while open today)
+2. **Hash stored auth tokens** (shared with the WebSocket adapter)
+3. **Circles model**: rename couples to circles, support any relationship type (parent-child, siblings, friends)
+4. **FTS5 + smart context**: when facts exceed threshold, search instead of dump
+5. **Gemini function calling**: LLM actively queries facts via tool use
 
 ## Stats
 
-- 37 commits, 45 Python modules, 51 test files, 801 tests
+- 44 commits, 54 Python modules, 64 test files, 1008 tests
 - 16 prompt files (persona, 4 voices, 9 tasks, 2 templates)
 - 11 dashboard modules
-- 5 dev/test files
+- 5 dev/rig files (`dev/localtest/`) plus `dev/make_icons.py` and `dev/deploy.sh`
 - ~200 i18n keys (English + Telugu)
 - MIT License

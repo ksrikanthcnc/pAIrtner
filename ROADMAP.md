@@ -362,8 +362,19 @@ Current 2-person model works as-is; circles table is the extension point.
 
 ## PWA (Progressive Web App)
 
-WebSocket adapter already built. Next: simple frontend served from same Docker container.
-- HTML + JS + service worker + manifest.json
-- Mobile-first responsive
-- Installable on phone home screen ("Add to Home Screen")
-- Access via LAN or Tailscale — no app store, no hosting costs
+Built: the REST adapter serves an installable web client (`couples_bot/web/`) and the JSON API in `docs/REST_API.md`, from the same process and container.
+- [x] HTML + JS + service worker + manifest (no build step, no npm dependencies)
+- [x] Mobile-first responsive
+- [x] Installable on phone home screen (needs HTTPS or localhost, see DEPLOYMENT.md)
+- [x] Access via LAN or Tailscale — no app store, no hosting costs
+- [x] REST API for scripts and AI agents; durable outbox + long-poll for relayed messages
+- [ ] Web Push notifications (out of scope for now; clients long-poll while open)
+- [ ] Hash stored auth tokens (shared with the WebSocket adapter today)
+
+## Done: REST + PWA batch
+
+- [x] REST adapter, `telegram+rest` multi-adapter with one set of background loops
+- [x] `/mediate [window]` (week, month, Nd, Nw) from shared facts plus filtered partner impressions
+- [x] [Share] button: fact visibility toggle from `/whatdoyouknow` (`fv:<id>`)
+- [x] Privacy notice reflects the transport and the LLM in use
+- [x] Configurable loop intervals (`loops:`) and scripted two-user dev rig (`dev/localtest/run_all.py`)
