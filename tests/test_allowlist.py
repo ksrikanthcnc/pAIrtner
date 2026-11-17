@@ -196,3 +196,17 @@ async def test_open_mode_allows_anyone(open_service):
 async def test_open_mode_message(open_service):
     responses = await open_service.handle_message(55555, "Stranger", "hi")
     assert len(responses) > 0
+
+
+def test_blocked_user_id_logged_once_without_content(caplog):
+    import logging
+    from couples_bot import config as cfg_mod
+    from couples_bot.config import Config, is_user_allowed
+
+    cfg_mod._logged_denied.discard(424242)
+    c = Config(telegram_token="t", gemini_api_key="k", allowed_user_ids={1})
+    with caplog.at_level(logging.WARNING, logger="couples_bot.config"):
+        assert not is_user_allowed(c, 424242)
+        assert not is_user_allowed(c, 424242)
+    hits = [r for r in caplog.records if "424242" in r.getMessage()]
+    assert len(hits) == 1

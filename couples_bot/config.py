@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any
@@ -185,11 +186,24 @@ class Config:
     loops_backup_interval_seconds: int = 3600
 
 
+_logged_denied: set[int] = set()
+
+
 def is_user_allowed(config: Config, user_id: int) -> bool:
-    """Check if a user is allowed.  Empty allowlist = open mode (everyone)."""
+    """Check if a user is allowed.  Empty allowlist = open mode (everyone).
+
+    The first time a blocked user is seen, their id (only the id, never message
+    content) is logged so the admin can add them to ALLOWED_USER_IDS.
+    """
     if not config.allowed_user_ids:
         return True
-    return user_id in config.allowed_user_ids
+    allowed = user_id in config.allowed_user_ids
+    if not allowed and user_id not in _logged_denied:
+        _logged_denied.add(user_id)
+        logging.getLogger(__name__).warning(
+            "Blocked user id %s (not in ALLOWED_USER_IDS)", user_id
+        )
+    return allowed
 
 
 def _needs_telegram(adapter_name: str) -> bool:
