@@ -11,3 +11,4 @@ comms
 .ruff_cache
 backups
 .rsyncignore
+docker-compose.override.yml
