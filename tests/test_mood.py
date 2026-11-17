@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from couples_bot.db import (
+from pairtner.db import (
     clear_expired_moods,
     create_user,
     ensure_user_profile,

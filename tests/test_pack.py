@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from couples_bot import pack
-from couples_bot.pack import STRING_KEYS, Pack, PackError
+from pairtner import pack
+from pairtner.pack import STRING_KEYS, Pack, PackError
 from tests.helpers import REPO_ROOT, copy_default_pack
 
 DEFAULT = REPO_ROOT / "packs" / "default"
@@ -291,7 +291,7 @@ class TestRefresh:
         p = Pack(pack_dir)
         good = p.persona()
         (pack_dir / "persona.md").write_text("")
-        with caplog.at_level(logging.ERROR, logger="couples_bot.pack"):
+        with caplog.at_level(logging.ERROR, logger="pairtner.pack"):
             assert p.refresh() is False
             assert p.refresh() is False
             assert p.refresh() is False

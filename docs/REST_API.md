@@ -4,16 +4,16 @@ Self-contained reference for scripts and AI agents. It describes everything need
 
 - Version: `v1` (all API routes live under `/api/v1`).
 - Format: UTF-8 JSON. No third-party client library is needed. `curl` or Python's `urllib` is enough.
-- Source of truth: `couples_bot/rest/api.py` (`ROUTES`). A test fails if a route is missing from this file.
+- Source of truth: `pairtner/rest/api.py` (`ROUTES`). A test fails if a route is missing from this file.
 
 ## 1. Run a server
 
 ```bash
 # REST only (self-hosted, no Telegram)
-ADAPTER=rest REST_REGISTRATION=open uv run python -m couples_bot
-# or: uv run python -m couples_bot --adapter rest
+ADAPTER=rest REST_REGISTRATION=open uv run python -m pairtner
+# or: uv run python -m pairtner --adapter rest
 # Telegram and REST together
-uv run python -m couples_bot --adapter telegram+rest
+uv run python -m pairtner --adapter telegram+rest
 # Zero-secret local rig (fake LLM that upper-cases input, throwaway DB)
 uv run python dev/localtest/run_local.py --llm fake        # http://127.0.0.1:8766
 ```

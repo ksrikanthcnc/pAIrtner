@@ -7,14 +7,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from couples_bot.adapters import ADAPTER_REGISTRY, get_adapter
-from couples_bot.adapters.base import BaseAdapter
-from couples_bot.adapters.multi import MultiAdapter
-from couples_bot.adapters.rest_adapter import RestAdapter
-from couples_bot.adapters.telegram_adapter import TelegramAdapter
-from couples_bot.config import Config
-from couples_bot.handlers import BotService
-from couples_bot.rest.ids import REST_ID_BASE
+from pairtner.adapters import ADAPTER_REGISTRY, get_adapter
+from pairtner.adapters.base import BaseAdapter
+from pairtner.adapters.multi import MultiAdapter
+from pairtner.adapters.rest_adapter import RestAdapter
+from pairtner.adapters.telegram_adapter import TelegramAdapter
+from pairtner.config import Config
+from pairtner.handlers import BotService
+from pairtner.rest.ids import REST_ID_BASE
 from tests.helpers import MockLLMClient
 
 
@@ -96,7 +96,7 @@ async def test_loops_started_once_and_children_started(pair):
         calls.append(send)
         return []
 
-    with patch("couples_bot.adapters.base.start_background_loops", fake_start):
+    with patch("pairtner.adapters.base.start_background_loops", fake_start):
         task = asyncio.create_task(multi.start())
         await asyncio.wait_for(asyncio.gather(tg.started.wait(), rest.started.wait()), 2)
         await multi.stop()
@@ -164,7 +164,7 @@ def test_registry_has_rest():
 
 @pytest.mark.parametrize("name", ["rest", "telegram+rest", "both", "telegram"])
 def test_launcher_accepts_adapter_names(name, test_db, monkeypatch):
-    import couples_bot.__main__ as launcher
+    import pairtner.__main__ as launcher
 
     cfg = _cfg(test_db)
     ran = []
@@ -186,14 +186,14 @@ def test_launcher_accepts_adapter_names(name, test_db, monkeypatch):
 
 
 def test_launcher_rejects_unknown_adapter(monkeypatch):
-    import couples_bot.__main__ as launcher
+    import pairtner.__main__ as launcher
     monkeypatch.setattr(sys, "argv", ["prog", "--adapter", "smoke-signal"])
     with pytest.raises(SystemExit):
         launcher.main()
 
 
 def test_set_privacy_info_combines_transports(test_db):
-    import couples_bot.__main__ as launcher
+    import pairtner.__main__ as launcher
     cfg = _cfg(test_db)
     svc = BotService(cfg, test_db, MockLLMClient())
     tg = TelegramAdapter(svc, cfg, run_background=False)

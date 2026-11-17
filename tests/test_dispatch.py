@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from couples_bot.handlers import BotService
+from pairtner.handlers import BotService
 
 
 @pytest.mark.asyncio

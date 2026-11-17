@@ -10,13 +10,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from couples_bot.adapters import ADAPTER_REGISTRY, get_adapter
-from couples_bot.adapters.base import BaseAdapter
-from couples_bot.adapters.cli_adapter import CLIAdapter
-from couples_bot.adapters.telegram_adapter import TelegramAdapter
-from couples_bot.adapters.websocket_adapter import WebSocketAdapter
-from couples_bot.config import Config
-from couples_bot.db import (
+from pairtner.adapters import ADAPTER_REGISTRY, get_adapter
+from pairtner.adapters.base import BaseAdapter
+from pairtner.adapters.cli_adapter import CLIAdapter
+from pairtner.adapters.telegram_adapter import TelegramAdapter
+from pairtner.adapters.websocket_adapter import WebSocketAdapter
+from pairtner.config import Config
+from pairtner.db import (
     create_auth_token,
     create_user,
     get_auth_token,
@@ -24,7 +24,7 @@ from couples_bot.db import (
     set_partner,
     validate_auth_token,
 )
-from couples_bot.handlers import BotResponse, BotService
+from pairtner.handlers import BotResponse, BotService
 
 from tests.helpers import MockLLMClient
 
@@ -182,7 +182,7 @@ class TestTelegramAdapter:
         assert adapter._build_markup(resp) is None
 
     def test_build_markup_with_buttons(self, service, config):
-        from couples_bot.handlers.models import InlineButton
+        from pairtner.handlers.models import InlineButton
 
         adapter = TelegramAdapter(service, config)
         resp = BotResponse(
@@ -468,7 +468,7 @@ class TestLauncher:
 
     def test_argparse_default_adapter(self):
         """Default adapter comes from config when not specified."""
-        from couples_bot.__main__ import main
+        from pairtner.__main__ import main
         import argparse
 
         parser = argparse.ArgumentParser()
@@ -566,7 +566,7 @@ class TestAdapterConfig:
         monkeypatch.delenv("ADAPTER", raising=False)
         monkeypatch.delenv("WS_PORT", raising=False)
 
-        from couples_bot.config import load_config
+        from pairtner.config import load_config
 
         cfg = load_config(str(yaml_file))
         assert cfg.adapter == "websocket"
@@ -582,7 +582,7 @@ class TestAdapterConfig:
         monkeypatch.setenv("ADAPTER", "cli")
         monkeypatch.setenv("WS_PORT", "9999")
 
-        from couples_bot.config import load_config
+        from pairtner.config import load_config
 
         cfg = load_config(str(yaml_file))
         assert cfg.adapter == "cli"

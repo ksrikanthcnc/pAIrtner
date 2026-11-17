@@ -19,7 +19,7 @@ services:
     build: .
     env_file: .env
     volumes:
-      - ./couples_bot.db:/app/couples_bot.db
+      - ./pairtner.db:/app/pairtner.db
       - ./settings.yaml:/app/settings.yaml:ro
       - ./packs:/app/packs:ro   # prompt pack: edit on the host, changes apply on the next message
       - ./backups:/app/backups
@@ -50,7 +50,7 @@ services:
   dashboard:
     profiles: ["dashboard"]
     build: .
-    entrypoint: ["uv", "run", "--no-dev", "python", "-m", "couples_bot.dashboard"]
+    entrypoint: ["uv", "run", "--no-dev", "python", "-m", "pairtner.dashboard"]
     environment:
       DASHBOARD_TOKEN: ${DASHBOARD_TOKEN:-}
       DASHBOARD_HOST: 0.0.0.0
@@ -58,7 +58,7 @@ services:
     ports:
       - "${DASHBOARD_BIND:-127.0.0.1}:8765:8765"
     volumes:
-      - ./couples_bot.db:/app/couples_bot.db
+      - ./pairtner.db:/app/pairtner.db
       - ./settings.yaml:/app/settings.yaml:ro
       - ./backups:/app/backups
     healthcheck:

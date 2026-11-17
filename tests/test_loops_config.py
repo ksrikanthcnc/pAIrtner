@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from couples_bot.adapters.loops import start_background_loops
-from couples_bot.config import Config, load_config
+from pairtner.adapters.loops import start_background_loops
+from pairtner.config import Config, load_config
 
 
 def _load(tmp_path, monkeypatch, yaml_text="", env=None, token=True):
@@ -26,7 +26,7 @@ def _load(tmp_path, monkeypatch, yaml_text="", env=None, token=True):
         monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tok")
     for k, v in (env or {}).items():
         monkeypatch.setenv(k, v)
-    with patch("couples_bot.config.load_dotenv"):
+    with patch("pairtner.config.load_dotenv"):
         return load_config(yaml_path=str(f))
 
 
@@ -111,11 +111,11 @@ async def test_loop_starter_passes_intervals(tmp_path):
         return _loop
 
     spawned = []
-    with patch("couples_bot.adapters.loops.delivery_loop", fake("delivery")), \
-         patch("couples_bot.adapters.loops.backup_loop", fake("backup")), \
-         patch("couples_bot.adapters.loops.digest_loop", fake("digest")), \
-         patch("couples_bot.adapters.loops.checkin_loop", fake("checkin")), \
-         patch("couples_bot.adapters.loops.nudge_loop", fake("nudge")):
+    with patch("pairtner.adapters.loops.delivery_loop", fake("delivery")), \
+         patch("pairtner.adapters.loops.backup_loop", fake("backup")), \
+         patch("pairtner.adapters.loops.digest_loop", fake("digest")), \
+         patch("pairtner.adapters.loops.checkin_loop", fake("checkin")), \
+         patch("pairtner.adapters.loops.nudge_loop", fake("nudge")):
         tasks = start_background_loops(
             _Svc(cfg.db_path), cfg, None, None,
             lambda coro: spawned.append(asyncio.ensure_future(coro)) or spawned[-1],
@@ -139,11 +139,11 @@ async def test_nudge_interval_falls_back_to_hours(tmp_path):
     async def noop(*a, **k):
         return None
 
-    with patch("couples_bot.adapters.loops.delivery_loop", noop), \
-         patch("couples_bot.adapters.loops.backup_loop", noop), \
-         patch("couples_bot.adapters.loops.digest_loop", noop), \
-         patch("couples_bot.adapters.loops.checkin_loop", noop), \
-         patch("couples_bot.adapters.loops.nudge_loop", fake_nudge):
+    with patch("pairtner.adapters.loops.delivery_loop", noop), \
+         patch("pairtner.adapters.loops.backup_loop", noop), \
+         patch("pairtner.adapters.loops.digest_loop", noop), \
+         patch("pairtner.adapters.loops.checkin_loop", noop), \
+         patch("pairtner.adapters.loops.nudge_loop", fake_nudge):
         tasks = start_background_loops(
             _Svc(cfg.db_path), cfg, None, None, asyncio.ensure_future)
         await asyncio.gather(*tasks)

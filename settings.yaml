@@ -168,7 +168,7 @@ voice:
 adapter: telegram
 ws_port: 8080
 
-# REST adapter (JSON over HTTP; also serves the PWA from couples_bot/web).
+# REST adapter (JSON over HTTP; also serves the PWA from pairtner/web).
 # registration: closed | invite | open. With "invite" the secret comes from the
 # REST_INVITE_CODE environment variable (never stored here). "open" is for a
 # trusted loopback/LAN only. Env overrides: REST_HOST, REST_PORT,
@@ -191,7 +191,7 @@ loops:
   checkin_poll_seconds: 60
   nudge_interval_seconds: 0
   backup_interval_seconds: 3600
-# Admin dashboard — standalone web UI (python -m couples_bot.dashboard).
+# Admin dashboard — standalone web UI (python -m pairtner.dashboard).
 # The access token is NOT here: set DASHBOARD_TOKEN in the environment.
 # Every key can be overridden by DASHBOARD_HOST / _PORT / _SHOW_RAW_TEXT /
 # _ADMIN_ACTIONS / _PAGE_SIZE / _SESSION_TTL_HOURS.

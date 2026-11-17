@@ -39,9 +39,9 @@ A_ID, B_ID = 1001, 1002
 def activate_default_prompts() -> None:
     """Make the default prompt set active (works before and after packs)."""
     try:
-        from couples_bot import pack
+        from pairtner import pack
     except ImportError:
-        from couples_bot.prompts import load_persona
+        from pairtner.prompts import load_persona
 
         load_persona("prompts/persona.md")
     else:
@@ -59,7 +59,7 @@ def _in_root():
 
 
 # ---------------------------------------------------------------------------
-# Direct matrix over couples_bot/prompts.py
+# Direct matrix over pairtner/prompts.py
 # ---------------------------------------------------------------------------
 
 VOICE = "VOICE-TEXT: warm, brief, informal."
@@ -68,8 +68,8 @@ TASK = "TASK-TEXT: do the special task."
 
 
 def _direct() -> dict[str, tuple[str, str]]:
-    from couples_bot import prompts as P
-    from couples_bot.dampening import get_dampening_instruction
+    from pairtner import prompts as P
+    from pairtner.dampening import get_dampening_instruction
 
     out: dict[str, tuple[str, str]] = {}
 
@@ -235,12 +235,12 @@ class World:
 
     @property
     def couple_id(self) -> str:
-        from couples_bot import db as db_mod
+        from pairtner import db as db_mod
 
         return db_mod.make_couple_id(A_ID, B_ID)
 
     async def x(self, sql: str, params: tuple = ()) -> int:
-        from couples_bot import db as db_mod
+        from pairtner import db as db_mod
 
         return await db_mod._execute(self.db, sql, params)
 
@@ -286,12 +286,12 @@ class World:
         )
 
     async def profile(self, uid: int, **fields: Any) -> None:
-        from couples_bot import db as db_mod
+        from pairtner import db as db_mod
 
         await db_mod.update_user_profile(self.db, uid, **fields)
 
     async def pattern(self, uid: int, text: str, freq: int, ptype: str = "communication") -> None:
-        from couples_bot import db as db_mod
+        from pairtner import db as db_mod
 
         await db_mod.record_pattern(self.db, uid, text, ptype)
         await self.x(
@@ -300,7 +300,7 @@ class World:
         )
 
     async def interactions(self, pos: int, neg: int) -> None:
-        from couples_bot import db as db_mod
+        from pairtner import db as db_mod
 
         for _ in range(pos):
             await db_mod.record_interaction(self.db, self.couple_id, A_ID, "positive")
@@ -331,9 +331,9 @@ class World:
 
 
 async def _make_world(root: Path, name: str, cfg: dict, seed: bool) -> World:
-    from couples_bot import db as db_mod
-    from couples_bot.config import Config
-    from couples_bot.handlers import BotService
+    from pairtner import db as db_mod
+    from pairtner.config import Config
+    from pairtner.handlers import BotService
     from tests.helpers import MockLLMClient
 
     w = World(root=root, name=name)
@@ -492,7 +492,7 @@ async def _seed_big(w: World) -> None:
     await w.fact(B_ID, "Bob suggested a hiking weekend", "shared", 45)
     await w.fact(B_ID, "Bob wants to repaint the hallway", "shared", 2)
     await w.fact(B_ID, "Bob is secretly planning a hiking surprise", "private", 3)
-    from couples_bot import db as db_mod
+    from pairtner import db as db_mod
 
     await db_mod.add_fact_summary(w.db, A_ID, "2025-09", "September: mostly outdoor plans.", 4)
     await db_mod.add_fact_summary(w.db, A_ID, "2025-10", "October: work stress and reading.", 3)
@@ -654,7 +654,7 @@ async def _therapy_seed(w: World, *, events=True, patterns=True, facts=True,
 
 @scenario("cs.therapy.full")
 async def _(w):
-    from couples_bot.therapy_export import generate_therapy_report
+    from pairtner.therapy_export import generate_therapy_report
 
     await _therapy_seed(w)
     await generate_therapy_report(w.db, w.llm, A_ID)
@@ -668,7 +668,7 @@ async def _(w):
 
 @scenario("cs.therapy.shared_only", seed=False)
 async def _(w):
-    from couples_bot.therapy_export import generate_therapy_report
+    from pairtner.therapy_export import generate_therapy_report
 
     await w.fact(A_ID, "We cook together on weekends", "shared", 18)
     await generate_therapy_report(w.db, w.llm, A_ID)
@@ -676,7 +676,7 @@ async def _(w):
 
 @scenario("cs.therapy.patterns_only", seed=False)
 async def _(w):
-    from couples_bot.therapy_export import generate_therapy_report
+    from pairtner.therapy_export import generate_therapy_report
 
     await _therapy_seed(w, events=False, facts=False, goals=False, ratio=False)
     await generate_therapy_report(w.db, w.llm, A_ID)
@@ -684,7 +684,7 @@ async def _(w):
 
 @scenario("cs.therapy.events_zero_negative", seed=False)
 async def _(w):
-    from couples_bot.therapy_export import generate_therapy_report
+    from pairtner.therapy_export import generate_therapy_report
 
     await _therapy_seed(w, patterns=False, facts=False, goals=False, ratio=False)
     await w.interactions(4, 0)
@@ -692,7 +692,7 @@ async def _(w):
 
 
 async def _digest(w: World, last_digest: str | None) -> None:
-    from couples_bot.digest import _send_digest_for_couple
+    from pairtner.digest import _send_digest_for_couple
 
     async def send(uid: int, text: str) -> None:
         return None
@@ -725,8 +725,8 @@ async def _(w):
 
 async def _checkin(w: World, *, goals: bool = False, horsemen: bool = False,
                    pos: int = 0, neg: int = 0, conflicts: bool = False) -> None:
-    from couples_bot import db as db_mod
-    from couples_bot.checkin import _generate_summary
+    from pairtner import db as db_mod
+    from pairtner.checkin import _generate_summary
 
     await w.fact(A_ID, "We love our Sunday walks", "shared", 4)
     if goals:
@@ -806,7 +806,7 @@ async def _positive_facts(w: World) -> None:
 
 @scenario("cs.nudge.positive_facts_en", seed=False)
 async def _(w):
-    from couples_bot.nudges import generate_nudge
+    from pairtner.nudges import generate_nudge
 
     await _positive_facts(w)
     random.seed(0)
@@ -815,7 +815,7 @@ async def _(w):
 
 @scenario("cs.nudge.positive_facts_te", seed=False)
 async def _(w):
-    from couples_bot.nudges import generate_nudge
+    from pairtner.nudges import generate_nudge
 
     await _positive_facts(w)
     random.seed(0)
@@ -824,21 +824,21 @@ async def _(w):
 
 @scenario("cs.appreciation.en", seed=False)
 async def _(w):
-    from couples_bot.nudges import generate_appreciation_prompt
+    from pairtner.nudges import generate_appreciation_prompt
 
     await generate_appreciation_prompt(w.db, w.llm, A_ID, "Bob", lang="en")
 
 
 @scenario("cs.appreciation.te", seed=False)
 async def _(w):
-    from couples_bot.nudges import generate_appreciation_prompt
+    from pairtner.nudges import generate_appreciation_prompt
 
     await generate_appreciation_prompt(w.db, w.llm, B_ID, "Alice", lang="te")
 
 
 @scenario("cs.monthly_summary.november", seed=False)
 async def _(w):
-    from couples_bot.summarizer import generate_monthly_summary
+    from pairtner.summarizer import generate_monthly_summary
 
     for when, text, vis, cat in [
         ("2025-10-31 23:00:00", "OUT-OF-RANGE october fact", "private", "other"),
@@ -858,7 +858,7 @@ async def _(w):
 
 @scenario("cs.monthly_summary.december", seed=False)
 async def _(w):
-    from couples_bot.summarizer import generate_monthly_summary
+    from pairtner.summarizer import generate_monthly_summary
 
     await w.x(
         "INSERT INTO facts (owner_id, text, visibility, source, category, "

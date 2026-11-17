@@ -19,7 +19,7 @@ All secrets go in `.env` (never in `settings.yaml`):
 |----------|----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Yes, unless `ADAPTER` has no Telegram (`rest`, `websocket`, `cli`) | From @BotFather |
 | `GEMINI_API_KEY` | Yes (if using Gemini) | From Google AI Studio |
-| `DB_PATH` | No | SQLite path (default: `couples_bot.db`) |
+| `DB_PATH` | No | SQLite path (default: `pairtner.db`) |
 | `DB_ENCRYPTION_KEY` | No | Fernet key for encrypting BYO API keys |
 | `LLM_PROVIDER` | No | `gemini` (default) or `openai_compat` |
 | `LLM_BASE_URL` | If openai_compat | e.g. `http://host.docker.internal:11434/v1` |
@@ -40,7 +40,7 @@ All secrets go in `.env` (never in `settings.yaml`):
 
 | Path | Purpose |
 |------|---------|
-| `/app/couples_bot.db` | SQLite database (persistent) |
+| `/app/pairtner.db` | SQLite database (persistent) |
 | `/app/backups` | Automated daily backups |
 | `/app/settings.yaml` | Runtime config (read-only) |
 | `/app/packs` | Prompt packs (read-only in the container; edit on the host, applied on the next message) |
@@ -55,7 +55,7 @@ services:
     build: .
     env_file: .env
     volumes:
-      - ./couples_bot.db:/app/couples_bot.db
+      - ./pairtner.db:/app/pairtner.db
       - ./settings.yaml:/app/settings.yaml:ro
       - ./packs:/app/packs:ro
       - ./backups:/app/backups
@@ -132,7 +132,7 @@ docker compose up -d
 
 # Option B: Direct
 uv sync
-uv run python -m couples_bot
+uv run python -m pairtner
 ```
 
 ### 5. systemd service (for direct runs)
@@ -148,7 +148,7 @@ After=network.target
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/couples-bot
-ExecStart=/home/ubuntu/.local/bin/uv run python -m couples_bot
+ExecStart=/home/ubuntu/.local/bin/uv run python -m pairtner
 Restart=always
 RestartSec=10
 EnvironmentFile=/home/ubuntu/couples-bot/.env
@@ -261,7 +261,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./couples_bot.db:/app/couples_bot.db
+      - ./pairtner.db:/app/pairtner.db
       - ./backups:/app/backups
     restart: unless-stopped
 ```
@@ -327,7 +327,7 @@ Stored data: the `rest_outbox` table keeps the text of messages queued for web u
 
 ## Dashboard
 
-The admin dashboard (`python -m couples_bot.dashboard`) runs as a second compose
+The admin dashboard (`python -m pairtner.dashboard`) runs as a second compose
 service. It is opt-in, so existing `docker compose up -d` deployments are
 unchanged.
 
@@ -345,7 +345,7 @@ to the public internet: there is no TLS and the token is the only protection.
 
 - **Isolation:** the service has no `env_file`. Compose passes it only
   `DASHBOARD_TOKEN`, so the bot's Telegram, LLM and encryption keys are not in
-  its environment. It mounts `couples_bot.db`, `settings.yaml` (read-only) and
+  its environment. It mounts `pairtner.db`, `settings.yaml` (read-only) and
   `./backups`.
 - **Raw text:** set `dashboard.show_raw_text: false` in `settings.yaml` (or
   `DASHBOARD_SHOW_RAW_TEXT=false`) to show counts and metadata only.
@@ -359,11 +359,11 @@ to the public internet: there is no TLS and the token is the only protection.
 - **Concurrency:** the dashboard never keeps a connection open. Reads use a
   read-only connection. Clear actions run in one `BEGIN IMMEDIATE` transaction,
   so the bot's writes wait for it. The DB file is never replaced or deleted.
-- **Bind-mount caveat:** compose mounts the single file `./couples_bot.db`. In
+- **Bind-mount caveat:** compose mounts the single file `./pairtner.db`. In
   SQLite's default journal mode the `-journal` file lives next to the DB, and
   with a single-file mount it exists separately in each container. Dashboard
   transactions are short and always preceded by a backup, but for new
   deployments prefer mounting a directory (for example `./data:/app/data` with
-  `DB_PATH=/app/data/couples_bot.db` for both services).
+  `DB_PATH=/app/data/pairtner.db` for both services).
 
-Run it without Docker with `uv run python -m couples_bot.dashboard` (see README).
+Run it without Docker with `uv run python -m pairtner.dashboard` (see README).

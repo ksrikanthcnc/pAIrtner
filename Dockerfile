@@ -3,7 +3,7 @@
 # Environment variables (set in .env or docker-compose):
 #   TELEGRAM_BOT_TOKEN  — required
 #   GEMINI_API_KEY      — required for Gemini provider
-#   DB_PATH             — default: couples_bot.db
+#   DB_PATH             — default: pairtner.db
 #   LLM_PROVIDER        — gemini (default) or openai_compat
 #   LLM_BASE_URL        — for openai_compat provider
 #   LLM_API_KEY         — for openai_compat provider
@@ -34,7 +34,7 @@ COPY --from=builder /app /app
 WORKDIR /app
 
 # Copy application code and config
-COPY couples_bot/ couples_bot/
+COPY pairtner/ pairtner/
 COPY packs/ packs/
 COPY settings.yaml ./
 
@@ -44,4 +44,4 @@ VOLUME /app/data
 # WebSocket adapter port
 EXPOSE 8080
 
-ENTRYPOINT ["uv", "run", "--no-dev", "python", "-m", "couples_bot"]
+ENTRYPOINT ["uv", "run", "--no-dev", "python", "-m", "pairtner"]

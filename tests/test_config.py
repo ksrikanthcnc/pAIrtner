@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from couples_bot.config import Config, _load_yaml, load_config
+from pairtner.config import Config, _load_yaml, load_config
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +74,7 @@ class TestLoadConfig:
         ):
             monkeypatch.delenv(var, raising=False)
 
-        with patch("couples_bot.config.load_dotenv"):
+        with patch("pairtner.config.load_dotenv"):
             cfg = load_config(yaml_path=str(yaml_file))
 
         assert cfg.cooldown_minutes == 25
@@ -99,7 +99,7 @@ class TestLoadConfig:
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
         monkeypatch.delenv("MODEL_HEAVY", raising=False)
 
-        with patch("couples_bot.config.load_dotenv"):
+        with patch("pairtner.config.load_dotenv"):
             cfg = load_config(yaml_path=str(yaml_file))
 
         assert cfg.cooldown_minutes == 99
@@ -113,11 +113,11 @@ class TestLoadConfig:
         monkeypatch.delenv("MODEL_HEAVY", raising=False)
         empty = tmp_path / "empty.yaml"
         empty.write_text("")
-        with patch("couples_bot.config.load_dotenv"):
+        with patch("pairtner.config.load_dotenv"):
             assert load_config(yaml_path=str(empty)).prompt_pack == "packs/default"
         custom = tmp_path / "custom.yaml"
         custom.write_text("prompt_pack: packs/mine\n")
-        with patch("couples_bot.config.load_dotenv"):
+        with patch("pairtner.config.load_dotenv"):
             assert load_config(yaml_path=str(custom)).prompt_pack == "packs/mine"
 
     def test_prompt_pack_env_override(self, tmp_path, monkeypatch):
@@ -128,7 +128,7 @@ class TestLoadConfig:
         monkeypatch.setenv("PROMPT_PACK", "/somewhere/else")
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
         monkeypatch.delenv("MODEL_HEAVY", raising=False)
-        with patch("couples_bot.config.load_dotenv"):
+        with patch("pairtner.config.load_dotenv"):
             cfg = load_config(yaml_path=str(yaml_file))
         assert cfg.prompt_pack == "/somewhere/else"
 
@@ -142,7 +142,7 @@ class TestLoadConfig:
         monkeypatch.delenv("PROMPT_PACK", raising=False)
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
         monkeypatch.delenv("MODEL_HEAVY", raising=False)
-        with patch("couples_bot.config.load_dotenv"):
+        with patch("pairtner.config.load_dotenv"):
             cfg = load_config(yaml_path=str(yaml_file))
         assert cfg.prompt_pack == "packs/default"
         assert not hasattr(cfg, "prompts_dir")
@@ -156,7 +156,7 @@ class TestLoadConfig:
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
         monkeypatch.delenv("MODEL_HEAVY", raising=False)
 
-        with patch("couples_bot.config.load_dotenv"):
+        with patch("pairtner.config.load_dotenv"):
             cfg = load_config(yaml_path=str(yaml_file))
 
         assert cfg.review_before_send is True
@@ -168,7 +168,7 @@ class TestLoadConfig:
         monkeypatch.setenv("GEMINI_API_KEY", "key")
         monkeypatch.setenv("LLM_PROVIDER", "bad-provider")
 
-        with patch("couples_bot.config.load_dotenv"), \
+        with patch("pairtner.config.load_dotenv"), \
              pytest.raises(ValueError, match="Invalid LLM_PROVIDER"):
             load_config(yaml_path=str(yaml_file))
 
@@ -181,7 +181,7 @@ class TestLoadConfig:
         monkeypatch.delenv("RATE_LIMIT_PER_MINUTE", raising=False)
         monkeypatch.delenv("RATE_LIMIT_PER_DAY", raising=False)
 
-        with patch("couples_bot.config.load_dotenv"):
+        with patch("pairtner.config.load_dotenv"):
             cfg = load_config(yaml_path=str(tmp_path / "nope.yaml"))
 
         assert cfg.cooldown_minutes == 15

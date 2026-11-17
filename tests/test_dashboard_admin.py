@@ -10,9 +10,9 @@ import time
 
 import pytest
 
-from couples_bot.dashboard import admin_actions as aa
-from couples_bot.dashboard import store
-from couples_bot.db import init_db
+from pairtner.dashboard import admin_actions as aa
+from pairtner.dashboard import store
+from pairtner.db import init_db
 from tests.dashboard_seed import AUTH_CANARY, seed_db
 
 
@@ -48,7 +48,7 @@ class TestBackup:
         assert backups(bdir) == [os.path.basename(res.backup_path)]
 
     def test_admin_backups_not_rotated_by_bot(self, env):
-        from couples_bot.backup import _list_backup_files
+        from pairtner.backup import _list_backup_files
         db, bdir = env
         aa.backup_now(db, bdir)
         assert _list_backup_files(bdir) == []

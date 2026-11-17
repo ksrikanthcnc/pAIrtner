@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.db import (
+from pairtner.db import (
     create_user,
     ensure_user_profile,
     get_user_profile,
@@ -12,7 +12,7 @@ from couples_bot.db import (
     set_partner,
     update_user_profile,
 )
-from couples_bot.onboarding import (
+from pairtner.onboarding import (
     get_onboarding_question,
     process_onboarding_answer,
     should_start_onboarding,
@@ -23,7 +23,7 @@ from couples_bot.onboarding import (
 async def onboard_users(test_db):
     """Paired users with onboarding NOT done."""
     a_id, b_id = 2001, 2002
-    from couples_bot.db import create_user, set_partner
+    from pairtner.db import create_user, set_partner
     await create_user(test_db, a_id, "OnbAlice")
     await create_user(test_db, b_id, "OnbBob")
     await set_partner(test_db, a_id, b_id)

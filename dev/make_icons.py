@@ -9,7 +9,7 @@ import struct
 import zlib
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parent.parent / "couples_bot" / "web" / "icons"
+OUT = Path(__file__).resolve().parent.parent / "pairtner" / "web" / "icons"
 BG = (43, 92, 255)
 FG = (255, 255, 255)
 

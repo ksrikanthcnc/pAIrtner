@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot import db as db_mod
-from couples_bot.handlers import BotService
+from pairtner import db as db_mod
+from pairtner.handlers import BotService
 
 
 @pytest.mark.asyncio

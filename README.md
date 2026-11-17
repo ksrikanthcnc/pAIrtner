@@ -15,7 +15,7 @@ A private AI mediator for couples. Each partner chats privately with the bot —
 git clone https://github.com/ksrikanthcnc/pAIrtner.git && cd pAIrtner
 uv sync
 cp .env.example .env   # Set TELEGRAM_BOT_TOKEN and GEMINI_API_KEY
-uv run python -m couples_bot
+uv run python -m pairtner
 ```
 
 ### Local testing (no API keys needed)

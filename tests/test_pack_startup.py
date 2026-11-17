@@ -1,4 +1,4 @@
-"""``python -m couples_bot`` refuses to start with a broken pack."""
+"""``python -m pairtner`` refuses to start with a broken pack."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def _run(pack_path: str, tmp_path) -> subprocess.CompletedProcess:
         "DB_PATH": str(tmp_path / "startup.db"),
     }
     return subprocess.run(
-        [sys.executable, "-m", "couples_bot"],
+        [sys.executable, "-m", "pairtner"],
         cwd=REPO_ROOT, env=env, capture_output=True, text=True,
         stdin=subprocess.DEVNULL, timeout=60,
     )

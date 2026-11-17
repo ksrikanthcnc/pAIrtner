@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import pytest
-from couples_bot import db as db_mod
-from couples_bot.analysis import (
+from pairtner import db as db_mod
+from pairtner.analysis import (
     should_run_analysis,
     run_analysis,
     _parse_analysis,

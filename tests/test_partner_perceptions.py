@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.db import (
+from pairtner.db import (
     add_partner_perception,
     get_partner_perceptions,
     get_user_context_data,
     log_message,
     update_perception_confidence,
 )
-from couples_bot.prompts import (
+from pairtner.prompts import (
     UserContext,
     build_chat_prompt,
     build_partner_summary_block,

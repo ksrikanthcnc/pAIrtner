@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 
-from couples_bot.db import (
+from pairtner.db import (
     add_fact, add_shared_goal, add_timeline_event, create_auth_token,
     create_conflict, create_pending, create_user, increment_usage, init_db,
     log_message, make_couple_id, set_couple_config, set_partner,

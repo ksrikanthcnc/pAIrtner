@@ -29,7 +29,7 @@ uv run python -m pytest
 ## Project structure
 
 ```
-couples_bot/           # Main package
+pairtner/           # Main package
 ├── adapters/          # Transport layer (Telegram, WebSocket, CLI)
 ├── handlers/          # Command handlers (business logic)
 ├── config.py          # YAML + env config

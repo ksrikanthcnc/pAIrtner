@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from couples_bot.sanitize import detect_crisis, sanitize_input
+from pairtner.sanitize import detect_crisis, sanitize_input
 
 
 class TestSanitizeInput:

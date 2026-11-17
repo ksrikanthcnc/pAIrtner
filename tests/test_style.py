@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.db import (
+from pairtner.db import (
     create_user,
     ensure_user_profile,
     get_user_profile,

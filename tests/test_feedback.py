@@ -7,14 +7,14 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import pytest_asyncio
 
-from couples_bot import db as db_mod
-from couples_bot.config import Config
-from couples_bot.feedback import (
+from pairtner import db as db_mod
+from pairtner.config import Config
+from pairtner.feedback import (
     adjust_dampening_from_feedback,
     check_for_feedback_opportunity,
     generate_feedback_request,
 )
-from couples_bot.handlers import BotService
+from pairtner.handlers import BotService
 
 from tests.helpers import MockLLMClient
 

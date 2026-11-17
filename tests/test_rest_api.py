@@ -1,4 +1,4 @@
-"""Tests for couples_bot.rest.api (pure handler, no sockets)."""
+"""Tests for pairtner.rest.api (pure handler, no sockets)."""
 from __future__ import annotations
 
 import asyncio
@@ -6,13 +6,13 @@ import json
 
 import pytest
 
-from couples_bot.approval import delivery_loop
-from couples_bot.config import Config
-from couples_bot.db import add_outbox_event, create_user, get_outbox_events, init_db
-from couples_bot.handlers import BotService
-from couples_bot.rest import api as api_mod
-from couples_bot.rest.api import ROUTES, MAX_BODY_BYTES, Request, RestApi, text_to_msg
-from couples_bot.rest.ids import REST_ID_BASE
+from pairtner.approval import delivery_loop
+from pairtner.config import Config
+from pairtner.db import add_outbox_event, create_user, get_outbox_events, init_db
+from pairtner.handlers import BotService
+from pairtner.rest import api as api_mod
+from pairtner.rest.api import ROUTES, MAX_BODY_BYTES, Request, RestApi, text_to_msg
+from pairtner.rest.ids import REST_ID_BASE
 from tests.helpers import MockLLMClient
 
 INVITE = "invite-code-for-tests"
@@ -351,7 +351,7 @@ async def test_static_serving_content_types(env, tmp_path):
 
 @pytest.mark.parametrize("path", [
     "/../etc/passwd", "/..%2f..%2fetc/passwd", "/%2e%2e/secrets", "/icons/../app.py",
-    "/icons/", "/icons", "/.env", "/couples_bot/db.py", "//etc/passwd",
+    "/icons/", "/icons", "/.env", "/pairtner/db.py", "//etc/passwd",
     "/app.js/../../x", "/index.html%00.png", "/secret.txt", "/web/", "/%252e%252e/x",
 ])
 async def test_static_path_traversal_rejected(env, tmp_path, path):
@@ -545,7 +545,7 @@ async def test_reply_markup_is_safe_and_plain_is_readable(test_db, llm):
     a = await c.register("Alice")
     llm.responses.append({"reply": "<b>fine</b> <script>alert(1)</script>",
                           "new_facts": [], "relay_draft": None})
-    from couples_bot.db import ensure_user_profile, update_user_profile
+    from pairtner.db import ensure_user_profile, update_user_profile
     await ensure_user_profile(test_db, a["user_id"])
     await update_user_profile(test_db, a["user_id"], onboarding_done=1)
     _, out, _ = await c.call("POST", "/api/v1/message", {"text": "hello"}, a["token"])
@@ -578,7 +578,7 @@ async def test_messages_serialised_per_user(test_db, llm):
 
 
 async def test_pruning_old_events(test_db, llm):
-    from couples_bot import db
+    from pairtner import db
     import aiosqlite
     eid = await add_outbox_event(test_db, REST_ID_BASE, "message", "{}")
     async with aiosqlite.connect(test_db) as conn:
@@ -600,7 +600,7 @@ async def test_forward_hook_used_for_non_rest_target(test_db, llm):
         forwarded.append((uid, msg["text"]))
 
     api.forward = fwd
-    from couples_bot.handlers import BotResponse
+    from pairtner.handlers import BotResponse
     await api._reply(REST_ID_BASE, [BotResponse("to telegram", target_user_id=42),
                                     BotResponse("to rest", target_user_id=REST_ID_BASE + 3)])
     assert forwarded == [(42, "to telegram")]

@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.config import Config
-from couples_bot.db import (
+from pairtner.config import Config
+from pairtner.db import (
     create_user,
     get_active_mood,
     get_partner_perceptions,
     get_user_patterns,
     set_partner,
 )
-from couples_bot.profile_updater import process_llm_extras
+from pairtner.profile_updater import process_llm_extras
 
 
 def _config(**overrides) -> Config:

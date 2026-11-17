@@ -3,11 +3,11 @@
 import re
 from pathlib import Path
 
-from couples_bot.rest import api
+from pairtner.rest import api
 
 ROOT = Path(__file__).resolve().parent.parent
 REST_DOC = (ROOT / "docs" / "REST_API.md").read_text(encoding="utf-8")
-CONFIG_SRC = (ROOT / "couples_bot" / "config.py").read_text(encoding="utf-8")
+CONFIG_SRC = (ROOT / "pairtner" / "config.py").read_text(encoding="utf-8")
 ENV_NAME = re.compile(r"`((?:REST|LOOPS|MEDIATE)_[A-Z_]+)`")
 ENV_DOCS = ("README.md", "DEPLOYMENT.md", "docs/REST_API.md", "settings.yaml")
 # Secrets are read at use time, outside Config.
@@ -31,7 +31,7 @@ def test_every_documented_route_method_matches():
 
 
 def test_every_error_code_in_docs_exists_in_code():
-    src = (ROOT / "couples_bot" / "rest" / "api.py").read_text(encoding="utf-8")
+    src = (ROOT / "pairtner" / "rest" / "api.py").read_text(encoding="utf-8")
     codes = set(re.findall(r"\| \d{3} \| `([a-z_]+)` \|", REST_DOC))
     assert codes, "no error table found in docs/REST_API.md"
     unknown = [c for c in codes if f'"{c}"' not in src]
@@ -39,7 +39,7 @@ def test_every_error_code_in_docs_exists_in_code():
 
 
 def test_every_error_code_in_code_is_documented():
-    src = (ROOT / "couples_bot" / "rest" / "api.py").read_text(encoding="utf-8")
+    src = (ROOT / "pairtner" / "rest" / "api.py").read_text(encoding="utf-8")
     raised = set(re.findall(r'ApiError\(\d{3}, "([a-z_]+)"\)', src))
     undocumented = [c for c in raised if f"`{c}`" not in REST_DOC]
     assert not undocumented, f"error codes missing from docs/REST_API.md: {undocumented}"

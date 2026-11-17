@@ -19,15 +19,15 @@ ROOT = HERE.parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from couples_bot import pack  # noqa: E402
-from couples_bot.__main__ import _set_privacy_info  # noqa: E402
-from couples_bot.adapters.rest_adapter import RestAdapter  # noqa: E402
-from couples_bot.config import Config, load_config  # noqa: E402
-from couples_bot.db import init_db  # noqa: E402
-from couples_bot.handlers import BotService  # noqa: E402
-from couples_bot.llm import create_llm_client  # noqa: E402
+from pairtner import pack  # noqa: E402
+from pairtner.__main__ import _set_privacy_info  # noqa: E402
+from pairtner.adapters.rest_adapter import RestAdapter  # noqa: E402
+from pairtner.config import Config, load_config  # noqa: E402
+from pairtner.db import init_db  # noqa: E402
+from pairtner.handlers import BotService  # noqa: E402
+from pairtner.llm import create_llm_client  # noqa: E402
 
-from couples_bot.rest.throttle import SlidingWindowLimiter  # noqa: E402
+from pairtner.rest.throttle import SlidingWindowLimiter  # noqa: E402
 
 
 def make_config(

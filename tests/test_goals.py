@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.db import (
+from pairtner.db import (
     add_user_goal,
     add_shared_goal,
     create_user,
@@ -15,7 +15,7 @@ from couples_bot.db import (
     update_goal_status,
     update_shared_goal_status,
 )
-from couples_bot.handlers import BotService
+from pairtner.handlers import BotService
 
 
 # ---------------------------------------------------------------------------

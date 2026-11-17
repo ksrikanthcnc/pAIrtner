@@ -7,8 +7,8 @@ import json
 import pytest
 import pytest_asyncio
 
-from couples_bot.config import Config
-from couples_bot.db import (
+from pairtner.config import Config
+from pairtner.db import (
     create_user,
     ensure_user_profile,
     get_message_count,
@@ -19,9 +19,9 @@ from couples_bot.db import (
     update_learned_voice,
     update_user_profile,
 )
-from couples_bot.handlers import BotService
-from couples_bot.llm import parse_llm_response
-from couples_bot.profile_updater import process_llm_extras
+from pairtner.handlers import BotService
+from pairtner.llm import parse_llm_response
+from pairtner.profile_updater import process_llm_extras
 
 from tests.helpers import MockLLMClient
 

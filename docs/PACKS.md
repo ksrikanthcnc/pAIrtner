@@ -6,7 +6,7 @@ The stock pack is `packs/default/`. Start by copying it:
 
 ```bash
 cp -r packs/default packs/mine        # then edit name and version in packs/mine/pack.yaml
-PROMPT_PACK=packs/mine uv run python -m couples_bot
+PROMPT_PACK=packs/mine uv run python -m pairtner
 ```
 
 ## Folder layout
@@ -192,7 +192,7 @@ Every key is required. A placeholder is a `{name}` the engine fills in; a key ma
 
 ## contract.md and what the engine parses
 
-`contract.md` tells the model what JSON to return. The engine parses that JSON in `couples_bot/llm.py` (`parse_llm_response`). It reads `reply`, `new_facts`, `relay_draft`, `detected_mood`, `patterns_observed`, `partner_themes`, `articulation_note`, `horsemen_detected` and `voice_traits`. If the output is not valid JSON, the whole text becomes the reply and nothing else is read. If you rename or drop a field in the contract, the engine does not adapt: the field is ignored and the feature that used it stops working. Adding explanation, examples or rules around the fields is safe. Privacy rules (a model can never publish a fact on its own, partner text is never shown raw) are enforced in code, whatever the pack says.
+`contract.md` tells the model what JSON to return. The engine parses that JSON in `pairtner/llm.py` (`parse_llm_response`). It reads `reply`, `new_facts`, `relay_draft`, `detected_mood`, `patterns_observed`, `partner_themes`, `articulation_note`, `horsemen_detected` and `voice_traits`. If the output is not valid JSON, the whole text becomes the reply and nothing else is read. If you rename or drop a field in the contract, the engine does not adapt: the field is ignored and the feature that used it stops working. Adding explanation, examples or rules around the fields is safe. Privacy rules (a model can never publish a fact on its own, partner text is never shown raw) are enforced in code, whatever the pack says.
 
 ## What the engine ignores
 
@@ -207,7 +207,7 @@ The engine checks file modification times on each call to `pack.current()`. An e
 
 ## Tracing
 
-Every LLM call logs one line on logger `couples_bot.trace`:
+Every LLM call logs one line on logger `pairtner.trace`:
 `llm_call task=<name> model=<m> pack=<name>@<version> pack_hash=<12 hex> prompt_sha=<12 hex>`.
 A `pack_loaded` line with the sha256 of every file is logged at startup and whenever a reload changes the pack. The database gets the same information in `llm_calls` (task, model, pack_hash, prompt_sha256) and `pack_snapshots` (pack_hash, name, version, per-file hashes). Only hashes are stored: no prompt text and no user id. To find which pack text produced a reply, match the reply time to its `llm_calls` row, then its `pack_hash` to `pack_snapshots`.
 

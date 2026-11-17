@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from couples_bot import db as db_mod
+from pairtner import db as db_mod
 
 _ID_PREFIX = re.compile(r"^\[\d+\]\s*")
 _CODE = re.compile(r"\b[0-9A-F]{6}\b")

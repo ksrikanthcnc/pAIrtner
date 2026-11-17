@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import pytest
-from couples_bot import db as db_mod
-from couples_bot.db import _apply_word_cap, _get_context_budgets
+from pairtner import db as db_mod
+from pairtner.db import _apply_word_cap, _get_context_budgets
 
 
 class TestApplyWordCap:

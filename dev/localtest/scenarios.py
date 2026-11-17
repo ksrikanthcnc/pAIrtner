@@ -37,7 +37,7 @@ ROOT = HERE.parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from couples_bot.i18n import t  # noqa: E402
+from pairtner.i18n import t  # noqa: E402
 
 DEFAULT_URL = "http://127.0.0.1:8766"
 DEFAULT_FAKE_URL = "http://127.0.0.1:11435"
@@ -587,7 +587,7 @@ def sc_periodic(env: Env) -> None:
     rows = env.db("select status, summary from checkins where couple_id=? order by id desc limit 1", couple)
     env.check(rows and rows[0][0] == "complete" and rows[0][1], f"check-in not complete with a summary: {rows}")
 
-    files = sorted(glob.glob(os.path.join(p["backup_dir"], "couples_bot_*.db")))
+    files = sorted(glob.glob(os.path.join(p["backup_dir"], "pairtner_*.db")))
     if env.check(files, f"no backup file in {p['backup_dir']}"):
         con = sqlite3.connect(f"file:{files[-1]}?mode=ro", uri=True)
         try:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.db import get_user_patterns, record_pattern
-from couples_bot.handlers import BotService
+from pairtner.db import get_user_patterns, record_pattern
+from pairtner.handlers import BotService
 
 from tests.helpers import MockLLMClient
 
@@ -35,7 +35,7 @@ async def test_articulation_tip_shown_after_send(test_db, config, paired_users):
 async def test_articulation_tip_not_shown_when_disabled(test_db, paired_users):
     """Articulation tip is suppressed when config.articulation_enabled=False."""
     a_id, b_id = paired_users
-    from couples_bot.config import Config
+    from pairtner.config import Config
     cfg = Config(
         telegram_token="test-token",
         gemini_api_key="test-key",
@@ -62,7 +62,7 @@ async def test_articulation_tip_not_shown_when_disabled(test_db, paired_users):
 async def test_articulation_pattern_recorded(test_db, paired_users):
     """Articulation note is recorded as a user pattern via profile_updater."""
     a_id, b_id = paired_users
-    from couples_bot.config import Config
+    from pairtner.config import Config
     cfg = Config(
         telegram_token="test-token",
         gemini_api_key="test-key",

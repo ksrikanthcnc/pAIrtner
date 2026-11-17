@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
-from couples_bot.config import Config
-from couples_bot.db import (
+from pairtner.config import Config
+from pairtner.db import (
     add_fact,
     add_fact_summary,
     create_user,
@@ -15,8 +15,8 @@ from couples_bot.db import (
     init_db,
     set_partner,
 )
-from couples_bot.handlers import BotService
-from couples_bot.prompts import (
+from pairtner.handlers import BotService
+from pairtner.prompts import (
     SmartContext,
     UserContext,
     build_blunt_prompt,
@@ -25,13 +25,13 @@ from couples_bot.prompts import (
     build_smart_context,
     build_tell_prompt,
 )
-from couples_bot.search import (
+from pairtner.search import (
     get_fact_count,
     init_fts,
     rebuild_fts_index,
     search_facts,
 )
-from couples_bot.summarizer import check_and_summarize, generate_monthly_summary
+from pairtner.summarizer import check_and_summarize, generate_monthly_summary
 from tests.helpers import MockLLMClient
 
 

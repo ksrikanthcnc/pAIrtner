@@ -22,7 +22,7 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import rig  # noqa: E402
-from couples_bot.llm import describe_llm  # noqa: E402
+from pairtner.llm import describe_llm  # noqa: E402
 
 FAKE_PORT = 11435
 

@@ -1,10 +1,10 @@
-"""Tests for couples_bot.memory — ops parsing, validation, pin detection, dedup."""
+"""Tests for pairtner.memory — ops parsing, validation, pin detection, dedup."""
 
 from __future__ import annotations
 
 import pytest
 
-from couples_bot.memory import (
+from pairtner.memory import (
     DEFAULT_CORE_PHRASES,
     MemoryOp,
     _normalise_text,

@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
-from couples_bot.config import Config, is_user_allowed
-from couples_bot.db import create_user, init_db, set_partner
-from couples_bot.handlers import BotService
+from pairtner.config import Config, is_user_allowed
+from pairtner.db import create_user, init_db, set_partner
+from pairtner.handlers import BotService
 
 from tests.helpers import MockLLMClient
 
@@ -200,12 +200,12 @@ async def test_open_mode_message(open_service):
 
 def test_blocked_user_id_logged_once_without_content(caplog):
     import logging
-    from couples_bot import config as cfg_mod
-    from couples_bot.config import Config, is_user_allowed
+    from pairtner import config as cfg_mod
+    from pairtner.config import Config, is_user_allowed
 
     cfg_mod._logged_denied.discard(424242)
     c = Config(telegram_token="t", gemini_api_key="k", allowed_user_ids={1})
-    with caplog.at_level(logging.WARNING, logger="couples_bot.config"):
+    with caplog.at_level(logging.WARNING, logger="pairtner.config"):
         assert not is_user_allowed(c, 424242)
         assert not is_user_allowed(c, 424242)
     hits = [r for r in caplog.records if "424242" in r.getMessage()]

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { renderMarkup } = require("../../couples_bot/web/render.js");
+const { renderMarkup } = require("../../pairtner/web/render.js");
 
 function makeDoc() {
   const created = [];

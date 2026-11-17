@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from couples_bot.i18n import _STRINGS, t
+from pairtner.i18n import _STRINGS, t
 
 
 class TestI18n:

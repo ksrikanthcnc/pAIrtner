@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.db import (
+from pairtner.db import (
     add_fact,
     create_pending,
     create_user,
@@ -16,7 +16,7 @@ from couples_bot.db import (
     log_message,
     set_partner,
 )
-from couples_bot.prompts import (
+from pairtner.prompts import (
     UserContext,
     build_chat_prompt,
     build_mediate_prompt,
@@ -191,8 +191,8 @@ async def test_bob_prompt_excludes_alice_private(test_db, paired_users):
 @pytest.mark.asyncio
 async def test_partner_perceptions_only_themes_in_prompt(test_db, paired_users):
     """Partner perception themes (not raw text) appear in prompt."""
-    from couples_bot.db import add_partner_perception
-    from couples_bot.prompts import build_partner_summary_block
+    from pairtner.db import add_partner_perception
+    from pairtner.prompts import build_partner_summary_block
 
     a_id, b_id = paired_users
 
@@ -207,7 +207,7 @@ async def test_partner_perceptions_only_themes_in_prompt(test_db, paired_users):
     )
 
     # Build Alice's prompt with partner summary
-    from couples_bot.db import get_partner_perceptions as get_pp
+    from pairtner.db import get_partner_perceptions as get_pp
     perceptions = await get_pp(test_db, a_id)
     summary = build_partner_summary_block(perceptions)
 

@@ -5,16 +5,16 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
-from couples_bot import pack
-from couples_bot.config import Config
-from couples_bot.db import (
+from pairtner import pack
+from pairtner.config import Config
+from pairtner.db import (
     add_fact,
     create_user,
     init_db,
     log_message,
     set_partner,
 )
-from couples_bot.handlers import BotService
+from pairtner.handlers import BotService
 
 from tests.helpers import MockLLMClient
 
@@ -83,7 +83,7 @@ async def paired_users(test_db) -> tuple[int, int]:
     await set_partner(test_db, a_id, b_id)
 
     # Mark onboarding complete so tests aren't intercepted by onboarding flow
-    from couples_bot.db import ensure_user_profile, update_user_profile
+    from pairtner.db import ensure_user_profile, update_user_profile
     await ensure_user_profile(test_db, a_id)
     await update_user_profile(test_db, a_id, onboarding_done=1)
     await ensure_user_profile(test_db, b_id)

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.handlers import BotService
-from couples_bot.sanitize import detect_crisis
+from pairtner.handlers import BotService
+from pairtner.sanitize import detect_crisis
 
 CRISIS = [
     "he hit me again last night but don't make it sound bad",

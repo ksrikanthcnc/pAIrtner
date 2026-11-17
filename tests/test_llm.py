@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.db import get_usage_count, increment_usage
-from couples_bot.llm import GeminiClient, parse_llm_response, parse_retry_delay, _get_error_code
+from pairtner.db import get_usage_count, increment_usage
+from pairtner.llm import GeminiClient, parse_llm_response, parse_retry_delay, _get_error_code
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ async def test_llm_429_backoff(test_db, config, monkeypatch):
     client = GeminiClient(config, test_db)
     client._client = FakeGenaiClient(models)  # type: ignore
     # Shorten backoff for test
-    monkeypatch.setattr("couples_bot.llm.parse_retry_delay", lambda exc: 0.01)
+    monkeypatch.setattr("pairtner.llm.parse_retry_delay", lambda exc: 0.01)
 
     result = await client.generate("Hello", "System", model="test-default")
     assert result["reply"] == "retried"
@@ -240,6 +240,6 @@ class TestParseRetryDelay:
 
     def test_is_module_level_function(self):
         """parse_retry_delay is a module-level function, not a method."""
-        import couples_bot.llm as llm_mod
+        import pairtner.llm as llm_mod
         assert callable(llm_mod.parse_retry_delay)
         assert not hasattr(GeminiClient, "_parse_retry_delay")

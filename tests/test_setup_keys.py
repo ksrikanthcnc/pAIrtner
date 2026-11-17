@@ -5,13 +5,13 @@ from __future__ import annotations
 import pytest
 from cryptography.fernet import Fernet
 
-from couples_bot.crypto import decrypt_value, encrypt_value
-from couples_bot.db import (
+from pairtner.crypto import decrypt_value, encrypt_value
+from pairtner.db import (
     get_couple_config,
     make_couple_id,
     set_couple_config,
 )
-from couples_bot.handlers import BotService
+from pairtner.handlers import BotService
 
 
 @pytest.fixture

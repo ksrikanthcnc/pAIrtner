@@ -6,9 +6,9 @@ import json
 
 import pytest
 
-from couples_bot import db as db_mod
-from couples_bot.llm import parse_llm_response
-from couples_bot.profile_updater import process_llm_extras
+from pairtner import db as db_mod
+from pairtner.llm import parse_llm_response
+from pairtner.profile_updater import process_llm_extras
 
 
 # ---------------------------------------------------------------------------
@@ -238,14 +238,14 @@ class TestJargonFree:
 
     def test_prompt_json_format_no_jargon_in_reply_instruction(self):
         """The JSON schema instructs LLM to never use jargon in replies."""
-        from couples_bot import pack
+        from pairtner import pack
 
         # The instruction should contain the prohibition
         assert "NEVER use the term 'horsemen'" in pack.current().contract()
 
     def test_i18n_strings_no_jargon(self):
         """No i18n string should contain Gottman jargon."""
-        from couples_bot.i18n import _STRINGS
+        from pairtner.i18n import _STRINGS
         for lang, strings in _STRINGS.items():
             for key, value in strings.items():
                 for term in self.JARGON_TERMS:
@@ -255,7 +255,7 @@ class TestJargonFree:
 
     def test_nudge_prompt_no_jargon(self):
         """The nudge prompt file should not contain Gottman jargon."""
-        from couples_bot.prompts import load_task_prompt
+        from pairtner.prompts import load_task_prompt
 
         content = load_task_prompt("nudge")
         if content:
@@ -264,7 +264,7 @@ class TestJargonFree:
 
     def test_appreciation_prompt_no_jargon(self):
         """The appreciation prompt file should not reference clinical terms."""
-        from couples_bot.prompts import load_task_prompt
+        from pairtner.prompts import load_task_prompt
 
         content = load_task_prompt("appreciation")
         if content:

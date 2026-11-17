@@ -140,13 +140,13 @@ Expected output: JSON
 ```
 
 ### Engine vs pack
-`couples_bot/pack.py` loads and strictly validates a pack at startup (manifest, `engine_contract`, required files, every `strings.yaml` key and its allowed `{placeholders}`); an invalid pack makes the process exit with code 2 before the database is opened. `pack.current()` re-reads changed files on each call (stat-based hot reload). A pack that fails re-validation is ignored and the last good one stays active. The engine keeps block order, separators, markdown markers and numeric thresholds; the pack supplies the words.
+`pairtner/pack.py` loads and strictly validates a pack at startup (manifest, `engine_contract`, required files, every `strings.yaml` key and its allowed `{placeholders}`); an invalid pack makes the process exit with code 2 before the database is opened. `pack.current()` re-reads changed files on each call (stat-based hot reload). A pack that fails re-validation is ignored and the last good one stays active. The engine keeps block order, separators, markdown markers and numeric thresholds; the pack supplies the words.
 
 ### Call tracing
-Prompt assembly stores `(task, pack snapshot)` in the `pack.last_trace` context variable. `llm.TracingLLM` wraps the client returned by `create_llm_client`, reads that variable at `generate()` time (so the hash is the one that built the prompt, even if a reload happened in between), logs `llm_call task= model= pack=name@version pack_hash= prompt_sha=` on logger `couples_bot.trace`, and writes `llm_calls` (task, model, pack_hash, prompt_sha256) and `pack_snapshots` (pack_hash, name, version, engine_contract, files_json of per-file sha256). `pack_loaded` lines are logged at startup and when a reload changes the hash. Tables hold hashes only: no prompt text, no user id. Database errors are logged as warnings and never fail the call.
+Prompt assembly stores `(task, pack snapshot)` in the `pack.last_trace` context variable. `llm.TracingLLM` wraps the client returned by `create_llm_client`, reads that variable at `generate()` time (so the hash is the one that built the prompt, even if a reload happened in between), logs `llm_call task= model= pack=name@version pack_hash= prompt_sha=` on logger `pairtner.trace`, and writes `llm_calls` (task, model, pack_hash, prompt_sha256) and `pack_snapshots` (pack_hash, name, version, engine_contract, files_json of per-file sha256). `pack_loaded` lines are logged at startup and when a reload changes the hash. Tables hold hashes only: no prompt text, no user id. Database errors are logged as warnings and never fail the call.
 
 ### Pack evaluation
-`dev/prompt-eval/run_eval.py` (helpers in `eval_lib.py`) drives a pack's `eval/cases.yaml` through the real engine. It starts the dev rig in-process (`dev/localtest/rig.py`: throwaway SQLite DB, `RestAdapter` on 127.0.0.1, Telegram token forced to a dummy, adapter forced to `rest`), registers two paired users per case over REST, seeds context with `couples_bot.db` calls, and sends one message as user A. The LLM client is `TracingLLM(Throttle(inner), on_call=observer)`, so each case records the system prompt, user content, parsed JSON and pack hashes of its calls. The runner records new rows in `facts`, `partner_perceptions` and `user_patterns` and echoes the case's `expect` lists; it makes no pass/fail verdict. When the engine returns `FALLBACK_REPLY` (quota or provider outage) the run stops, writes partial results and exits with code 3. `rig.make_gemini_config` loads the real key from the main checkout's `.env` through `load_config` only. Output goes to `dev/prompt-eval/runs/<pack>/<version>/<time>_<llm>-<model>/`. See `docs/PACKS.md`.
+`dev/prompt-eval/run_eval.py` (helpers in `eval_lib.py`) drives a pack's `eval/cases.yaml` through the real engine. It starts the dev rig in-process (`dev/localtest/rig.py`: throwaway SQLite DB, `RestAdapter` on 127.0.0.1, Telegram token forced to a dummy, adapter forced to `rest`), registers two paired users per case over REST, seeds context with `pairtner.db` calls, and sends one message as user A. The LLM client is `TracingLLM(Throttle(inner), on_call=observer)`, so each case records the system prompt, user content, parsed JSON and pack hashes of its calls. The runner records new rows in `facts`, `partner_perceptions` and `user_patterns` and echoes the case's `expect` lists; it makes no pass/fail verdict. When the engine returns `FALLBACK_REPLY` (quota or provider outage) the run stops, writes partial results and exits with code 3. `rig.make_gemini_config` loads the real key from the main checkout's `.env` through `load_config` only. Output goes to `dev/prompt-eval/runs/<pack>/<version>/<time>_<llm>-<model>/`. See `docs/PACKS.md`.
 ## Key Flows
 
 ### Relay (message to partner)
@@ -210,11 +210,11 @@ Per-user base × mood modifier × time decay (months of use).
 All adapters use `BotService.dispatch()` for command routing (except Telegram which has its own handler registration for Telegram-specific features like typing indicators). `BotService` is transport-unaware.
 
 ### REST adapter and web client
-- `couples_bot/rest/` holds a pure `RestApi.handle(request) -> Response` (stdlib `ThreadingHTTPServer` in a daemon thread, bridged to the event loop), id range, throttles and the markup converter. `couples_bot/adapters/rest_adapter.py` runs it.
+- `pairtner/rest/` holds a pure `RestApi.handle(request) -> Response` (stdlib `ThreadingHTTPServer` in a daemon thread, bridged to the event loop), id range, throttles and the markup converter. `pairtner/adapters/rest_adapter.py` runs it.
 - Auth: bearer `<user_id>:<secret>`; ids start at `REST_ID_BASE = 2**52` so they never collide with Telegram ids and stay exact in JavaScript.
 - Delivery to clients that may be offline goes through the `rest_outbox` table and long-poll (`GET /api/v1/events?after=N&wait=S`). Plain HTTP, no streaming client needed, nothing is lost if the tab is closed.
-- Bot text reaches the browser as a `Msg` with `text` (plain) and `markup` (only `b i u code pre` allowed). `couples_bot/web/render.js` builds DOM nodes and never uses `innerHTML`; the CSP forbids inline scripts. A test greps for the banned APIs.
-- The web client lives in `couples_bot/web/` (vanilla JS, no build step) and is served from a fixed file list.
+- Bot text reaches the browser as a `Msg` with `text` (plain) and `markup` (only `b i u code pre` allowed). `pairtner/web/render.js` builds DOM nodes and never uses `innerHTML`; the CSP forbids inline scripts. A test greps for the banned APIs.
+- The web client lives in `pairtner/web/` (vanilla JS, no build step) and is served from a fixed file list.
 - Full contract for agents: [docs/REST_API.md](docs/REST_API.md).
 
 ### MultiAdapter and background loops
@@ -231,7 +231,7 @@ Separate process, reads the same SQLite DB. Token-authenticated, LAN/Tailscale o
 - **Admin Actions**: clear user, clear DB, backup now (all require typed confirmation + auto-backup)
 - **Redaction**: raw text hidden by default, toggle to reveal (admin-only setting)
 
-Run: `uv run python -m couples_bot.dashboard` or `docker compose up dashboard`
+Run: `uv run python -m pairtner.dashboard` or `docker compose up dashboard`
 
 ## Dev & Testing
 
@@ -260,7 +260,7 @@ Run: `uv run python -m couples_bot.dashboard` or `docker compose up dashboard`
 | Target | Method |
 |---|---|
 | Local dev | `uv run python dev/localtest/run_local.py --llm fake` |
-| Web app only | `ADAPTER=rest REST_INVITE_CODE=... uv run python -m couples_bot`; HTTPS via Tailscale `serve` or a proxy to install the PWA (see DEPLOYMENT.md) |
+| Web app only | `ADAPTER=rest REST_INVITE_CODE=... uv run python -m pairtner`; HTTPS via Tailscale `serve` or a proxy to install the PWA (see DEPLOYMENT.md) |
 | Docker (any host) | `docker compose up -d` in the project folder on the host |
 | Mac → Win sync | `bash dev/deploy.sh --rebuild` or rsync with `.rsyncignore` |
 

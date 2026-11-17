@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.db import (
+from pairtner.db import (
     add_fact,
     archive_fact,
     get_active_facts,
     get_fact_by_id,
     supersede_fact,
 )
-from couples_bot.handlers import BotService
+from pairtner.handlers import BotService
 
 from tests.helpers import MockLLMClient
 

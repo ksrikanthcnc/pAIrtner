@@ -8,15 +8,15 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import pytest_asyncio
 
-from couples_bot import db as db_mod
-from couples_bot.config import Config
-from couples_bot.conflict_detector import (
+from pairtner import db as db_mod
+from pairtner.config import Config
+from pairtner.conflict_detector import (
     check_conflict_resolutions,
     detect_conflict_opening,
     detect_conflict_resolution,
     extract_conflict_theme,
 )
-from couples_bot.handlers import BotService
+from pairtner.handlers import BotService
 
 from tests.helpers import MockLLMClient
 

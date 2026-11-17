@@ -7,8 +7,8 @@ import logging
 import aiosqlite
 import pytest
 
-from couples_bot import pack, prompts
-from couples_bot.llm import FALLBACK_REPLY, TracingLLM
+from pairtner import pack, prompts
+from pairtner.llm import FALLBACK_REPLY, TracingLLM
 from tests.helpers import MockLLMClient, copy_default_pack
 
 
@@ -32,7 +32,7 @@ async def test_one_call_one_row_and_one_snapshot(test_db, caplog):
     pack.activate("packs/default")
     llm = TracingLLM(MockLLMClient(), test_db)
     system, user = _build()
-    with caplog.at_level(logging.INFO, logger="couples_bot.trace"):
+    with caplog.at_level(logging.INFO, logger="pairtner.trace"):
         await llm.generate(user, system)
         await llm.generate(user, system)
     snap = pack.current().snapshot()
@@ -93,7 +93,7 @@ async def test_db_failure_does_not_break_generate(tmp_path, caplog):
     pack.activate("packs/default")
     inner = MockLLMClient()
     llm = TracingLLM(inner, str(tmp_path / "no-such-dir" / "x.db"))
-    with caplog.at_level(logging.WARNING, logger="couples_bot.llm"):
+    with caplog.at_level(logging.WARNING, logger="pairtner.llm"):
         result = await llm.generate("u", "s")
     assert result["reply"]
     assert len(inner.calls) == 1
@@ -128,7 +128,7 @@ def test_fallback_reply_text():
 
 def test_pack_loaded_logged_on_activate_and_reload(tmp_path, caplog):
     root = copy_default_pack(tmp_path)
-    with caplog.at_level(logging.INFO, logger="couples_bot.trace"):
+    with caplog.at_level(logging.INFO, logger="pairtner.trace"):
         pack.activate(root)
         persona = root / "persona.md"
         persona.write_text(persona.read_text(encoding="utf-8") + "\nMore.\n", encoding="utf-8")

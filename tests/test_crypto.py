@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from cryptography.fernet import Fernet, InvalidToken
 
-from couples_bot.crypto import decrypt_value, encrypt_value, mask_key
+from pairtner.crypto import decrypt_value, encrypt_value, mask_key
 
 
 @pytest.fixture

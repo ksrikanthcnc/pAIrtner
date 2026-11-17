@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
-from couples_bot import db as db_mod
-from couples_bot.config import Config
-from couples_bot.handlers import BotService
-from couples_bot.llm import LLMResponse
+from pairtner import db as db_mod
+from pairtner.config import Config
+from pairtner.handlers import BotService
+from pairtner.llm import LLMResponse
 
 from tests.helpers import MockLLMClient
 

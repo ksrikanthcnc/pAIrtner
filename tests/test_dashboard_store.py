@@ -7,7 +7,7 @@ import sqlite3
 
 import pytest
 
-from couples_bot.dashboard import redaction, store
+from pairtner.dashboard import redaction, store
 from tests.dashboard_seed import AUTH_CANARY, KEY_CANARY, seed_db
 
 

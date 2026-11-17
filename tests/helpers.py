@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from couples_bot.llm import LLMResponse
+from pairtner.llm import LLMResponse
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from couples_bot import db as db_mod
-from couples_bot.consolidation import (
+from pairtner import db as db_mod
+from pairtner.consolidation import (
     run_consolidation,
     _find_consolidation_candidates,
     _group_by_period,

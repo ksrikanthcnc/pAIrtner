@@ -10,8 +10,8 @@ from urllib.parse import urlencode
 
 import pytest
 
-from couples_bot.dashboard.app import create_server
-from couples_bot.dashboard.config import DashboardConfig
+from pairtner.dashboard.app import create_server
+from pairtner.dashboard.config import DashboardConfig
 from tests.dashboard_seed import AUTH_CANARY, DASH_TOKEN, KEY_CANARY, seed_db
 
 ENV_SECRETS = {

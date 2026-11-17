@@ -6,15 +6,15 @@ from dataclasses import replace
 import aiosqlite
 import pytest
 
-from couples_bot.config import Config
-from couples_bot.db import (
+from pairtner.config import Config
+from pairtner.db import (
     add_fact,
     add_partner_perception,
     get_partner_perceptions,
     log_message,
 )
-from couples_bot.handlers import BotService
-from couples_bot.mediate import filter_perceptions, is_first_person, parse_window
+from pairtner.handlers import BotService
+from pairtner.mediate import filter_perceptions, is_first_person, parse_window
 from tests.helpers import MockLLMClient
 
 RAW_A = "RAWSENTINEL-ALICE-MESSAGE-7731"
@@ -254,7 +254,7 @@ async def test_one_sided_caveat(service, mock_llm, test_db, paired_users):
 
 
 async def test_no_partner_and_blocked(service, test_db):
-    from couples_bot.db import create_user
+    from pairtner.db import create_user
     await create_user(test_db, 5555, "Solo")
     resp = await service.handle_mediate(5555)
     assert resp and "partner" in resp[0].text.lower()

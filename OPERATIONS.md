@@ -102,7 +102,7 @@ DASHBOARD_BIND=0.0.0.0 docker compose --profile dashboard up -d --build dashboar
 
 ## Database
 
-- **Location**: `couples_bot.db` in the project root (bind-mounted into container)
+- **Location**: `pairtner.db` in the project root (bind-mounted into container)
 - **Backup**: automatic daily backups in `backups/` folder
 - **Manual backup**: Dashboard → Admin → "Create backup"
 - **Browse**: Dashboard → SQLite Explorer
@@ -130,6 +130,6 @@ curl http://localhost:11434/api/tags
 
 # Reset database (nuclear option)
 docker compose down
-rm couples_bot.db
+rm pairtner.db
 docker compose up -d pairtner
 ```

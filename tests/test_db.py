@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.db import (
+from pairtner.db import (
     add_fact,
     create_pending,
     create_user,
@@ -446,7 +446,7 @@ async def test_couple_config_multiple_keys(test_db):
 @pytest.mark.asyncio
 async def test_batch_create_and_get(test_db, paired_users):
     """Create a batch, verify it's retrievable."""
-    from couples_bot.db import (
+    from pairtner.db import (
         add_item_to_batch,
         create_or_get_active_batch,
         get_active_batch_for_sender,
@@ -484,7 +484,7 @@ async def test_batch_create_and_get(test_db, paired_users):
 @pytest.mark.asyncio
 async def test_batch_items(test_db, paired_users):
     """Add items to a batch, verify retrieval."""
-    from couples_bot.db import (
+    from pairtner.db import (
         add_item_to_batch,
         create_or_get_active_batch,
         get_batch_item,
@@ -515,7 +515,7 @@ async def test_batch_items(test_db, paired_users):
 @pytest.mark.asyncio
 async def test_batch_status_transitions(test_db, paired_users):
     """Batch status can be updated."""
-    from couples_bot.db import (
+    from pairtner.db import (
         create_or_get_active_batch,
         get_batch,
         update_batch_status,
@@ -536,7 +536,7 @@ async def test_batch_status_transitions(test_db, paired_users):
 @pytest.mark.asyncio
 async def test_batch_item_status_with_edit(test_db, paired_users):
     """Updating item status with an edited_draft."""
-    from couples_bot.db import (
+    from pairtner.db import (
         add_item_to_batch,
         create_or_get_active_batch,
         get_batch_item,
@@ -563,7 +563,7 @@ async def test_batch_item_status_with_edit(test_db, paired_users):
 @pytest.mark.asyncio
 async def test_reset_batch_timer(test_db, paired_users):
     """reset_batch_timer updates send_after."""
-    from couples_bot.db import (
+    from pairtner.db import (
         create_or_get_active_batch,
         get_batch,
         reset_batch_timer,
@@ -584,7 +584,7 @@ async def test_reset_batch_timer(test_db, paired_users):
 @pytest.mark.asyncio
 async def test_get_deliverable_batches(test_db, paired_users):
     """get_deliverable_batches returns the right batches."""
-    from couples_bot.db import (
+    from pairtner.db import (
         add_item_to_batch,
         create_or_get_active_batch,
         get_deliverable_batches,
@@ -621,7 +621,7 @@ async def test_get_deliverable_batches(test_db, paired_users):
 @pytest.mark.asyncio
 async def test_rate_limit_check_no_record(test_db):
     """check_rate_limit with no existing record returns allowed."""
-    from couples_bot.db import check_rate_limit
+    from pairtner.db import check_rate_limit
 
     allowed, remaining = await check_rate_limit(test_db, 999, "minute", 10, 60)
     assert allowed is True
@@ -631,7 +631,7 @@ async def test_rate_limit_check_no_record(test_db):
 @pytest.mark.asyncio
 async def test_rate_limit_increment_and_check(test_db):
     """Incrementing the counter, then checking."""
-    from couples_bot.db import check_rate_limit, increment_rate_counter
+    from pairtner.db import check_rate_limit, increment_rate_counter
 
     uid = 42
     await increment_rate_counter(test_db, uid, "minute", 60)
@@ -650,7 +650,7 @@ async def test_rate_limit_increment_and_check(test_db):
 @pytest.mark.asyncio
 async def test_rate_limit_window_expired(test_db):
     """After the window expires, the counter resets."""
-    from couples_bot.db import check_rate_limit, increment_rate_counter
+    from pairtner.db import check_rate_limit, increment_rate_counter
 
     uid = 42
     # Use a 1-second window so it expires quickly
@@ -668,7 +668,7 @@ async def test_rate_limit_window_expired(test_db):
 @pytest.mark.asyncio
 async def test_rate_limit_separate_windows(test_db):
     """Minute and day windows are independent."""
-    from couples_bot.db import check_rate_limit, increment_rate_counter
+    from pairtner.db import check_rate_limit, increment_rate_counter
 
     uid = 42
     await increment_rate_counter(test_db, uid, "minute", 60)
@@ -692,7 +692,7 @@ async def test_rate_limit_separate_windows(test_db):
 @pytest.mark.asyncio
 async def test_get_sent_relays(test_db, paired_users):
     """get_sent_relays returns sent pending rows for the user."""
-    from couples_bot.db import get_sent_relays
+    from pairtner.db import get_sent_relays
 
     a_id, b_id = paired_users
 
@@ -709,7 +709,7 @@ async def test_get_sent_relays(test_db, paired_users):
 @pytest.mark.asyncio
 async def test_get_sent_relays_as_receiver(test_db, paired_users):
     """get_sent_relays returns rows where user is receiver too."""
-    from couples_bot.db import get_sent_relays
+    from pairtner.db import get_sent_relays
 
     a_id, b_id = paired_users
 
@@ -725,7 +725,7 @@ async def test_get_sent_relays_as_receiver(test_db, paired_users):
 @pytest.mark.asyncio
 async def test_get_sent_relays_limit(test_db, paired_users):
     """get_sent_relays respects the limit parameter."""
-    from couples_bot.db import get_sent_relays
+    from pairtner.db import get_sent_relays
 
     a_id, b_id = paired_users
 
@@ -771,7 +771,7 @@ async def test_add_fact_without_category(test_db):
 @pytest.mark.asyncio
 async def test_ensure_user_profile_creates(test_db):
     """ensure_user_profile creates a default row."""
-    from couples_bot.db import ensure_user_profile, get_user_profile
+    from pairtner.db import ensure_user_profile, get_user_profile
 
     await create_user(test_db, 10, "X")
     profile = await ensure_user_profile(test_db, 10)
@@ -791,7 +791,7 @@ async def test_ensure_user_profile_creates(test_db):
 @pytest.mark.asyncio
 async def test_update_user_profile(test_db):
     """update_user_profile modifies specific fields."""
-    from couples_bot.db import ensure_user_profile, get_user_profile, update_user_profile
+    from pairtner.db import ensure_user_profile, get_user_profile, update_user_profile
 
     await create_user(test_db, 10, "X")
     await ensure_user_profile(test_db, 10)
@@ -806,7 +806,7 @@ async def test_update_user_profile(test_db):
 @pytest.mark.asyncio
 async def test_update_user_profile_creates_if_missing(test_db):
     """update_user_profile auto-creates the profile row."""
-    from couples_bot.db import get_user_profile, update_user_profile
+    from pairtner.db import get_user_profile, update_user_profile
 
     await create_user(test_db, 10, "X")
     await update_user_profile(test_db, 10, relationship_type="married")
@@ -818,7 +818,7 @@ async def test_update_user_profile_creates_if_missing(test_db):
 @pytest.mark.asyncio
 async def test_get_user_profile_missing(test_db):
     """get_user_profile returns None for nonexistent user."""
-    from couples_bot.db import get_user_profile
+    from pairtner.db import get_user_profile
 
     profile = await get_user_profile(test_db, 999)
     assert profile is None
@@ -834,7 +834,7 @@ async def test_set_and_get_active_mood(test_db):
     """set_user_mood + get_active_mood round trip."""
     from datetime import datetime, timedelta, timezone
 
-    from couples_bot.db import get_active_mood, set_user_mood
+    from pairtner.db import get_active_mood, set_user_mood
 
     await create_user(test_db, 10, "X")
     expires = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
@@ -857,7 +857,7 @@ async def test_get_active_mood_expired(test_db):
     """Expired moods are not returned."""
     from datetime import datetime, timedelta, timezone
 
-    from couples_bot.db import get_active_mood, set_user_mood
+    from pairtner.db import get_active_mood, set_user_mood
 
     await create_user(test_db, 10, "X")
     past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
@@ -871,7 +871,7 @@ async def test_clear_expired_moods(test_db):
     """clear_expired_moods deletes old rows."""
     from datetime import datetime, timedelta, timezone
 
-    from couples_bot.db import clear_expired_moods, set_user_mood
+    from pairtner.db import clear_expired_moods, set_user_mood
 
     await create_user(test_db, 10, "X")
     past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
@@ -891,7 +891,7 @@ async def test_clear_expired_moods(test_db):
 @pytest.mark.asyncio
 async def test_record_interaction(test_db):
     """record_interaction creates a row and returns its id."""
-    from couples_bot.db import record_interaction
+    from pairtner.db import record_interaction
 
     await create_user(test_db, 1001, "Alice")
     await create_user(test_db, 1002, "Bob")
@@ -905,7 +905,7 @@ async def test_record_interaction(test_db):
 @pytest.mark.asyncio
 async def test_get_interaction_ratio(test_db):
     """get_interaction_ratio returns correct positive/negative counts."""
-    from couples_bot.db import get_interaction_ratio, record_interaction
+    from pairtner.db import get_interaction_ratio, record_interaction
 
     await create_user(test_db, 1001, "Alice")
     await create_user(test_db, 1002, "Bob")
@@ -925,7 +925,7 @@ async def test_get_interaction_ratio(test_db):
 @pytest.mark.asyncio
 async def test_get_interaction_ratio_empty(test_db):
     """get_interaction_ratio returns (0, 0) with no data."""
-    from couples_bot.db import get_interaction_ratio
+    from pairtner.db import get_interaction_ratio
 
     pos, neg = await get_interaction_ratio(test_db, "999:998")
     assert pos == 0
@@ -935,7 +935,7 @@ async def test_get_interaction_ratio_empty(test_db):
 @pytest.mark.asyncio
 async def test_get_positive_shared_facts(test_db):
     """get_positive_shared_facts filters by shared + positive category."""
-    from couples_bot.db import get_positive_shared_facts
+    from pairtner.db import get_positive_shared_facts
 
     await create_user(test_db, 1001, "Alice")
     await create_user(test_db, 1002, "Bob")
@@ -973,7 +973,7 @@ async def test_get_positive_shared_facts(test_db):
 @pytest.mark.asyncio
 async def test_record_pattern_with_type(test_db):
     """record_pattern accepts pattern_type parameter."""
-    from couples_bot.db import get_user_patterns_by_type, record_pattern
+    from pairtner.db import get_user_patterns_by_type, record_pattern
 
     await create_user(test_db, 1001, "Alice")
     await record_pattern(test_db, 1001, "blame language", pattern_type="horsemen")

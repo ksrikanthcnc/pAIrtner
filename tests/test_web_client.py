@@ -1,4 +1,4 @@
-"""Static checks and Node tests for the PWA client (couples_bot/web)."""
+"""Static checks and Node tests for the PWA client (pairtner/web)."""
 from __future__ import annotations
 
 import asyncio
@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from couples_bot.config import Config
-from couples_bot.handlers import BotService
-from couples_bot.rest.api import SECURITY_HEADERS, STATIC_FILES, WEB_DIR, Request, RestApi
+from pairtner.config import Config
+from pairtner.handlers import BotService
+from pairtner.rest.api import SECURITY_HEADERS, STATIC_FILES, WEB_DIR, Request, RestApi
 from tests.helpers import MockLLMClient
 
 ROOT = Path(__file__).resolve().parent.parent

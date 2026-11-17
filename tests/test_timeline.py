@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
-from couples_bot import db as db_mod
-from couples_bot.config import Config
-from couples_bot.db import (
+from pairtner import db as db_mod
+from pairtner.config import Config
+from pairtner.db import (
     add_timeline_event,
     create_user,
     get_timeline_events,
@@ -16,7 +16,7 @@ from couples_bot.db import (
     init_db,
     set_partner,
 )
-from couples_bot.handlers import BotService
+from pairtner.handlers import BotService
 
 from tests.helpers import MockLLMClient
 

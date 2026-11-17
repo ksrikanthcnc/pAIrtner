@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from couples_bot import pack as pack_mod
-from couples_bot.llm import FALLBACK_REPLY
+from pairtner import pack as pack_mod
+from pairtner.llm import FALLBACK_REPLY
 
 ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location(
@@ -63,7 +63,7 @@ class _Stub:
 
     async def generate(self, user_content, system_prompt, model=None, api_key_override=None):
         if self.log_429:
-            logging.getLogger("couples_bot.llm").warning("429 on %s — backing off 1s", "m")
+            logging.getLogger("pairtner.llm").warning("429 on %s — backing off 1s", "m")
         return {"reply": FALLBACK_REPLY, "new_facts": [], "relay_draft": None}
 
 

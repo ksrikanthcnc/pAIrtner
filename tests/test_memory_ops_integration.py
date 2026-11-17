@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot import db as db_mod
+from pairtner import db as db_mod
 
 
 @pytest.mark.asyncio

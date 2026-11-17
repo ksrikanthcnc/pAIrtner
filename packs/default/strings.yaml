@@ -2,7 +2,7 @@
 # Plain strings; {placeholders} are filled by the engine (str.format_map),
 # literal braces are doubled. The engine adds markdown markers ("## ", "- "),
 # newlines and block order, so keep markup out of these values.
-# The engine contract (couples_bot/pack.py STRING_KEYS) lists every required
+# The engine contract (pairtner/pack.py STRING_KEYS) lists every required
 # key and the placeholders each one may use.
 
 # --- system prompt headings ---------------------------------------------

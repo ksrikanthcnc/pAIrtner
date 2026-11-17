@@ -1,8 +1,8 @@
 """Auth helpers and HTML rendering."""
 from __future__ import annotations
 
-from couples_bot.dashboard.render import Html, layout, svg_bars, table
-from couples_bot.dashboard.security import BEARER_SESSION, Authenticator
+from pairtner.dashboard.render import Html, layout, svg_bars, table
+from pairtner.dashboard.security import BEARER_SESSION, Authenticator
 
 TOKEN = "super-secret-token-0123456789"
 

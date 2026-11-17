@@ -7,13 +7,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from couples_bot.config import Config
-from couples_bot.dampening import (
+from pairtner.config import Config
+from pairtner.dampening import (
     calculate_dampening,
     get_dampening_instruction,
     resolve_dampening,
 )
-from couples_bot.db import (
+from pairtner.db import (
     create_user,
     ensure_user_profile,
     set_user_mood,

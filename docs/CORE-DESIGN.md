@@ -241,7 +241,7 @@ The engine's detection is keyword-based (command/tag), not LLM-based. No ambigui
 1. Copy `packs/default/` as a starting point.
 2. Edit persona.md, voices, tasks, memory.md, budgets.yaml.
 3. Write eval cases (cases.yaml) for their use case.
-4. Run the eval: `uv run python -m couples_bot.eval --pack packs/my-pack`.
+4. Run the eval: `uv run python -m pairtner.eval --pack packs/my-pack`.
 5. Compare results against the default pack's baseline.
 6. Publish (GitHub repo, zip, whatever).
 
@@ -346,13 +346,13 @@ cases:
 
 ```bash
 # Run against Ollama (local, quick iteration)
-uv run python -m couples_bot.eval --pack packs/default --model ollama/qwen3
+uv run python -m pairtner.eval --pack packs/default --model ollama/qwen3
 
 # Run against Gemini Flash (production validation)
-uv run python -m couples_bot.eval --pack packs/default --model gemini-3.1-flash-lite
+uv run python -m pairtner.eval --pack packs/default --model gemini-3.1-flash-lite
 
 # Compare two packs
-uv run python -m couples_bot.eval --compare packs/default packs/experimental --model ollama/qwen3
+uv run python -m pairtner.eval --compare packs/default packs/experimental --model ollama/qwen3
 ```
 
 Results saved to `packs/<name>/eval/results/<model>-<timestamp>.json`.

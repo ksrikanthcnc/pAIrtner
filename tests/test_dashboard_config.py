@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.dashboard.config import (
+from pairtner.dashboard.config import (
     DashboardConfigError, load_dashboard_config,
 )
 
@@ -29,7 +29,7 @@ def test_defaults_without_yaml(tmp_path):
     assert cfg.show_raw_text is True
     assert cfg.admin_actions_enabled is True
     assert cfg.page_size == 50
-    assert cfg.db_path == "couples_bot.db"
+    assert cfg.db_path == "pairtner.db"
     assert cfg.backup_dir == "backups"
 
 

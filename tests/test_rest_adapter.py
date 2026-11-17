@@ -8,10 +8,10 @@ import urllib.request
 
 import pytest
 
-from couples_bot.adapters.rest_adapter import RestAdapter
-from couples_bot.config import Config
-from couples_bot.handlers import BotService
-from couples_bot.rest.ids import REST_ID_BASE
+from pairtner.adapters.rest_adapter import RestAdapter
+from pairtner.config import Config
+from pairtner.handlers import BotService
+from pairtner.rest.ids import REST_ID_BASE
 from tests.helpers import MockLLMClient
 
 
@@ -163,7 +163,7 @@ def test_adapter_metadata(test_db):
 
 
 async def test_privacy_notice_uses_rest_wording(test_db):
-    from couples_bot.__main__ import _set_privacy_info
+    from pairtner.__main__ import _set_privacy_info
     cfg = _cfg(test_db, llm_provider="openai_compat",
                llm_base_url="http://127.0.0.1:11434/v1", llm_api_key="k")
     svc = BotService(cfg, test_db, MockLLMClient())

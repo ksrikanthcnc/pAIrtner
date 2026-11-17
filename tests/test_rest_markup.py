@@ -1,10 +1,10 @@
-"""Tests for couples_bot.rest.markup (safe rendering of bot text)."""
+"""Tests for pairtner.rest.markup (safe rendering of bot text)."""
 from __future__ import annotations
 
 import pytest
 
-from couples_bot.rest.markup import to_markup, to_plain
-from couples_bot.rest.throttle import SlidingWindowLimiter
+from pairtner.rest.markup import to_markup, to_plain
+from pairtner.rest.throttle import SlidingWindowLimiter
 
 
 def test_whitelisted_tags_kept():

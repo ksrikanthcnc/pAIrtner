@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
-from couples_bot import db as db_mod
-from couples_bot.config import Config
-from couples_bot.db import (
+from pairtner import db as db_mod
+from pairtner.config import Config
+from pairtner.db import (
     add_fact,
     add_timeline_event,
     add_user_goal,
@@ -17,8 +17,8 @@ from couples_bot.db import (
     record_pattern,
     set_partner,
 )
-from couples_bot.handlers import BotService
-from couples_bot.therapy_export import generate_therapy_report
+from pairtner.handlers import BotService
+from pairtner.therapy_export import generate_therapy_report
 
 from tests.helpers import MockLLMClient
 

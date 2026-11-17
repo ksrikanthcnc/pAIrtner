@@ -35,8 +35,8 @@ for _p in (str(ROOT), str(ROOT / "dev" / "localtest"), str(HERE)):
 
 import eval_lib  # noqa: E402
 import rig  # noqa: E402
-from couples_bot import pack as pack_mod  # noqa: E402
-from couples_bot.llm import FALLBACK_REPLY, TracingLLM, _create_inner_client  # noqa: E402
+from pairtner import pack as pack_mod  # noqa: E402
+from pairtner.llm import FALLBACK_REPLY, TracingLLM, _create_inner_client  # noqa: E402
 
 EXIT_STOPPED = 3
 HTTP_TIMEOUT = 180.0
@@ -300,7 +300,7 @@ async def run(
         throttle = Throttle(inner, 0 if args.llm in ("fake", "ollama") else args.rpm, clock, sleep)
         llm = TracingLLM(throttle, db, on_call=observer)
         watch = _LogWatch()
-        llm_logger = logging.getLogger("couples_bot.llm")
+        llm_logger = logging.getLogger("pairtner.llm")
         llm_logger.addHandler(watch)
         _service, adapter, task = await rig.start_rig(config, llm)
         base = f"http://127.0.0.1:{adapter.bound_port}"
@@ -372,7 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     for noisy in ("httpx", "httpcore", "openai", "google_genai", "aiosqlite"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
-    logging.getLogger().setLevel(logging.WARNING)  # couples_bot.__main__ set INFO at import
+    logging.getLogger().setLevel(logging.WARNING)  # pairtner.__main__ set INFO at import
     try:
         return asyncio.run(run(args))
     except pack_mod.PackError as exc:

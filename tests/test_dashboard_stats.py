@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from couples_bot.dashboard import stats, store
+from pairtner.dashboard import stats, store
 from tests.dashboard_seed import seed_db
 
 

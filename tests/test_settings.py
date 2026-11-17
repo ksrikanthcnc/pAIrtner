@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from couples_bot.db import (
+from pairtner.db import (
     ensure_user_profile,
     get_user_profile,
 )
-from couples_bot.handlers import BotService
+from pairtner.handlers import BotService
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ async def test_dampening_down(service: BotService, test_db, paired_users):
 @pytest.mark.asyncio
 async def test_dampening_max_cap(service: BotService, test_db, paired_users):
     """Dampening base cannot exceed 1.0."""
-    from couples_bot.db import update_user_profile
+    from pairtner.db import update_user_profile
 
     a_id, _ = paired_users
     await ensure_user_profile(test_db, a_id)
@@ -103,7 +103,7 @@ async def test_dampening_max_cap(service: BotService, test_db, paired_users):
 @pytest.mark.asyncio
 async def test_dampening_min_cap(service: BotService, test_db, paired_users):
     """Dampening base cannot go below 0.1."""
-    from couples_bot.db import update_user_profile
+    from pairtner.db import update_user_profile
 
     a_id, _ = paired_users
     await ensure_user_profile(test_db, a_id)

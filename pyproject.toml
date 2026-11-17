@@ -1,7 +1,7 @@
 [project]
-name = "couples-bot"
-version = "0.1.0"
-description = "Add your description here"
+name = "pairtner"
+version = "0.3.0"
+description = "A private AI mediator for couples"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

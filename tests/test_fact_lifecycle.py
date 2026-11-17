@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from couples_bot.db import (
+from pairtner.db import (
     add_fact,
     archive_fact,
     get_active_facts,
@@ -136,7 +136,7 @@ async def test_run_fact_aging_transient(test_db):
     import aiosqlite
 
     uid = 9001
-    from couples_bot.db import create_user
+    from pairtner.db import create_user
     await create_user(test_db, uid, "TestUser")
 
     fid = await add_fact(test_db, uid, "old transient", "private", fact_type="transient")
@@ -162,7 +162,7 @@ async def test_run_fact_aging_situational(test_db):
     import aiosqlite
 
     uid = 9002
-    from couples_bot.db import create_user
+    from pairtner.db import create_user
     await create_user(test_db, uid, "TestUser2")
 
     fid = await add_fact(test_db, uid, "old situational", "private", fact_type="situational")
@@ -188,7 +188,7 @@ async def test_run_fact_aging_stable_untouched(test_db):
     import aiosqlite
 
     uid = 9003
-    from couples_bot.db import create_user
+    from pairtner.db import create_user
     await create_user(test_db, uid, "TestUser3")
 
     fid = await add_fact(test_db, uid, "stable fact", "private", fact_type="stable")

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from couples_bot.backup import _list_backup_files, _rotate, _run_backup
+from pairtner.backup import _list_backup_files, _rotate, _run_backup
 
 
 @pytest.mark.asyncio
@@ -24,7 +24,7 @@ async def test_backup_creates_file(tmp_path):
     files = os.listdir(backup_dir)
     assert len(files) == 1
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    assert files[0] == f"couples_bot_{today}.db"
+    assert files[0] == f"pairtner_{today}.db"
 
     # Verify content was copied
     with open(os.path.join(backup_dir, files[0])) as f:
@@ -94,7 +94,7 @@ def test_backup_rotation_daily(tmp_path):
         "2025-01-13", "2025-01-14", "2025-01-15", "2025-01-16", "2025-01-17",
     ]
     for d in dates:
-        with open(os.path.join(backup_dir, f"couples_bot_{d}.db"), "w") as f:
+        with open(os.path.join(backup_dir, f"pairtner_{d}.db"), "w") as f:
             f.write("data")
 
     _rotate(backup_dir, daily_count=3, weekly_count=4)
@@ -116,7 +116,7 @@ def test_backup_rotation_weekly(tmp_path):
     # Sundays: 2025-01-05, 2025-01-12, 2025-01-19, 2025-01-26, 2025-02-02
     sundays = ["2025-01-05", "2025-01-12", "2025-01-19", "2025-01-26", "2025-02-02"]
     for d in sundays:
-        with open(os.path.join(backup_dir, f"couples_bot_{d}.db"), "w") as f:
+        with open(os.path.join(backup_dir, f"pairtner_{d}.db"), "w") as f:
             f.write("data")
 
     _rotate(backup_dir, daily_count=7, weekly_count=2)
@@ -133,9 +133,9 @@ def test_list_backup_files_sorted(tmp_path):
     backup_dir = str(tmp_path)
 
     # Create some backup files out of order
-    for name in ["couples_bot_2025-01-15.db", "couples_bot_2025-01-10.db",
-                  "couples_bot_2025-01-20.db", "other_file.txt",
-                  "couples_bot_bad-date.db"]:
+    for name in ["pairtner_2025-01-15.db", "pairtner_2025-01-10.db",
+                  "pairtner_2025-01-20.db", "other_file.txt",
+                  "pairtner_bad-date.db"]:
         with open(os.path.join(backup_dir, name), "w") as f:
             f.write("data")
 

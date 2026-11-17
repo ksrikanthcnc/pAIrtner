@@ -1,13 +1,13 @@
 """Tests for the transport- and LLM-aware privacy notice."""
 from __future__ import annotations
 
-from couples_bot.adapters.cli_adapter import CLIAdapter
-from couples_bot.adapters.telegram_adapter import TelegramAdapter
-from couples_bot.adapters.websocket_adapter import WebSocketAdapter
-from couples_bot.config import Config
-from couples_bot.handlers.service import PrivacyInfo
-from couples_bot.i18n import _STRINGS, t
-from couples_bot.llm import describe_llm
+from pairtner.adapters.cli_adapter import CLIAdapter
+from pairtner.adapters.telegram_adapter import TelegramAdapter
+from pairtner.adapters.websocket_adapter import WebSocketAdapter
+from pairtner.config import Config
+from pairtner.handlers.service import PrivacyInfo
+from pairtner.i18n import _STRINGS, t
+from pairtner.llm import describe_llm
 
 
 def _cfg(**kw) -> Config:

@@ -7,8 +7,8 @@ import logging
 import pytest
 import yaml
 
-from couples_bot import pack
-from couples_bot.handlers import BotService
+from pairtner import pack
+from pairtner.handlers import BotService
 from tests.helpers import MockLLMClient, copy_default_pack
 
 
@@ -70,7 +70,7 @@ async def test_broken_edit_keeps_last_good_prompt_and_logs(
     assert "GoodBot" in await _system_prompt(service, a_id, "one")
 
     (pack_dir / "persona.md").write_text("")  # half-saved edit
-    with caplog.at_level(logging.ERROR, logger="couples_bot.pack"):
+    with caplog.at_level(logging.ERROR, logger="pairtner.pack"):
         assert "GoodBot" in await _system_prompt(service, a_id, "two")
         assert "GoodBot" in await _system_prompt(service, a_id, "three")
     errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
