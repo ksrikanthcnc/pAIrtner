@@ -2,6 +2,21 @@
 
 Why pAIrtner is built the way it is. Newest first. Each entry: the decision, why, and what we rejected.
 
+## 2026-11-18 — Legacy prompt files live in `packs/default/unloaded/`
+- **Decision:** md files the engine no longer uses are kept inside the pack under `unloaded/`, with a README saying they are never loaded. The manifest names the folder, the loader ignores it, the pack hash excludes it, and the validator rejects any `files:` entry pointing into it.
+- **Why:** the live `digest`, `check-in` and `mediate` text is new pack text, so a sibling legacy `tasks/` folder would hold two different files with the same name. A separate folder keeps one source of truth.
+- **Rejected:** deleting them (loses tuning reference); keeping them next to the live files.
+
+## 2026-11-18 — Every LLM call is traced in both the log and the database
+- **Decision:** each call logs `llm_call task= model= pack=name@version pack_hash= prompt_sha=` and writes `llm_calls`; `pack_snapshots` holds the sha256 of every pack file once per distinct pack hash. A `TracingLLM` wrapper does this, reading the snapshot taken when the prompt was assembled.
+- **Why:** a bad reply must be traceable to the exact prompt text, including after a hot reload. Logs rotate; the DB survives and can be shown in the dashboard. Hashes only: no prompt text and no user id, so the dashboard can show these tables safely.
+- **Rejected:** log only (lost on rotation); storing prompts (privacy).
+
+## 2026-11-18 — Words in the pack, structure in code
+- **Decision:** every word the model reads moves to the pack. Code keeps block order, separators, markdown markers (`## `, `- `), numeric thresholds, output parsing, privacy filters, and the user-facing fallback reply and `/mediate` window label.
+- **Why:** privacy rules (which data appears in whose prompt) must not be editable by pack authors, while wording must be. The refactor is verified byte-identical to v0.1.0 against a golden snapshot.
+- **Rejected:** templating the whole assembly in the pack (pack authors could break privacy).
+
 ## 2026-11-17 — Framework: engine + prompt packs
 - **Decision:** split the project into an engine (code: transports, storage, memory validation, privacy, flows) and prompt packs (md + yaml: everything the model reads, plus eval cases). Packs are selected in `settings.yaml`.
 - **Why:** bot features will change slowly; the prompts and memory policy are where research and community work happen. Anyone should be able to write a pack, including with another model, and prove it with the same eval cases.
@@ -47,3 +62,23 @@ Why pAIrtner is built the way it is. Newest first. Each entry: the decision, why
 ## 2026-11-16 — Not therapy; crisis first
 - **Decision:** crisis language skips all processing and returns helplines (India first). The bot says it is not a therapist.
 - **Why:** safety over every other feature.
+
+## 2026-11-17 — Task-scoped output schemas
+- **Decision:** each LLM task gets only the fields it needs. Per-message: reply, memory_ops, relay_draft, detected_mood, articulation_note. Patterns/horsemen/voice_traits move to a periodic background analysis (every N messages, heavy model).
+- **Why:** flash-lite does 3 things well per call, not 9. Simpler schema → better adherence. Patterns and horsemen are more accurate from a batch of messages than from one. Background analysis uses the heavy model and runs 10x less often → same quality, lower cost.
+- **Rejected:** keeping all 9 fields per message (quality suffers on light models); separate LLM calls per field (wasteful); pure-classifier mood detection (misreads sarcasm and cultural context).
+
+## 2026-11-17 — Packs are the only plugin interface
+- **Decision:** a pack is a folder of markdown + YAML. No Python in packs. The engine adapts to the pack's configuration implicitly (budgets change context assembly, memory policy changes what's core, task prompts change output). The engine's task set is fixed — packs can't add commands or flows.
+- **Why:** anyone should be able to write a pack without knowing Python. The engine is stable infrastructure; packs are the research surface. Keeping packs to markdown + YAML makes them safe to share, easy to review, and impossible to break the engine with.
+- **Rejected:** Python plugin API (security, complexity); YAML-defined commands (abstraction cost); registry/package manager (overkill for folder distribution).
+
+## 2026-11-17 — Three-tier evaluation
+- **Decision:** fake LLM for plumbing tests (deterministic, free), Ollama for prompt iteration (local, free, fast), Gemini Flash for production validation (real API, token cost). Eval cases in YAML, results saved per pack version + model.
+- **Why:** tuning prompts against a cloud API wastes tokens on iterations that mostly fail. Local models give fast feedback. The production model is the final gate, not the development loop.
+- **Rejected:** single-tier eval (either too slow or too cheap to be useful); model-as-judge for all checks (expensive and unnecessary for deterministic assertions like privacy).
+
+## 2026-11-17 — pin_core requires explicit user command
+- **Decision:** `pin_core` (add directly to core, bypassing confirm) is accepted only when the engine detects a command/tag (`/remember`, `#remember`) or clear directive phrasing. Detection is keyword-based in the engine, not LLM-based.
+- **Why:** the LLM's judgment on "is this explicit enough?" is unreliable. A keyword check is deterministic. The model can always `propose_core` (with user confirm) as the safe fallback.
+- **Rejected:** LLM decides if the request is explicit (too ambiguous); all core additions require confirm tap (friction for explicit requests like "remember this about me").

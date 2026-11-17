@@ -10,8 +10,9 @@ PRIVACY RULES (violations are bugs):
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
+
+from couples_bot import pack
 
 logger = logging.getLogger(__name__)
 
@@ -41,159 +42,49 @@ class SmartContext:
 
 
 # ---------------------------------------------------------------------------
-# Persona loading
+# Pack access
 # ---------------------------------------------------------------------------
-
-_persona_text: str | None = None
-
-_FALLBACK_PERSONA = (
-    "You are pAIrtner, a warm, non-judgmental friend who helps couples "
-    "communicate better. You listen without taking sides, soften hard "
-    "messages while preserving the substance, and respect privacy. "
-    "You are not a therapist — direct users to professional help when "
-    "needed. Never fabricate partner facts, never impersonate a partner, "
-    "and never forward raw messages without rewriting them gently."
-)
+#
+# Every word the model reads comes from the active prompt pack
+# (``packs/<name>/``, see ``couples_bot/pack.py``).  This module keeps only
+# structure: block order, separators and markdown markers (``## ``, ``- ``).
 
 
-def load_prompt_file(path: str) -> str | None:
-    """Read a prompt file and return its content, or ``None`` on error."""
-    try:
-        with open(path) as f:
-            content = f.read().strip()
-        return content or None
-    except (FileNotFoundError, OSError) as exc:
-        logger.warning("Could not load prompt file %r: %s", path, exc)
-        return None
+def load_voice(voice_name: str) -> str:
+    """Return the pack voice *voice_name*, falling back to ``casual_en``."""
+    return pack.current().voice(voice_name)
 
 
-_DEFAULT_VOICE_TEXT = (
-    "Tone: friendly, warm, concise. Register: informal but respectful. "
-    "Speak like a caring friend — not a chatbot, not a therapist."
-)
+def load_task_prompt(task_name: str) -> str | None:
+    """Return the pack task prompt *task_name*, or ``None`` if the pack has none."""
+    return pack.current().task(task_name)
 
 
-def load_voice(voice_dir: str, voice_name: str) -> str:
-    """Load a voice file from ``<voice_dir>/<voice_name>.md``.
-
-    Falls back to ``casual_en.md``, then to a built-in default string.
-    """
-    primary = os.path.join(voice_dir, f"{voice_name}.md")
-    content = load_prompt_file(primary)
-    if content:
-        return content
-
-    if voice_name != "casual_en":
-        fallback = os.path.join(voice_dir, "casual_en.md")
-        content = load_prompt_file(fallback)
-        if content:
-            logger.info(
-                "Voice %r not found — falling back to casual_en", voice_name,
-            )
-            return content
-
-    logger.info("No voice files found — using built-in default voice")
-    return _DEFAULT_VOICE_TEXT
+def _trace(p: pack.Pack, task: str) -> None:
+    """Record which pack snapshot built the prompt for *task* (read by call tracing)."""
+    pack.last_trace.set((task, p.snapshot()))
 
 
-def load_task_prompt(prompts_dir: str, task_name: str) -> str | None:
-    """Load a task prompt from ``<prompts_dir>/tasks/<task_name>.md``."""
-    path = os.path.join(prompts_dir, "tasks", f"{task_name}.md")
-    return load_prompt_file(path)
+def _head(p: pack.Pack, *, tone: bool = True) -> str:
+    """Persona and shared blocks that open every system prompt."""
+    parts = [p.persona(), p.block("role"), p.block("not_therapy")]
+    if tone:
+        parts.append(p.block("tone"))
+    return "\n\n".join(parts)
 
 
-def load_persona(path: str) -> str:
-    """Read the persona file, cache it, and return the content.
-
-    Falls back to ``_FALLBACK_PERSONA`` if the file is missing or unreadable.
-    """
-    global _persona_text
-    content = load_prompt_file(path)
-    _persona_text = content
-    return _persona_text or _FALLBACK_PERSONA
-
-
-def _get_persona() -> str:
-    """Return the cached persona text or fallback."""
-    return _persona_text or _FALLBACK_PERSONA
-
-
-# ---------------------------------------------------------------------------
-# System prompt fragments
-# ---------------------------------------------------------------------------
-
-_ROLE = (
-    "You are a compassionate couples mediator bot. You help partners "
-    "communicate more gently and clearly. You listen, remember, and "
-    "rewrite hard messages to keep the substance while softening the tone."
-)
-
-_NOT_THERAPY = (
-    "IMPORTANT: You are NOT a therapist. If someone appears to be in "
-    "crisis or danger, direct them to professional help immediately."
-)
-
-_JSON_FORMAT = """\
-You MUST respond ONLY with valid JSON matching this schema:
-{
-  "reply": "<your conversational response to the user>",
-  "new_facts": [
-    {"text": "<a concise fact to remember>", "visibility": "private", "category": "relationship|household|emotional|work|health|other|null", "fact_type": "transient|situational|stable"}
-  ],
-  "relay_draft": "<a softened version of the message for the partner>" or null,
-  "detected_mood": "stressed|happy|angry|reflective|neutral" or null,
-  "patterns_observed": ["<communication pattern noticed>"],
-  "partner_themes": ["<theme about what user says regarding partner>"],
-  "articulation_note": "<tip on how the user could express themselves better>" or null,
-  "horsemen_detected": [
-    {"type": "criticism|contempt|defensiveness|stonewalling", "evidence": "<what you observed>", "suggestion": "<constructive alternative>"}
-  ],
-  "voice_traits": {
-    "register": "casual|formal|mixed",
-    "sentence_length": "short|medium|long",
-    "emoji_use": "none|light|heavy",
-    "humor": "none|light|frequent",
-    "directness": "indirect|balanced|very_direct"
-  }
-}
-
-Rules:
-- "reply" is always required.
-- "new_facts" may be empty []. Mark each fact "private" unless the user
-  explicitly wants their partner to know, in which case use "shared".
-- Classify each fact into one of the categories: relationship, household,
-  emotional, work, health, other. Use null if uncertain.
-- "fact_type": classify each fact — "transient" (current mood/state),
-  "situational" (this week's schedule), "stable" (likes, personality traits).
-- "relay_draft": provide a kind, non-confrontational rewrite if the
-  message contains something the user might want to share with their
-  partner. Set to null otherwise.
-- "detected_mood": the user's apparent emotional state. null if unclear.
-- "patterns_observed": communication patterns you notice (e.g. "tends to
-  generalize", "uses blame language"). May be empty [].
-- "partner_themes": themes about what the user says regarding their
-  partner (e.g. "feels unheard about household decisions"). May be empty [].
-- "articulation_note": if the user's message could be expressed more
-  constructively, provide a brief coaching tip. null otherwise.
-- "horsemen_detected": detect communication anti-patterns: criticism
-  (attacking character rather than behavior), contempt (disrespect,
-  mockery), defensiveness (deflecting blame), stonewalling (shutting
-  down). May be empty []. NEVER use the term 'horsemen' or any
-  Gottman jargon in your reply. Translate patterns to natural,
-  friendly language.
-- "voice_traits": analyze the user's writing style and return traits:
-  register (casual/formal/mixed), sentence_length (short/medium/long),
-  emoji_use (none/light/heavy), humor (none/light/frequent),
-  directness (indirect/balanced/very_direct). Always provide this.
-- Keep facts concise (one sentence each).
-- Never include the partner's private information in your reply.
-"""
-
-_TONE = (
-    "Tone guidelines: be warm, empathetic, non-judgmental. "
-    "Soften harsh language while preserving the core meaning. "
-    "Never take sides. Use simple, clear language."
-)
+def _style_section(
+    p: pack.Pack, voice_text: str | None, dampening_instruction: str | None,
+) -> str:
+    """The ``Communication Style`` section (leading blank line included), or ``""``."""
+    if not (dampening_instruction or voice_text):
+        return ""
+    style_parts: list[str] = []
+    if dampening_instruction:
+        style_parts.append(dampening_instruction)
+    if voice_text:
+        style_parts.append(voice_text)
+    return f"\n\n## {p.s('style_heading')}\n" + "\n".join(style_parts)
 
 
 # ---------------------------------------------------------------------------
@@ -210,17 +101,15 @@ def build_goals_section(
     """
     if not personal_goals and not shared_goals:
         return ""
-    parts = ["\n## Your Goals"]
+    p = pack.current()
+    parts = [f"\n## {p.s('goals_heading')}"]
     if personal_goals:
         items = "\n".join(f"- {g}" for g in personal_goals)
-        parts.append(f"Personal:\n{items}")
+        parts.append(f"{p.s('goals_personal')}:\n{items}")
     if shared_goals:
         items = "\n".join(f"- {g}" for g in shared_goals)
-        parts.append(f"Shared:\n{items}")
-    parts.append(
-        "If the conversation touches on any of these goals, "
-        "mention the progress or connection."
-    )
+        parts.append(f"{p.s('goals_shared')}:\n{items}")
+    parts.append(p.s("goals_closing"))
     return "\n".join(parts) + "\n"
 
 
@@ -245,7 +134,7 @@ def build_partner_summary_block(perceptions: list[dict]) -> str:
     if not lines:
         return ""
     return (
-        "\n## What your partner seems to feel\n"
+        f"\n## {pack.current().s('partner_summary_heading')}\n"
         + "\n".join(lines)
         + "\n"
     )
@@ -266,12 +155,13 @@ def _format_history(messages: list[tuple[str, str]], limit: int = 6) -> str:
     """Format recent conversation (only the user's own history)."""
     if not messages:
         return ""
+    p = pack.current()
     recent = messages[-limit:]
     lines = []
     for role, content in recent:
-        prefix = "You" if role == "assistant" else "User"
+        prefix = p.s("history_assistant" if role == "assistant" else "history_user")
         lines.append(f"{prefix}: {content}")
-    return "\n## Recent conversation\n" + "\n".join(lines) + "\n"
+    return f"\n## {p.s('label_recent_conversation')}\n" + "\n".join(lines) + "\n"
 
 
 def _format_smart_context(smart_ctx: SmartContext, recent_days: int = 7) -> str:
@@ -280,19 +170,21 @@ def _format_smart_context(smart_ctx: SmartContext, recent_days: int = 7) -> str:
     Replaces the flat ``## Your private notes`` / ``## Shared notes``
     sections when the smart-context window is active.
     """
+    p = pack.current()
     parts: list[str] = []
 
     if smart_ctx.recent_facts:
         items = "\n".join(f"- {f}" for f in smart_ctx.recent_facts)
-        parts.append(f"\n## Recent notes (last {recent_days} days)\n{items}\n")
+        label = p.s("smart_recent", recent_days=recent_days)
+        parts.append(f"\n## {label}\n{items}\n")
 
     if smart_ctx.relevant_facts:
         items = "\n".join(f"- {f}" for f in smart_ctx.relevant_facts)
-        parts.append(f"\n## Relevant notes\n{items}\n")
+        parts.append(f"\n## {p.s('smart_relevant')}\n{items}\n")
 
     if smart_ctx.monthly_summaries:
         items = "\n".join(f"- {s}" for s in smart_ctx.monthly_summaries)
-        parts.append(f"\n## Monthly summaries\n{items}\n")
+        parts.append(f"\n## {p.s('smart_monthly')}\n{items}\n")
 
     return "".join(parts)
 
@@ -303,7 +195,6 @@ async def build_smart_context(
     message: str,
     config,
     llm=None,
-    prompts_dir: str | None = None,
 ) -> SmartContext | None:
     """Build a :class:`SmartContext` using FTS5 when fact count exceeds threshold.
 
@@ -349,10 +240,10 @@ async def build_smart_context(
     ]
 
     # Optionally trigger on-demand summary generation for missing months
-    if llm and prompts_dir:
+    if llm:
         from couples_bot.summarizer import check_and_summarize
 
-        await check_and_summarize(db_path, llm, user_id, prompts_dir)
+        await check_and_summarize(db_path, llm, user_id)
         # Re-fetch after generation
         summaries = await get_fact_summaries(db_path, user_id)
         monthly_summaries = [
@@ -376,17 +267,14 @@ def build_system_prompt(
 
     Optionally appends voice, task, and dampening instructions.
     """
-    persona = _get_persona()
-    parts = [persona, _ROLE, _NOT_THERAPY, _TONE, _JSON_FORMAT]
-    if dampening_instruction or voice_text:
-        style_parts: list[str] = []
-        if dampening_instruction:
-            style_parts.append(dampening_instruction)
-        if voice_text:
-            style_parts.append(voice_text)
-        parts.append("## Communication Style\n" + "\n".join(style_parts))
+    p = pack.current()
+    _trace(p, "system")
+    parts = [_head(p), p.contract() + "\n"]
+    style = _style_section(p, voice_text, dampening_instruction)
+    if style:
+        parts.append(style.lstrip("\n"))
     if task_text:
-        parts.append(f"## Task Instructions\n{task_text}")
+        parts.append(f"## {p.s('task_heading')}\n{task_text}")
     return "\n\n".join(parts)
 
 
@@ -403,9 +291,11 @@ def build_chat_prompt(
 
     Returns (system_prompt, user_content).
     """
+    p = pack.current()
     system = build_system_prompt(
         voice_text=voice_text, dampening_instruction=dampening_instruction,
     )
+    _trace(p, "chat")
     if goals_text:
         system += "\n" + goals_text
 
@@ -413,12 +303,12 @@ def build_chat_prompt(
     if smart_ctx:
         parts.append(_format_smart_context(smart_ctx))
     else:
-        parts.append(_format_facts("Your private notes", ctx.private_facts))
-        parts.append(_format_facts("Shared notes", ctx.shared_facts))
+        parts.append(_format_facts(p.s("label_private_notes"), ctx.private_facts))
+        parts.append(_format_facts(p.s("label_shared_notes"), ctx.shared_facts))
     if partner_summary:
         parts.append(partner_summary)
     parts.append(_format_history(ctx.recent_messages))
-    parts.append(f"\n## Current message\n{message}")
+    parts.append(f"\n## {p.s('label_current_message')}\n{message}")
 
     return system, "".join(parts)
 
@@ -436,26 +326,17 @@ def build_tell_prompt(
 
     Returns (system_prompt, user_content).
     """
-    persona = _get_persona()
-    style_section = ""
-    if dampening_instruction or voice_text:
-        style_parts: list[str] = []
-        if dampening_instruction:
-            style_parts.append(dampening_instruction)
-        if voice_text:
-            style_parts.append(voice_text)
-        style_section = "\n\n## Communication Style\n" + "\n".join(style_parts)
+    p = pack.current()
+    _trace(p, "tell")
+    style_section = _style_section(p, voice_text, dampening_instruction)
     goals_section = ""
     if goals_text:
         goals_section = "\n" + goals_text
     system = (
-        f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
-        "The user wants to send a message to their partner. "
-        "Your job is to rewrite it so it's kind, gentle, and "
-        "non-confrontational while preserving the substance.\n\n"
-        f"{_JSON_FORMAT}\n"
-        "IMPORTANT: relay_draft is REQUIRED for this request — "
-        "always provide a softened version of the message."
+        f"{_head(p)}\n\n"
+        f"{p.s('tell_intro')}\n\n"
+        f"{p.contract()}\n\n"
+        f"{p.s('tell_tail')}"
         f"{style_section}"
         f"{goals_section}"
     )
@@ -464,11 +345,11 @@ def build_tell_prompt(
     if smart_ctx:
         parts.append(_format_smart_context(smart_ctx))
     else:
-        parts.append(_format_facts("Your private notes", ctx.private_facts))
-        parts.append(_format_facts("Shared notes", ctx.shared_facts))
+        parts.append(_format_facts(p.s("label_private_notes"), ctx.private_facts))
+        parts.append(_format_facts(p.s("label_shared_notes"), ctx.shared_facts))
     if partner_summary:
         parts.append(partner_summary)
-    parts.append(f"\n## Message to relay to partner\n{message}")
+    parts.append(f"\n## {p.s('label_relay_message')}\n{message}")
 
     return system, "".join(parts)
 
@@ -489,49 +370,43 @@ def build_mediate_prompt(
     ``perceptions_a`` are A's impressions of B; ``perceptions_b`` are B's of A.
     Returns (system_prompt, user_content).
     """
-    persona = _get_persona()
+    p = pack.current()
+    _trace(p, "mediate")
     system = (
-        f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
-        "The user is asking for a neutral, balanced perspective on their "
-        "relationship situation. Use ONLY the shared context below — "
-        "do NOT reference anything private.\n\n"
-        f"{_JSON_FORMAT}\n"
-        "IMPORTANT: relay_draft should be null for mediation responses."
+        f"{_head(p)}\n\n"
+        f"{p.s('mediate_intro')}\n\n"
+        f"{p.contract()}\n\n"
+        f"{p.s('mediate_tail')}"
     )
     parts: list[str] = []
     if window_label:
-        parts.append(f"## Period covered\n{window_label}\n\n")
+        parts.append(f"## {p.s('label_period')}\n{window_label}\n\n")
     if shared_facts:
-        parts.append(_format_facts(
-            "Shared context (both partners agreed to share)", shared_facts
-        ))
+        parts.append(_format_facts(p.s("label_shared_context"), shared_facts))
     has_a = bool(perceptions_a)
     has_b = bool(perceptions_b)
     if has_a or has_b:
-        na = name_a or "Partner A"
-        nb = name_b or "Partner B"
+        na = name_a or p.s("partner_a_fallback")
+        nb = name_b or p.s("partner_b_fallback")
         parts.append(
-            "\n## Impressions each partner has noted about the other\n"
-            "These are unverified impressions. They may be inaccurate and "
-            "must not be stated as fact. Give both partners equal weight.\n"
+            f"\n## {p.s('label_impressions')}\n"
+            f"{p.s('impressions_intro')}\n"
         )
         for who, about, items in (
             (na, nb, perceptions_a), (nb, na, perceptions_b),
         ):
             if items:
-                parts.append(f"Impressions {who} has noted about {about}:\n")
+                parts.append(p.s("impressions_of", who=who, about=about) + "\n")
                 parts.extend(f"- {item}\n" for item in items)
         if has_a != has_b:
-            parts.append(
-                "Only one partner has provided impressions, so the picture "
-                "is one-sided. Say so in your reply.\n"
-            )
+            parts.append(f"{p.s('impressions_one_sided')}\n")
     parts.append(
-        "\n## Request\n"
-        "Please provide a neutral, balanced perspective on our situation "
-        "based on the shared context above."
+        f"\n## {p.s('label_request')}\n"
+        f"{p.s('request_text')}"
     )
     return system, "".join(parts)
+
+
 def build_keep_prompt(
     ctx: UserContext,
     message: str,
@@ -543,21 +418,14 @@ def build_keep_prompt(
 
     Returns (system_prompt, user_content).
     """
-    persona = _get_persona()
-    style_section = ""
-    if dampening_instruction or voice_text:
-        style_parts: list[str] = []
-        if dampening_instruction:
-            style_parts.append(dampening_instruction)
-        if voice_text:
-            style_parts.append(voice_text)
-        style_section = "\n\n## Communication Style\n" + "\n".join(style_parts)
+    p = pack.current()
+    _trace(p, "keep")
+    style_section = _style_section(p, voice_text, dampening_instruction)
     system = (
-        f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
-        "The user wants to save some information. Extract key facts "
-        "from their message. Do NOT draft a relay.\n\n"
-        f"{_JSON_FORMAT}\n"
-        "IMPORTANT: relay_draft MUST be null for #keep messages."
+        f"{_head(p)}\n\n"
+        f"{p.s('keep_intro')}\n\n"
+        f"{p.contract()}\n\n"
+        f"{p.s('keep_tail')}"
         f"{style_section}"
     )
 
@@ -565,8 +433,8 @@ def build_keep_prompt(
     if smart_ctx:
         parts.append(_format_smart_context(smart_ctx))
     else:
-        parts.append(_format_facts("Your private notes", ctx.private_facts))
-    parts.append(f"\n## Message to save\n{message}")
+        parts.append(_format_facts(p.s("label_private_notes"), ctx.private_facts))
+    parts.append(f"\n## {p.s('label_keep_message')}\n{message}")
 
     return system, "".join(parts)
 
@@ -578,24 +446,18 @@ def build_digest_prompt(
 
     Returns (system_prompt, user_content).
     """
-    persona = _get_persona()
-    system = (
-        f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
-        "Generate a brief, neutral daily summary of today's shared activity. "
-        "Keep it warm and balanced. Do not take sides. Do not use JSON — "
-        "reply with plain text only."
-    )
+    p = pack.current()
+    _trace(p, "digest")
+    system = f"{_head(p)}\n\n{p.s('digest_system')}"
 
     parts: list[str] = []
     if shared_facts:
         items = "\n".join(f"- {f}" for f in shared_facts)
-        parts.append(f"## New shared facts today\n{items}\n")
+        parts.append(f"## {p.s('digest_facts_heading')}\n{items}\n")
     if sent_relays:
         items = "\n".join(f"- {r}" for r in sent_relays)
-        parts.append(f"## Messages exchanged today\n{items}\n")
-    parts.append(
-        "\nPlease summarise today's activity in a warm, balanced way."
-    )
+        parts.append(f"## {p.s('digest_relays_heading')}\n{items}\n")
+    parts.append(f"\n{p.s('digest_request')}")
 
     return system, "\n".join(parts)
 
@@ -610,27 +472,19 @@ def build_checkin_summary_prompt(
 
     Returns (system_prompt, user_content).
     """
-    persona = _get_persona()
-    system = (
-        f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n{_TONE}\n\n"
-        "Generate a warm, blame-free summary of both partners' reflections. "
-        "Never reveal which partner said what specifically. Focus on common "
-        "themes and positive momentum. Do not use JSON — reply with plain "
-        "text only."
-    )
+    p = pack.current()
+    _trace(p, "checkin_summary")
+    system = f"{_head(p)}\n\n{p.s('checkin_system')}"
 
     parts: list[str] = []
-    parts.append(f"## Partner A reflections\n{partner_a_answers}\n")
-    parts.append(f"## Partner B reflections\n{partner_b_answers}\n")
+    parts.append(f"## {p.s('checkin_partner_a_heading')}\n{partner_a_answers}\n")
+    parts.append(f"## {p.s('checkin_partner_b_heading')}\n{partner_b_answers}\n")
     if shared_facts:
         items = "\n".join(f"- {f}" for f in shared_facts)
-        parts.append(f"## Shared context\n{items}\n")
+        parts.append(f"## {p.s('checkin_shared_heading')}\n{items}\n")
     if goals:
         parts.append(goals)
-    parts.append(
-        "\nPlease provide a warm, blame-free summary focusing on common "
-        "themes and growth opportunities."
-    )
+    parts.append(f"\n{p.s('checkin_request')}")
 
     return system, "\n".join(parts)
 
@@ -648,24 +502,14 @@ def build_blunt_prompt(
 
     Returns (system_prompt, user_content).
     """
-    persona = _get_persona()
-    style_section = ""
-    if dampening_instruction or voice_text:
-        style_parts: list[str] = []
-        if dampening_instruction:
-            style_parts.append(dampening_instruction)
-        if voice_text:
-            style_parts.append(voice_text)
-        style_section = "\n\n## Communication Style\n" + "\n".join(style_parts)
+    p = pack.current()
+    _trace(p, "blunt")
+    style_section = _style_section(p, voice_text, dampening_instruction)
     system = (
-        f"{persona}\n\n{_ROLE}\n\n{_NOT_THERAPY}\n\n"
-        "The user has requested BLUNT MODE. Give your direct, honest "
-        "assessment. No sugar coating, no hedging. Be blunt but "
-        "constructive — honest doesn't mean cruel. This is for the "
-        "sender's own reflection and growth.\n\n"
-        f"{_JSON_FORMAT}\n"
-        "IMPORTANT: relay_draft should be null for blunt responses "
-        "(unless #send is also present, but that is handled separately)."
+        f"{_head(p, tone=False)}\n\n"
+        f"{p.s('blunt_intro')}\n\n"
+        f"{p.contract()}\n\n"
+        f"{p.s('blunt_tail')}"
         f"{style_section}"
     )
 
@@ -673,9 +517,89 @@ def build_blunt_prompt(
     if smart_ctx:
         parts.append(_format_smart_context(smart_ctx))
     else:
-        parts.append(_format_facts("Your private notes", ctx.private_facts))
-        parts.append(_format_facts("Shared notes", ctx.shared_facts))
+        parts.append(_format_facts(p.s("label_private_notes"), ctx.private_facts))
+        parts.append(_format_facts(p.s("label_shared_notes"), ctx.shared_facts))
     parts.append(_format_history(ctx.recent_messages))
-    parts.append(f"\n## Current message (blunt feedback requested)\n{message}")
+    parts.append(f"\n## {p.s('label_current_message_blunt')}\n{message}")
+
+    return system, "".join(parts)
+
+
+
+def build_analysis_prompt(
+    messages: list[dict], user_id: int,
+) -> tuple[str, str]:
+    """Build prompt for background analysis (patterns, horsemen, voice traits).
+
+    Messages should be in chronological order (oldest first).
+
+    Returns (system_prompt, user_content).
+    """
+    p = pack.current()
+    _trace(p, "analysis")
+
+    # Load the analysis task prompt
+    task_text = p.task("analysis") or ""
+
+    system = (
+        f"{p.persona()}\n\n"
+        f"{p.contract()}\n\n"
+        f"{task_text}"
+    )
+
+    # Format messages as a readable batch
+    parts: list[str] = [
+        "## Messages to analyze\n\n"
+        f"User ID: {user_id}\n"
+        f"Message count: {len(messages)}\n\n"
+    ]
+    for m in reversed(messages):  # oldest first (messages come newest-first from DB)
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        if role == "user":
+            parts.append(f"USER: {content}\n")
+        else:
+            parts.append(f"BOT: {content}\n")
+
+    return system, "".join(parts)
+
+
+
+def build_consolidation_prompt(
+    memories: list[dict], period: str,
+) -> tuple[str, str]:
+    """Build prompt for consolidating old memories into an episode summary.
+
+    Returns (system_prompt, user_content).
+    """
+    p = pack.current()
+    _trace(p, "consolidation")
+
+    system = (
+        f"{p.persona()}\n\n"
+        "You are consolidating old memories into a concise episode summary. "
+        "This summary replaces the individual memories in the user's prompt window. "
+        "Write a 2-3 sentence narrative that captures the key events and emotional arc.\n\n"
+        "Rules:\n"
+        "- Be factual, not interpretive\n"
+        "- Preserve the emotional tone (was it stressful? joyful? mixed?)\n"
+        "- Include specific details that would help recall the period\n"
+        "- Do NOT add information not present in the memories\n"
+        "- Write in third person (about the user)\n\n"
+        f"{p.contract()}"
+    )
+
+    parts: list[str] = [
+        f"## Memories to consolidate (period: {period})\n\n"
+    ]
+    for m in memories:
+        status = m.get("status", "active")
+        parts.append(f"- [{m['id']}] ({status}) {m['text']}\n")
+
+    parts.append(
+        "\n## Your task\n"
+        "Write a concise episode summary (2-3 sentences) that captures these memories. "
+        "Return it as your reply."
+    )
 
     return system, "".join(parts)

@@ -9,6 +9,7 @@
 #   LLM_API_KEY         — for openai_compat provider
 #   ADAPTER             — telegram (default), websocket, cli, both
 #   WS_PORT             — WebSocket port, default 8080
+#   PROMPT_PACK         — prompt pack directory, default packs/default
 #
 # Volumes:
 #   /app/data            — persistent storage for DB + backups
@@ -34,7 +35,7 @@ WORKDIR /app
 
 # Copy application code and config
 COPY couples_bot/ couples_bot/
-COPY prompts/ prompts/
+COPY packs/ packs/
 COPY settings.yaml ./
 
 # Persistent data volume (DB + backups)

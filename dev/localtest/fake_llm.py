@@ -46,10 +46,14 @@ def make_reply(user_content: str) -> dict:
         themes.append(SELFSTMT_VALUE)
     return {
         "reply": up,
+        "memory_ops": [{"op": "add", "kind": "working", "text": up}]
+        if kind == "Message to save" else
+        [{"op": "add", "kind": "working", "text": f"USER SAID: {up}"}]
+        if kind == "Current message" and len(msg) > 10 else [],
         "new_facts": [{"text": up, "visibility": "shared", "category": "other", "fact_type": "stable"}]
         if kind == "Message to save" else [],
         "relay_draft": up if kind == "Message to relay to partner" else None,
-        "detected_mood": None,
+        "detected_mood": "stressed" if any(w in low for w in ("stressed", "angry", "upset", "frustrated")) else None,
         "patterns_observed": [],
         "partner_themes": themes,
         "articulation_note": None,

@@ -1,0 +1,46 @@
+name: default
+version: 0.1.0
+# Engine/pack interface version; the engine refuses a pack with a different value.
+engine_contract: 1
+languages: [en, te]
+
+# Files the engine loads (and hot-reloads). Paths are relative to this folder.
+files:
+  persona: persona.md
+  contract: contract.md
+  blocks: blocks/
+  strings: strings.yaml
+  voices: voices/
+  tasks: tasks/
+
+# Context budgets (tokens per section). Data only for now; the engine does not read them yet.
+budgets:
+  core: 250
+  shared: 150
+  partner_view: 150
+  working: 400
+  episodes: 300
+
+# Informational: never loaded and excluded from the pack hash.
+eval: eval/cases.yaml
+unloaded: unloaded/
+
+# Memory ops limits. Data only for now; the engine does not read them yet.
+memory:
+  max_ops_per_message: 5
+  max_core_items: 30       # prompt user to merge when exceeded
+  max_working_items: 50
+
+# Background analysis interval. Data only for now.
+analysis:
+  every_n_messages: 10     # run pattern/horsemen/voice analysis every N messages
+  model_tier: heavy        # use heavy model for background analysis
+
+# Consolidation — periodic cleanup of old memories into episodes. Data only for now.
+consolidation:
+  enabled: true
+  schedule: weekly          # weekly | daily | manual
+  min_age_days: 90          # only consolidate memories older than this
+  min_group_size: 3         # need at least N related resolved memories to make an episode
+  model_tier: heavy         # use heavy model for summarization
+  keep_originals: true      # never delete, just remove from prompt window

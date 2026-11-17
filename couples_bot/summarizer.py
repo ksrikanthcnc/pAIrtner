@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from couples_bot import db as db_mod
+from couples_bot import pack
 from couples_bot.prompts import load_task_prompt
 
 
@@ -18,7 +19,6 @@ async def generate_monthly_summary(
     user_id: int,
     year: int,
     month: int,
-    prompts_dir: str = "prompts",
 ) -> str | None:
     """Generate and store a summary for a specific month's facts.
 
@@ -47,22 +47,24 @@ async def generate_monthly_summary(
         return None
 
     # Build prompt using the shared summarize task template
-    task_text = load_task_prompt(prompts_dir, "summarize")
-    system = task_text or (
-        "Summarize the following facts into a concise monthly summary. "
-        "Group by category, identify themes, keep it brief."
-    )
+    p = pack.current()
+    pack.set_trace(p, "summarize")
+    system = load_task_prompt("summarize") or ""
 
     fact_lines = []
     for f in facts:
-        cat = f.get("category") or "other"
-        vis = f["visibility"]
-        fact_lines.append(f"- [{cat}] ({vis}) {f['text']}")
+        line = p.s(
+            "summarize_fact_line",
+            category=f.get("category") or "other",
+            visibility=f["visibility"],
+            text=f["text"],
+        )
+        fact_lines.append(f"- {line}")
 
     content = (
-        f"## Facts for {year_month}\n"
+        f"## {p.s('summarize_heading', year_month=year_month)}\n"
         + "\n".join(fact_lines)
-        + "\n\nPlease provide a concise summary."
+        + f"\n\n{p.s('summarize_request')}"
     )
 
     result = await llm.generate(content, system)
@@ -79,7 +81,6 @@ async def check_and_summarize(
     db_path: str,
     llm,
     user_id: int,
-    prompts_dir: str = "prompts",
 ) -> None:
     """Generate missing monthly summaries for all past months.
 
@@ -110,5 +111,5 @@ async def check_and_summarize(
         if ym and ym != current_ym and ym not in existing_set:
             year, month = int(ym[:4]), int(ym[5:7])
             await generate_monthly_summary(
-                db_path, llm, user_id, year, month, prompts_dir,
+                db_path, llm, user_id, year, month,
             )

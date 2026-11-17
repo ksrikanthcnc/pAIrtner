@@ -10,6 +10,7 @@ from couples_bot.config import Config
 from couples_bot.db import increment_usage
 from couples_bot.llm import (
     GeminiClient,
+    TracingLLM,
     OpenAICompatClient,
     create_llm_client,
     parse_llm_response,
@@ -169,7 +170,8 @@ async def test_all_models_exhausted(test_db):
 def test_factory_returns_gemini(config, test_db):
     # Default config has llm_provider="gemini"
     client = create_llm_client(config, test_db)
-    assert isinstance(client, GeminiClient)
+    assert isinstance(client, TracingLLM)
+    assert isinstance(client._inner, GeminiClient)
 
 
 def test_factory_returns_openai_compat(test_db):
@@ -181,7 +183,8 @@ def test_factory_returns_openai_compat(test_db):
         db_path=test_db,
     )
     client = create_llm_client(cfg, test_db)
-    assert isinstance(client, OpenAICompatClient)
+    assert isinstance(client, TracingLLM)
+    assert isinstance(client._inner, OpenAICompatClient)
 
 
 # ---------------------------------------------------------------------------

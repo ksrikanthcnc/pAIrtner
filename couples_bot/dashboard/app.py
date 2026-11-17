@@ -209,6 +209,9 @@ class DashboardApp:
             return self._couples(ctx)
         if m := _COUPLE_RE.match(path):
             return self._couple(ctx, m.group(1))
+        if path.startswith("/conversations/"):
+            couple_id = path[len("/conversations/"):]
+            return self._conversation(ctx, couple_id)
         if path == "/queue":
             return self._queue(ctx)
         if path == "/db":
@@ -221,6 +224,8 @@ class DashboardApp:
             return self._table(ctx, m.group(1), query)
         if path == "/admin":
             return self._admin(ctx)
+        if path == "/admin/config":
+            return self._admin_config(ctx)
         if not self.config.admin_actions_enabled and path.startswith("/admin/"):
             return self._error(403, "Admin actions are disabled")
         if path == "/admin/clear-user":
@@ -322,9 +327,66 @@ class DashboardApp:
         a, b = stats.parse_couple_id(couple_id)
         with self._ro() as c:
             events = stats.couple_timeline(c, couple_id, self.config.show_raw_text)
-        body = (f"<p>Members: {link(f'/users/{a}', a)}, {link(f'/users/{b}', b)}</p>"
+        body = (f"<p>Members: {link(f'/users/{a}', a)}, {link(f'/users/{b}', b)}"
+                f" · {link(f'/conversations/{couple_id}', '💬 View Conversation')}</p>"
                 "<h2>Timeline</h2>" + self._timeline_table(events))
         return self._page(ctx, f"Couple {couple_id}", body, "/couples")
+
+    def _conversation(self, ctx: "_Ctx", couple_id: str) -> Response:
+        """Render the full conversation between a couple as a chat view."""
+        a, b = stats.parse_couple_id(couple_id)
+        with self._ro() as c:
+            messages = stats.couple_conversation(c, a, b, self.config.show_raw_text)
+            user_a = stats.user_name(c, a)
+            user_b = stats.user_name(c, b)
+
+        body = (
+            f"<p>{link(f'/couples/{couple_id}', '← Back to couple')}</p>"
+            f"<p><b>{esc(user_a)}</b> ↔ <b>{esc(user_b)}</b></p>"
+            '<div class="conversation">'
+        )
+
+        for m in messages:
+            uid = m["user_id"]
+            role = m["role"]
+            name = m.get("user_name") or f"User {uid}"
+            content = esc(m.get("content") or "")
+            ts = m.get("created_at") or ""
+
+            if role == "user":
+                sender = esc(name)
+                css = "msg-user-a" if uid == a else "msg-user-b"
+            else:
+                sender = f"🤖 pAIrtner → {esc(name)}"
+                css = "msg-bot"
+
+            body += (
+                f'<div class="chat-msg {css}">'
+                f'<div class="chat-sender">{sender}</div>'
+                f'<div class="chat-text">{content}</div>'
+                f'<div class="chat-ts">{esc(ts)}</div>'
+                f'</div>'
+            )
+
+        body += '</div>'
+
+        # Add inline styles for the conversation view
+        style = """
+        <style>
+        .conversation { max-width: 720px; }
+        .chat-msg { padding: 8px 12px; margin: 4px 0; border-radius: 12px; }
+        .msg-user-a { background: var(--me, #2b5cff); color: #fff; margin-right: 20%; }
+        .msg-user-b { background: var(--relay, #efe3fa); margin-left: 20%; }
+        .msg-bot { background: var(--bot, #e6e9f2); margin-left: 10%; margin-right: 10%; opacity: 0.85; }
+        .chat-sender { font-size: 12px; font-weight: bold; margin-bottom: 2px; }
+        .msg-user-a .chat-sender { color: rgba(255,255,255,0.8); }
+        .chat-text { white-space: pre-wrap; word-wrap: break-word; }
+        .chat-ts { font-size: 11px; opacity: 0.6; margin-top: 2px; }
+        </style>
+        """
+
+        return self._page(ctx, f"Conversation: {user_a} ↔ {user_b}",
+                          style + body, "/couples")
 
     def _queue(self, ctx: "_Ctx") -> Response:
         with self._ro() as c:
@@ -391,9 +453,84 @@ class DashboardApp:
             "<button>Preview</button></form>"
             "<h2>Clear the whole database</h2>"
             '<p><a href="/admin/clear-all">Preview and confirm…</a></p>'
+            "<h2>Runtime Config</h2>"
+            '<p><a href="/admin/config">Edit runtime settings (model, provider, intervals)…</a></p>'
             "<h2>Backups</h2>" + backups
         )
         return self._page(ctx, "Admin", body, "/admin")
+
+    def _admin_config(self, ctx: "_Ctx") -> Response:
+        """Admin config page — runtime settings that override static config."""
+        settings: dict[str, str] = {}
+        try:
+            conn = sqlite3.connect(self.config.db_path)
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT key, value FROM user_meta WHERE user_id = 0").fetchall()
+            settings = {r["key"]: r["value"] for r in rows}
+            conn.close()
+        except Exception:
+            pass
+
+        # Known settings with defaults
+        known = {
+            "llm_provider": ("LLM Provider", "gemini", "gemini,openai_compat"),
+            "model_default": ("Default Model", "gemini-3.1-flash-lite", ""),
+            "model_heavy": ("Heavy Model", "gemini-3-flash-preview", ""),
+            "analysis_interval": ("Analysis Interval (messages)", "10", ""),
+            "cooldown_minutes": ("Relay Cooldown (minutes)", "5", ""),
+        }
+
+        rows_html = ""
+        for key, (label, default, options) in known.items():
+            current = settings.get(key, "")
+            placeholder = f"default: {default}"
+            if options:
+                opts = "".join(
+                    f'<option value="{esc(o)}" {"selected" if current == o else ""}>{esc(o)}</option>'
+                    for o in options.split(",")
+                )
+                field = f'<select name="{esc(key)}">' \
+                        f'<option value="">({placeholder})</option>{opts}</select>'
+            else:
+                field = (f'<input type="text" name="{esc(key)}" '
+                         f'value="{esc(current)}" placeholder="{esc(placeholder)}">')
+            rows_html += f"<tr><td>{esc(label)}</td><td>{field}</td></tr>"
+
+        body = (
+            '<form method="post" action="/admin/config">'
+            f'{self._csrf_field(ctx)}'
+            '<table><tr><th>Setting</th><th>Value</th></tr>'
+            f'{rows_html}'
+            '</table>'
+            '<button style="margin-top: 12px">Save Settings</button>'
+            '</form>'
+            '<p style="margin-top: 12px; color: var(--muted)">Empty values use the '
+            'static config from settings.yaml / environment variables.</p>'
+        )
+        return self._page(ctx, "Runtime Config", body, "/admin")
+
+    def _save_config(self, form: dict[str, str], ctx: "_Ctx") -> Response:
+        """Save runtime settings from the admin config form."""
+        import sqlite3
+        known_keys = {"llm_provider", "model_default", "model_heavy",
+                      "analysis_interval", "cooldown_minutes"}
+        conn = sqlite3.connect(self.config.db_path)
+        for key in known_keys:
+            value = form.get(key, "").strip()
+            if value:
+                conn.execute(
+                    "INSERT OR REPLACE INTO user_meta (user_id, key, value, updated_at) "
+                    "VALUES (0, ?, ?, CURRENT_TIMESTAMP)",
+                    (key, value),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM user_meta WHERE user_id = 0 AND key = ?",
+                    (key,),
+                )
+        conn.commit()
+        conn.close()
+        return _redirect("/admin/config")
 
     @staticmethod
     def _csrf_field(ctx: "_Ctx") -> str:
@@ -429,7 +566,7 @@ class DashboardApp:
             return _redirect("/login", [(
                 "Set-Cookie", f"{COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")],
                 status=303)
-        if path not in ("/admin/backup", "/admin/clear-all") and not _CLEAR_USER_RE.match(path):
+        if path not in ("/admin/backup", "/admin/clear-all", "/admin/config") and not _CLEAR_USER_RE.match(path):
             raise NotFound(path)
         if not self.config.admin_actions_enabled:
             return self._error(403, "Admin actions are disabled")
@@ -437,6 +574,8 @@ class DashboardApp:
             return self._error(403, "Bad CSRF token")
         cfg = self.config
         try:
+            if path == "/admin/config":
+                return self._save_config(form, ctx)
             if path == "/admin/backup":
                 result = admin_actions.backup_now(cfg.db_path, cfg.backup_dir)
             elif path == "/admin/clear-all":

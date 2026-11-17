@@ -1,6 +1,6 @@
 /* Shell cache only. API traffic is never intercepted or cached. */
 "use strict";
-var CACHE = "pairtner-shell-v2";  // BUMP on every change to web/ files, or installed PWAs keep the old code
+var CACHE = "pairtner-shell-v4";  // BUMP on every change to web/ files, or installed PWAs keep the old code
 var SHELL = [
   "/", "/index.html", "/app.js", "/render.js", "/style.css",
   "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg"

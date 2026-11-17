@@ -207,7 +207,80 @@
     $("log").textContent = "";
     show("chat");
     applyLang();
+    loadHistory();
     pollLoop();
+  }
+
+  function loadHistory() {
+    // Load cached messages first (instant render)
+    var cached = JSON.parse(store.get("history") || "[]");
+    var lastId = 0;
+    if (cached.length) {
+      renderMessages(cached);
+      lastId = cached[cached.length - 1].id || 0;
+    }
+
+    // Fetch only new messages since last cached ID
+    var url = "/api/v1/history?limit=500";
+    if (lastId > 0) { url += "&offset_id=" + lastId; }
+    api("GET", url).then(function (data) {
+      var newMsgs = data.messages || [];
+      if (newMsgs.length) {
+        // If we had no cache, this is the full history
+        if (!lastId) {
+          cached = newMsgs;
+          renderMessages(newMsgs);
+        } else {
+          // Append delta to cache and render just the new ones
+          cached = cached.concat(newMsgs);
+          newMsgs.forEach(function (m) { renderOneMessage(m); });
+        }
+        // Cap cache at 1000 messages
+        if (cached.length > 1000) { cached = cached.slice(-1000); }
+        store.set("history", JSON.stringify(cached));
+      }
+      setStatus("online");
+    }).catch(function (err) {
+      if (err instanceof ApiError && err.status === 401) { signOut(); return; }
+      setStatus("offline");
+      // Still show cached messages if offline
+      if (cached.length && !$("log").children.length) { renderMessages(cached); }
+    });
+  }
+
+  function renderMessages(messages) {
+    var log = $("log");
+    log.textContent = "";
+    messages.forEach(function (m) { renderOneMessage(m); });
+    scrollDown();
+  }
+
+  function renderOneMessage(m) {
+    var cls = m.role === "user" ? "me" : "bot";
+    var div = document.createElement("div");
+    div.className = "msg " + cls;
+    if (m.created_at) {
+      var ts = document.createElement("span");
+      ts.className = "ts";
+      ts.textContent = formatTime(m.created_at);
+      div.appendChild(ts);
+    }
+    var content = document.createElement("span");
+    PairtnerRender.renderMarkup(m.content, content, document);
+    div.appendChild(content);
+    $("log").appendChild(div);
+  }
+
+  function formatTime(iso) {
+    try {
+      var d = new Date(iso);
+      var now = new Date();
+      if (d.toDateString() === now.toDateString()) {
+        return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      }
+      return d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " +
+        d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch (e) { return ""; }
   }
 
   function signOut() {
@@ -216,6 +289,8 @@
     cursor = 0;
     store.del("token");
     store.del("cursor");
+    store.del("history");
+    store.del("outbox");
     $("menu").hidden = true;
     showAuth();
   }
@@ -289,7 +364,17 @@
       if (!text) { return; }
       input.value = "";
       addBubble("me", text);
-      api("POST", "/api/v1/message", { text: text }).then(showReplies).catch(sendFailed);
+      api("POST", "/api/v1/message", { text: text }).then(showReplies).catch(function (err) {
+        if (!navigator.onLine) {
+          // Queue for later
+          var queue = JSON.parse(store.get("outbox") || "[]");
+          queue.push({ text: text, ts: new Date().toISOString() });
+          store.set("outbox", JSON.stringify(queue));
+          addBubble("bot err", "📴 Saved offline. Will send when reconnected.");
+        } else {
+          sendFailed(err);
+        }
+      });
     });
     $("menu-btn").addEventListener("click", function () { $("menu").hidden = !$("menu").hidden; });
     $("signout").addEventListener("click", signOut);
@@ -309,6 +394,17 @@
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(function () { /* offline shell is optional */ });
     }
+
+    // Offline/online detection
+    window.addEventListener("online", function () {
+      setStatus("online");
+      drainOutbox();
+      pollLoop();
+    });
+    window.addEventListener("offline", function () {
+      setStatus("offline");
+    });
+
     api("GET", "/api/v1/meta").then(function (m) { meta = m; }, function () { meta = null; })
       .then(function () {
         if (token) {
@@ -322,6 +418,28 @@
         if (!autoRegister()) { showAuth(); }
         return null;
       });
+  }
+
+  function drainOutbox() {
+    var queue = JSON.parse(store.get("outbox") || "[]");
+    if (!queue.length) { return; }
+    store.del("outbox");
+    var next = function (i) {
+      if (i >= queue.length) { return; }
+      api("POST", "/api/v1/message", { text: queue[i].text })
+        .then(function (data) {
+          showReplies(data);
+          next(i + 1);
+        })
+        .catch(function () {
+          // Re-queue remaining
+          var remaining = queue.slice(i);
+          store.set("outbox", JSON.stringify(remaining));
+          addBubble("bot err", "📴 " + remaining.length + " message(s) still queued.");
+        });
+    };
+    addBubble("bot", "📶 Sending " + queue.length + " queued message(s)...");
+    next(0);
   }
 
   start();

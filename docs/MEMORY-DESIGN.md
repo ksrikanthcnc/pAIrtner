@@ -121,8 +121,18 @@ Whatever doesn't fit is left out of this call, not deleted. Rough size: about 2,
 
 ## 8. Order of work (each step tagged when stable)
 
-1. **Pack extraction:** move every prompt string into `packs/default/`, add the manifest, loader, validation, hot reload and per-call pack logging. No behaviour change.
-2. **Eval runner:** run a pack's cases through the REST API on Gemini Flash; save results; first baseline.
+1. **Pack extraction (done).** Every prompt string moved into `packs/default/`; manifest, loader, validation, hot reload and per-call tracing added; assembled prompts are byte-identical to v0.1.0 (`tests/golden/prompts_v0.1.0.json`). Deviations from section 1:
+   - Layout is `persona.md`, `contract.md`, `blocks/` (role, not_therapy, tone), `strings.yaml` (all other model-visible words, with checked `{placeholders}`), `voices/`, `tasks/` (nudge, appreciation, summarize, therapy_export). There is no `memory.md` yet.
+   - Legacy task and template files the engine does not use (`rewrite`, `mediate`, `digest`, `checkin`, `articulate`, `partner_summary`, `user_context`) moved to `packs/default/unloaded/`: never loaded, excluded from the pack hash.
+   - Tracing is both a log line and DB rows (`llm_calls`, `pack_snapshots`), not only logs. Hashes only, no prompt text, no user id.
+   - The `/mediate` window label ("the last 7 days") stays in code: it is shared with user-facing i18n.
+   - Config keys `persona_file`, `prompts_dir`, `voices_dir` are gone; `prompt_pack` / `PROMPT_PACK` replaces them.
+   - The hard-coded persona, voice, summarize and therapy fallbacks are removed: pack validation guarantees those files exist.
+2. **Eval runner (done).** `dev/prompt-eval/run_eval.py` runs a pack's `eval/cases.yaml` through the REST API (fake LLM or real Gemini), throttled, and saves results per pack version under `dev/prompt-eval/runs/`. Authoring guide: `docs/PACKS.md`. Deviations from section 7:
+   - The runner lives in `dev/prompt-eval/` and drives the engine in-process on a throwaway DB; the rig gained `make_gemini_config` and `run_local.py --llm gemini`.
+   - Results: `<pack>/<version>/<UTC time>_<llm>-<model>/` with `summary.md`, `results.json`, `cases/<id>.json`; no verdicts, a person reads the summary.
+   - Memory expectations are recorded, not judged: with no `memory_ops` yet, a non-empty `expect.memory` is stored as `not_yet_supported` beside the rows the engine actually wrote.
+   - Baseline: `packs/default/eval/baselines/` holds a real Gemini Flash-Lite run of 30 of 31 cases; `md-01-both-sides` is skipped because the heavy models used by `/mediate` were unavailable (404/503). Its README says how to complete it.
 3. **Memory store:** ids, versions, statuses, kinds; `memory_ops` validation; ids in prompts; `/whatdoyouknow` grouped by kind with Share, Edit, Forget, Make core.
 4. **Context budget** and ranking.
 5. **Onboarding as gaps.**

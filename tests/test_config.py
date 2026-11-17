@@ -105,6 +105,48 @@ class TestLoadConfig:
         assert cfg.cooldown_minutes == 99
         assert cfg.rate_limit_per_minute == 42
 
+    def test_prompt_pack_default_and_yaml(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tok")
+        monkeypatch.setenv("GEMINI_API_KEY", "key")
+        monkeypatch.delenv("PROMPT_PACK", raising=False)
+        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("MODEL_HEAVY", raising=False)
+        empty = tmp_path / "empty.yaml"
+        empty.write_text("")
+        with patch("couples_bot.config.load_dotenv"):
+            assert load_config(yaml_path=str(empty)).prompt_pack == "packs/default"
+        custom = tmp_path / "custom.yaml"
+        custom.write_text("prompt_pack: packs/mine\n")
+        with patch("couples_bot.config.load_dotenv"):
+            assert load_config(yaml_path=str(custom)).prompt_pack == "packs/mine"
+
+    def test_prompt_pack_env_override(self, tmp_path, monkeypatch):
+        yaml_file = tmp_path / "settings.yaml"
+        yaml_file.write_text("prompt_pack: packs/from_yaml\n")
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tok")
+        monkeypatch.setenv("GEMINI_API_KEY", "key")
+        monkeypatch.setenv("PROMPT_PACK", "/somewhere/else")
+        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("MODEL_HEAVY", raising=False)
+        with patch("couples_bot.config.load_dotenv"):
+            cfg = load_config(yaml_path=str(yaml_file))
+        assert cfg.prompt_pack == "/somewhere/else"
+
+    def test_old_prompt_keys_ignored(self, tmp_path, monkeypatch):
+        yaml_file = tmp_path / "settings.yaml"
+        yaml_file.write_text(
+            "persona_file: x.md\nprompts_dir: old\nvoices_dir: old/voices\n"
+        )
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tok")
+        monkeypatch.setenv("GEMINI_API_KEY", "key")
+        monkeypatch.delenv("PROMPT_PACK", raising=False)
+        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("MODEL_HEAVY", raising=False)
+        with patch("couples_bot.config.load_dotenv"):
+            cfg = load_config(yaml_path=str(yaml_file))
+        assert cfg.prompt_pack == "packs/default"
+        assert not hasattr(cfg, "prompts_dir")
+
     def test_review_before_send_env_true(self, tmp_path, monkeypatch):
         yaml_file = tmp_path / "settings.yaml"
         yaml_file.write_text("review_before_send: false\n")
@@ -162,10 +204,11 @@ class TestConfigDefaults:
         assert cfg.review_before_send is True
 
     def test_new_config_fields_defaults(self):
-        """prompts_dir, voices_dir, default_voice, default_voice_intensity defaults."""
+        """prompt_pack, default_voice, default_voice_intensity defaults."""
         cfg = Config(telegram_token="t")
-        assert cfg.prompts_dir == "prompts"
-        assert cfg.voices_dir == "prompts/voices"
+        assert cfg.prompt_pack == "packs/default"
+        for gone in ("persona_file", "prompts_dir", "voices_dir"):
+            assert not hasattr(cfg, gone)
         assert cfg.default_voice == "casual_en"
         assert cfg.default_voice_intensity == 0.5
 

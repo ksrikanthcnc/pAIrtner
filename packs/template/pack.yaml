@@ -1,0 +1,44 @@
+# Pack manifest — edit these fields for your use case.
+name: my-pack
+version: 0.1.0
+engine_contract: 1
+languages: [en]  # Add language codes your pack supports
+
+# File map (paths relative to this folder)
+files:
+  persona: persona.md
+  contract: contract.md
+  blocks: blocks/
+  strings: strings.yaml
+  voices: voices/
+  tasks: tasks/
+
+# Context budgets (max words per section in the prompt)
+budgets:
+  core: 250        # Identity facts — always included
+  shared: 150      # Facts shared between partners
+  partner_view: 150  # Impressions about the partner
+  working: 400     # Current situations — ranked by status then recency
+  episodes: 300    # Consolidated summaries of old memories
+
+# Eval cases (optional but recommended)
+eval: eval/cases.yaml
+
+# Memory limits
+memory:
+  max_ops_per_message: 5    # Max memory operations the model can propose per message
+  max_core_items: 30        # Prompt user to merge when exceeded
+  max_working_items: 50     # Working memory cap
+
+# Background analysis (patterns, voice traits, horsemen detection)
+analysis:
+  every_n_messages: 10      # Run analysis every N user messages
+  model_tier: heavy         # Use the heavy model for analysis
+
+# Consolidation — compress old memories into episode summaries
+consolidation:
+  enabled: true
+  schedule: weekly
+  min_age_days: 90          # Only consolidate memories older than this
+  min_group_size: 3         # Need N+ resolved memories to make an episode
+  model_tier: heavy

@@ -6,7 +6,7 @@
 #   docker compose logs -f
 #
 # The SQLite database is persisted via volume mount.
-# Settings and persona are mounted read-only.
+# Settings and the prompt pack (./packs) are mounted read-only.
 # Backups are written to ./backups/ on the host.
 #
 # For WebSocket adapter, uncomment the ports and ADAPTER lines below.
@@ -21,7 +21,7 @@ services:
     volumes:
       - ./couples_bot.db:/app/couples_bot.db
       - ./settings.yaml:/app/settings.yaml:ro
-      - ./prompts:/app/prompts:ro   # persona/voices/tasks: edit on the host, then restart
+      - ./packs:/app/packs:ro   # prompt pack: edit on the host, changes apply on the next message
       - ./backups:/app/backups
     restart: unless-stopped
     # Uncomment for WebSocket adapter:

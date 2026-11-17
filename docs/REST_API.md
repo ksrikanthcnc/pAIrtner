@@ -146,6 +146,38 @@ Cursor and long-poll rules:
 
 No body needed. Returns `{"user_id": ..., "token": "<uid>:<new secret>"}` and invalidates the old token at once.
 
+### `GET /api/v1/history?limit=N&offset=N`
+
+Full message history for the authenticated user (oldest first, with timestamps). Used by the PWA to reconstruct the complete conversation on login.
+
+Response `200`:
+
+```json
+{"messages": [{"id": 1, "role": "user", "content": "Hello!", "created_at": "2026-06-15 10:00:00"},
+              {"id": 2, "role": "assistant", "content": "Hi there!", "created_at": "2026-06-15 10:00:01"}],
+ "count": 2}
+```
+
+Query parameters:
+- `limit` — max messages to return (default 500, max 2000)
+- `offset` — skip this many messages from the start (default 0)
+
+### `GET /api/v1/facts?kind=K&visibility=V`
+
+List the authenticated user's active (non-archived) facts. Optionally filtered.
+
+Response `200`:
+
+```json
+{"facts": [{"id": 1, "text": "Likes morning walks", "visibility": "private",
+            "kind": "core", "status": "active", "created_at": "..."}],
+ "count": 1}
+```
+
+Query parameters:
+- `kind` — filter by memory kind: `core`, `working`, `episode`, `partner_view` (optional)
+- `visibility` — filter by `private` or `shared` (optional)
+
 ### Static client files (no auth)
 
 `GET /`, `/index.html`, `/duo.html`, `/app.js`, `/render.js`, `/sw.js`, `/style.css`, `/manifest.webmanifest`, `/icons/icon-192.png`, `/icons/icon-512.png`, `/icons/icon.svg`. This is a fixed list; any other path is `404 not_found`.

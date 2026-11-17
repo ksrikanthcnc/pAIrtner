@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
+from couples_bot import pack
 from couples_bot.config import Config
 from couples_bot.db import (
     add_fact,
@@ -21,6 +22,14 @@ from tests.helpers import MockLLMClient
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _reset_active_pack():
+    """A test that activates a custom pack must not leak it into the next test."""
+    pack._current = None
+    yield
+    pack._current = None
+
 
 @pytest.fixture
 def config() -> Config:

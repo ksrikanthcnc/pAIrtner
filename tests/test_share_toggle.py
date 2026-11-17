@@ -106,9 +106,19 @@ async def test_buttons_on_whatdoyouknow(service, test_db, paired_users):
     resp = await service.handle_whatdoyouknow(a)
     buttons = [b for row in resp[0].buttons for b in row]
     ids = {f["id"] for f in await get_active_facts(test_db, a)}
-    assert {b.callback_data for b in buttons} == {f"fv:{i}" for i in ids}
-    assert all(len(row) <= 2 for row in resp[0].buttons)
-    labels = {b.callback_data: b.text for b in buttons}
+    # Should have fv: buttons for all facts
+    fv_buttons = {b.callback_data for b in buttons if b.callback_data.startswith("fv:")}
+    assert fv_buttons == {f"fv:{i}" for i in ids}
+    # Working facts also get mc:confirm: buttons
+    mc_buttons = {b.callback_data for b in buttons if b.callback_data.startswith("mc:")}
+    working_ids = {
+        f["id"] for f in await get_active_facts(test_db, a)
+        if (f.get("kind") or "working") == "working"
+    }
+    assert mc_buttons == {f"mc:confirm:{i}" for i in working_ids}
+    # Row width ≤ 3 (share + pin)
+    assert all(len(row) <= 3 for row in resp[0].buttons)
+    labels = {b.callback_data: b.text for b in buttons if b.callback_data.startswith("fv:")}
     for f in await get_active_facts(test_db, a):
         assert f"#{f['id']}" in labels[f"fv:{f['id']}"]
         if f["visibility"] == "shared":
@@ -123,8 +133,9 @@ async def test_buttons_capped_at_30_most_recent(service, test_db, paired_users):
     for i in range(40):
         await add_fact(test_db, a, f"bulk fact number {i} xyz", "private")
     resp = await service.handle_whatdoyouknow(a)
-    buttons = [b for row in resp[0].buttons for b in row]
-    assert len(buttons) == 30
+    # Each fact gets one row; cap is 30 rows (facts), each row has 1-2 buttons
+    fv_buttons = [b for row in resp[0].buttons for b in row if b.callback_data.startswith("fv:")]
+    assert len(fv_buttons) == 30
     newest = sorted((f["id"] for f in await get_active_facts(test_db, a)), reverse=True)[:30]
-    assert {b.callback_data for b in buttons} == {f"fv:{i}" for i in newest}
+    assert {b.callback_data for b in fv_buttons} == {f"fv:{i}" for i in newest}
     assert f"{existing + 40 - 30} more" in resp[0].text

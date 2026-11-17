@@ -10,6 +10,7 @@ from typing import Awaitable, Callable
 from zoneinfo import ZoneInfo
 
 from couples_bot import db as db_mod
+from couples_bot import pack
 from couples_bot.i18n import t
 from couples_bot.llm import LLMClient
 from couples_bot.prompts import build_checkin_summary_prompt
@@ -194,19 +195,20 @@ async def _generate_summary(
     shared_texts = [f["text"] for f in shared_facts]
 
     # Build goals section for the check-in (FEAT-004)
+    p = pack.current()
     couple_id = db_mod.make_couple_id(user_a, user_b)
     goals_parts: list[str] = []
     for uid in (user_a, user_b):
         personal = await db_mod.get_active_goals(db_path, uid)
         if personal:
             items = "\n".join(f"- {g['text']}" for g in personal)
-            goals_parts.append(f"### Personal\n{items}")
+            goals_parts.append(f"### {p.s('checkin_goals_personal')}\n{items}")
     shared_goals = await db_mod.get_shared_goals(db_path, couple_id)
     if shared_goals:
         items = "\n".join(f"- {g['text']}" for g in shared_goals)
-        goals_parts.append(f"### Shared\n{items}")
+        goals_parts.append(f"### {p.s('checkin_goals_shared')}\n{items}")
     goals_text = (
-        "## Active Goals\n" + "\n".join(goals_parts) + "\n"
+        f"## {p.s('checkin_goals_heading')}\n" + "\n".join(goals_parts) + "\n"
     ) if goals_parts else None
 
     # Build appreciation and horsemen trends (FEAT-001 batch4)
@@ -215,18 +217,11 @@ async def _generate_summary(
     if pos + neg > 0:
         ratio = pos / neg if neg > 0 else pos
         if ratio >= 5.0:
-            trends_parts.append(
-                "Positive interactions have been strong this week."
-            )
+            trends_parts.append(p.s("trend_strong"))
         elif neg > pos:
-            trends_parts.append(
-                "This week has had more tense moments than positive ones. "
-                "Focus on expressing needs rather than complaints."
-            )
+            trends_parts.append(p.s("trend_tense"))
         else:
-            trends_parts.append(
-                f"This week: {pos} positive and {neg} tense interactions."
-            )
+            trends_parts.append(p.s("trend_counts", pos=pos, neg=neg))
 
     # Check horsemen trends
     for uid in (user_a, user_b):
@@ -234,14 +229,13 @@ async def _generate_summary(
             db_path, uid, "horsemen", limit=3,
         )
         if horsemen:
-            trends_parts.append(
-                "Some communication patterns this week could use attention — "
-                "focus on expressing feelings without blame."
-            )
+            trends_parts.append(p.s("trend_horsemen"))
             break  # One note is enough
 
     trends_text = (
-        "## Interaction Trends\n" + "\n".join(f"- {t}" for t in trends_parts) + "\n"
+        f"## {p.s('checkin_trends_heading')}\n"
+        + "\n".join(f"- {trend}" for trend in trends_parts)
+        + "\n"
     ) if trends_parts else None
 
     # Build conflict resolution summary (FEAT-002)
@@ -252,15 +246,17 @@ async def _generate_summary(
         resolved = conflict_summary.get("resolved", 0)
         open_count = conflict_summary.get("open", 0)
         open_conflicts = await db_mod.get_open_conflicts(db_path, couple_id)
-        open_themes = ", ".join(c["theme"] for c in open_conflicts) or "none"
+        open_themes = (
+            ", ".join(c["theme"] for c in open_conflicts) or p.s("conflict_none")
+        )
         conflicts_text = (
-            "## Conflict Resolution\n"
-            f"- This week: {resolved} out of {total} topics raised were resolved.\n"
+            f"## {p.s('checkin_conflicts_heading')}\n"
+            f"- {p.s('conflict_resolved', resolved=resolved, total=total)}\n"
         )
         if open_count > 0:
-            conflicts_text += f"- Still open: {open_themes}\n"
+            conflicts_text += f"- {p.s('conflict_open', open_themes=open_themes)}\n"
         else:
-            conflicts_text += "- All topics resolved.\n"
+            conflicts_text += f"- {p.s('conflict_all_resolved')}\n"
 
     # Combine goals, trends, and conflicts
     extra = ""

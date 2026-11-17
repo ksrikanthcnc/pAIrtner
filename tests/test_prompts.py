@@ -1,82 +1,45 @@
-"""Tests for prompt loading and building — directory-based prompts."""
+"""Tests for prompt building from the active prompt pack."""
 
 from __future__ import annotations
 
-import couples_bot.prompts as prompts_mod
+from pathlib import Path
+
+from couples_bot import pack
 from couples_bot.prompts import (
-    _FALLBACK_PERSONA,
     build_system_prompt,
-    load_persona,
-    load_prompt_file,
     load_task_prompt,
     load_voice,
 )
 
-
-class TestLoadPromptFile:
-    def test_reads_existing_file(self, tmp_path):
-        f = tmp_path / "test.md"
-        f.write_text("hello world")
-        assert load_prompt_file(str(f)) == "hello world"
-
-    def test_returns_none_for_missing_file(self, tmp_path):
-        assert load_prompt_file(str(tmp_path / "nope.md")) is None
-
-    def test_returns_none_for_empty_file(self, tmp_path):
-        f = tmp_path / "empty.md"
-        f.write_text("   ")
-        assert load_prompt_file(str(f)) is None
-
-
-class TestLoadPersona:
-    def test_load_persona_from_prompts_dir(self, tmp_path):
-        persona = tmp_path / "persona.md"
-        persona.write_text("Custom persona text here")
-        result = load_persona(str(persona))
-        assert result == "Custom persona text here"
-
-    def test_load_persona_fallback(self, tmp_path):
-        # Reset the cached persona
-        prompts_mod._persona_text = None
-        result = load_persona(str(tmp_path / "missing_persona.md"))
-        assert result == _FALLBACK_PERSONA
+DEFAULT_PACK = Path(__file__).resolve().parent.parent / "packs" / "default"
 
 
 class TestLoadVoice:
-    def test_load_voice_file(self, tmp_path):
-        voices = tmp_path / "voices"
-        voices.mkdir()
-        (voices / "casual_en.md").write_text("Casual voice content")
-        result = load_voice(str(voices), "casual_en")
-        assert result == "Casual voice content"
+    def test_load_voice_file(self):
+        result = load_voice("casual_en")
+        assert result == (DEFAULT_PACK / "voices" / "casual_en.md").read_text().strip()
 
-    def test_load_voice_fallback(self, tmp_path):
+    def test_load_voice_other_voice(self):
+        result = load_voice("telugu")
+        assert result == (DEFAULT_PACK / "voices" / "telugu.md").read_text().strip()
+
+    def test_load_voice_fallback(self):
         """Falls back to casual_en when requested voice is missing."""
-        voices = tmp_path / "voices"
-        voices.mkdir()
-        (voices / "casual_en.md").write_text("Fallback casual voice")
-        result = load_voice(str(voices), "nonexistent_voice")
-        assert result == "Fallback casual voice"
-
-    def test_load_voice_builtin_default(self, tmp_path):
-        """Falls back to built-in default when no voice files exist."""
-        voices = tmp_path / "empty_voices"
-        voices.mkdir()
-        result = load_voice(str(voices), "casual_en")
-        assert "friendly" in result.lower() or "warm" in result.lower()
+        assert load_voice("nonexistent_voice") == load_voice("casual_en")
 
 
 class TestLoadTaskPrompt:
-    def test_load_task_prompt(self, tmp_path):
-        tasks = tmp_path / "tasks"
-        tasks.mkdir()
-        (tasks / "rewrite.md").write_text("Rewrite instructions here")
-        result = load_task_prompt(str(tmp_path), "rewrite")
-        assert result == "Rewrite instructions here"
+    def test_load_task_prompt(self):
+        result = load_task_prompt("nudge")
+        assert result == (DEFAULT_PACK / "tasks" / "nudge.md").read_text().strip()
 
-    def test_load_task_prompt_missing(self, tmp_path):
-        result = load_task_prompt(str(tmp_path), "nonexistent_task")
-        assert result is None
+    def test_load_task_prompt_missing(self):
+        assert load_task_prompt("nonexistent_task") is None
+
+    def test_unloaded_tasks_are_not_loadable(self):
+        """Tasks moved to unloaded/ are not served by the engine."""
+        assert (DEFAULT_PACK / "unloaded" / "tasks" / "rewrite.md").is_file()
+        assert load_task_prompt("rewrite") is None
 
 
 class TestBuildSystemPrompt:
@@ -100,3 +63,10 @@ class TestBuildSystemPrompt:
         # Core components are still present
         assert "compassionate couples mediator" in result
         assert "JSON" in result
+
+    def test_build_records_trace(self):
+        build_system_prompt()
+        task, snapshot = pack.last_trace.get()
+        assert task == "system"
+        assert snapshot["name"] == "default"
+        assert snapshot["pack_hash"]

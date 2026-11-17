@@ -46,6 +46,9 @@ USER_SCOPES: list[tuple[str, str]] = [
     ("pending", "sender_id = :uid OR receiver_id = :uid"),
     ("messages", "user_id = :uid"),
     ("facts", "owner_id = :uid"),
+    ("memory_versions",
+     "fact_id IN (SELECT id FROM facts WHERE owner_id = :uid)"),
+    ("memory_op_log", "user_id = :uid"),
     ("fact_summaries", "user_id = :uid"),
     ("user_profiles", "user_id = :uid"),
     ("user_mood_styles", "user_id = :uid"),
@@ -61,10 +64,11 @@ USER_SCOPES: list[tuple[str, str]] = [
     ("rate_limit", "user_id = :uid"),
     ("auth_tokens", "user_id = :uid"),
     ("rest_outbox", "user_id = :uid"),
+    ("user_meta", "user_id = :uid"),
     ("users", "tg_id = :uid"),
 ]
 # Tables with no per-user key (aggregate counters).
-GLOBAL_TABLES = {"usage"}
+GLOBAL_TABLES = {"usage", "llm_calls", "pack_snapshots"}
 
 
 class ConfirmationError(ValueError):

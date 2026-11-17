@@ -43,7 +43,7 @@ All secrets go in `.env` (never in `settings.yaml`):
 | `/app/couples_bot.db` | SQLite database (persistent) |
 | `/app/backups` | Automated daily backups |
 | `/app/settings.yaml` | Runtime config (read-only) |
-| `/app/persona.md` | Bot personality file (read-only) |
+| `/app/packs` | Prompt packs (read-only in the container; edit on the host, applied on the next message) |
 
 ### docker-compose.yml
 
@@ -57,7 +57,7 @@ services:
     volumes:
       - ./couples_bot.db:/app/couples_bot.db
       - ./settings.yaml:/app/settings.yaml:ro
-      - ./persona.md:/app/persona.md:ro
+      - ./packs:/app/packs:ro
       - ./backups:/app/backups
     restart: unless-stopped
     # Uncomment for WebSocket adapter:

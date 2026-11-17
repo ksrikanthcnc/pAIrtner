@@ -94,6 +94,33 @@ _STRINGS: dict[str, dict[str, str]] = {
         "whatdoyouknow_shared": "🔓 <b>Shared:</b>\n",
         "whatdoyouknow_empty": "I don't have any notes about you yet. Just chat with me!",
         "fact_item": "  {id}. [{date}] {text} <i>({visibility})</i>\n",
+        # Memory kind headers
+        "kind_core": "📌 Core",
+        "kind_working": "💭 Working Memory",
+        "kind_partner_view": "👀 Partner Impressions",
+        "kind_shared": "🤝 Shared",
+        # Memory status labels
+        "status_active": "active",
+        "status_improving": "improving",
+        "status_resolved": "resolved",
+        "status_outdated": "outdated",
+        # Buttons
+        "btn_make_core": "📌 Pin #{id}",
+        "btn_archive": "📦 Archive #{id}",
+        # Memory review
+        "review_header": (
+            "🔍 <b>Memory Review</b>\n\n"
+            "Here's what I consider most important about you. "
+            "Anything wrong or outdated? Reply to correct me, "
+            "or use the buttons to manage individual items.\n\n"
+        ),
+        "review_empty": "No core memories yet. Chat with me and I'll learn about you!",
+        "review_core_section": "📌 <b>Core (permanent):</b>\n",
+        "review_working_section": "\n💭 <b>Active working memory:</b>\n",
+        "review_footer": (
+            "\n\n<i>Reply with corrections like 'actually I have 2 kids, not 1' "
+            "or 'the kitchen remodel is done now'.</i>"
+        ),
         "fact_saved": "✅ Noted! Saved {count} new fact(s).",
         "keep_saved": "✅ Saved! I'll remember that.",
 
@@ -131,6 +158,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/timeline — View your relationship timeline\n\n"
             "<b>Memory</b>\n"
             "/whatdoyouknow — See what I remember about you\n"
+            "/review — Review and correct my core memories\n"
             "/forget &lt;id|all&gt; — Delete your facts\n"
             "/export — Download your facts as a file\n"
             "/export therapy — Download a therapy report\n"
@@ -416,6 +444,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "feedback_no": "👎 No",
         "feedback_thanks": "Thanks for the feedback! This helps me calibrate better. 🙏",
 
+        # Memory ops (core proposal)
+        "propose_core_confirm": "💡 Should I remember this as a core fact about you?\n\n\"{text}\"",
+        "yes": "✅ Yes",
+        "no": "❌ No",
+        "core_saved": "✅ Got it, saved as a core fact about you.",
+        "core_dismissed": "No worries, I'll keep it as a regular note.",
+
         # A/B rewrite (FEAT-003 batch4)
         "ab_option_header": "📝 Here are two versions for your partner:\n\n",
         "ab_option_a": "<b>Option A</b> (lighter touch):\n{draft}\n\n",
@@ -513,6 +548,31 @@ _STRINGS: dict[str, dict[str, str]] = {
         "whatdoyouknow_shared": "🔓 <b>షేర్డ్:</b>\n",
         "whatdoyouknow_empty": "మీ గురించి ఇంకా ఏమీ లేదు. నాతో మాట్లాడండి!",
         "fact_item": "  {id}. [{date}] {text} <i>({visibility})</i>\n",
+        # Memory kind headers
+        "kind_core": "📌 ప్రధాన",
+        "kind_working": "💭 వర్కింగ్ మెమరీ",
+        "kind_partner_view": "👀 పార్ట్నర్ అభిప్రాయాలు",
+        "kind_shared": "🤝 షేర్డ్",
+        # Memory status labels
+        "status_active": "యాక్టివ్",
+        "status_improving": "మెరుగవుతోంది",
+        "status_resolved": "పరిష్కారమైంది",
+        "status_outdated": "పాతది",
+        # Buttons
+        "btn_make_core": "📌 పిన్ #{id}",
+        "btn_archive": "📦 ఆర్కైవ్ #{id}",
+        # Memory review
+        "review_header": (
+            "🔍 <b>మెమరీ రివ్యూ</b>\n\n"
+            "మీ గురించి నాకు ముఖ్యమైనవి ఇవి. "
+            "ఏదైనా తప్పు లేదా పాతది ఉందా? సరిచేయండి.\n\n"
+        ),
+        "review_empty": "ఇంకా ప్రధాన జ్ఞాపకాలు లేవు. నాతో మాట్లాడండి!",
+        "review_core_section": "📌 <b>ప్రధాన (శాశ్వత):</b>\n",
+        "review_working_section": "\n💭 <b>యాక్టివ్ వర్కింగ్ మెమరీ:</b>\n",
+        "review_footer": (
+            "\n\n<i>సరిదిద్దడానికి రిప్లై చేయండి.</i>"
+        ),
         "fact_saved": "✅ {count} కొత్త విషయాలు సేవ్ అయ్యాయి.",
         "keep_saved": "✅ సేవ్ అయింది!",
 
@@ -821,6 +881,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "feedback_not_sure": "🤷 తెలియదు",
         "feedback_no": "👎 కాదు",
         "feedback_thanks": "ఫీడ్‌బ్యాక్ కోసం ధన్యవాదాలు! ఇది మెరుగుపరచడంలో సహాయపడుతుంది. 🙏",
+
+        # Memory ops (core proposal)
+        "propose_core_confirm": "💡 మీ గురించి ఇది ముఖ్యమైన విషయంగా గుర్తుపెట్టుకోవాలా?\n\n\"{text}\"",
+        "yes": "✅ అవును",
+        "no": "❌ వద్దు",
+        "core_saved": "✅ అర్థమైంది, మీ గురించి ముఖ్యమైన విషయంగా save చేశాను.",
+        "core_dismissed": "పరవాలేదు, సాధారణ note గా ఉంచుతాను.",
 
         # A/B rewrite (FEAT-003 batch4)
         "ab_option_header": "📝 మీ భాగస్వామి కోసం రెండు వెర్షన్లు:\n\n",

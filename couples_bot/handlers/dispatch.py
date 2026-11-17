@@ -44,6 +44,7 @@ class DispatchMixin:
             "goals": lambda: self.handle_goals(uid),
             "settings": lambda: self.handle_settings(uid, arg),
             "remember": lambda: self.handle_remember(uid),
+            "review": lambda: self.handle_review(uid),
             "search": lambda: self.handle_search(uid, arg),
             "conflicts": lambda: self.handle_conflicts(uid),
             "timeline": lambda: self.handle_timeline(uid, arg),

@@ -238,9 +238,10 @@ class TestJargonFree:
 
     def test_prompt_json_format_no_jargon_in_reply_instruction(self):
         """The JSON schema instructs LLM to never use jargon in replies."""
-        from couples_bot.prompts import _JSON_FORMAT
+        from couples_bot import pack
+
         # The instruction should contain the prohibition
-        assert "NEVER use the term 'horsemen'" in _JSON_FORMAT
+        assert "NEVER use the term 'horsemen'" in pack.current().contract()
 
     def test_i18n_strings_no_jargon(self):
         """No i18n string should contain Gottman jargon."""
@@ -254,16 +255,18 @@ class TestJargonFree:
 
     def test_nudge_prompt_no_jargon(self):
         """The nudge prompt file should not contain Gottman jargon."""
-        from couples_bot.prompts import load_prompt_file
-        content = load_prompt_file("prompts/tasks/nudge.md")
+        from couples_bot.prompts import load_task_prompt
+
+        content = load_task_prompt("nudge")
         if content:
             for term in self.JARGON_TERMS:
                 assert term.lower() not in content.lower()
 
     def test_appreciation_prompt_no_jargon(self):
         """The appreciation prompt file should not reference clinical terms."""
-        from couples_bot.prompts import load_prompt_file
-        content = load_prompt_file("prompts/tasks/appreciation.md")
+        from couples_bot.prompts import load_task_prompt
+
+        content = load_task_prompt("appreciation")
         if content:
             for term in self.JARGON_TERMS:
                 assert term.lower() not in content.lower()

@@ -1,0 +1,11 @@
+# Model-visible strings — headings, labels, canned responses.
+# These are read by the engine and inserted into prompts.
+# Edit to match your pack's voice and language.
+
+label_private_notes: "Your private notes"
+label_shared_notes: "Shared notes (visible to both of you)"
+label_current_message: "Current message"
+label_current_message_blunt: "Message (respond with brutal honesty)"
+task_heading: "Task Instructions"
+blunt_intro: "The user wants honest, unfiltered feedback. No sugarcoating."
+blunt_tail: "Be direct. Say what others won't. But be constructive, not cruel."

@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable
 from zoneinfo import ZoneInfo
 
 from couples_bot import db as db_mod
+from couples_bot import pack
 from couples_bot.i18n import t
 from couples_bot.llm import LLMClient
 from couples_bot.prompts import load_task_prompt
@@ -67,7 +68,6 @@ async def generate_nudge(
     llm: LLMClient,
     user_id: int,
     partner_id: int,
-    prompts_dir: str = "prompts",
     lang: str = "en",
 ) -> str:
     """Generate a context-aware nudge for *user_id*.
@@ -86,18 +86,20 @@ async def generate_nudge(
     sample = random.sample(positive_facts, min(3, len(positive_facts)))
     facts_text = "\n".join(f"- {f['text']}" for f in sample)
 
-    task_prompt = load_task_prompt(prompts_dir, "nudge") or ""
+    p = pack.current()
+    pack.set_trace(p, "nudge")
+    task_prompt = load_task_prompt("nudge") or ""
     partner = await db_mod.get_user(db_path, partner_id)
-    partner_name = (partner or {}).get("name") or "your partner"
+    partner_name = (partner or {}).get("name") or p.s("partner_fallback")
 
     system_prompt = (
         f"{task_prompt}\n\n"
-        f"The user's partner is named {partner_name}.\n"
-        f"Language: {lang}"
+        f"{p.s('nudge_partner', partner_name=partner_name)}\n"
+        f"{p.s('nudge_language', lang=lang)}"
     )
     user_content = (
-        f"## Shared positive memories\n{facts_text}\n\n"
-        "Generate a warm, tailored nudge based on these shared memories."
+        f"## {p.s('nudge_facts_heading')}\n{facts_text}\n\n"
+        f"{p.s('nudge_request')}"
     )
 
     result = await llm.generate(user_content, system_prompt)
@@ -125,21 +127,19 @@ async def generate_appreciation_prompt(
     llm: LLMClient,
     user_id: int,
     partner_name: str,
-    prompts_dir: str = "prompts",
     lang: str = "en",
 ) -> str:
     """Generate an appreciation nudge when the ratio is low."""
-    task_prompt = load_task_prompt(prompts_dir, "appreciation") or ""
+    p = pack.current()
+    pack.set_trace(p, "appreciation")
+    task_prompt = load_task_prompt("appreciation") or ""
 
     system_prompt = (
         f"{task_prompt}\n\n"
-        f"The user's partner is named {partner_name}.\n"
-        f"Language: {lang}"
+        f"{p.s('nudge_partner', partner_name=partner_name)}\n"
+        f"{p.s('nudge_language', lang=lang)}"
     )
-    user_content = (
-        "Generate a warm appreciation prompt. "
-        "Do NOT mention ratios, metrics, or clinical terms."
-    )
+    user_content = p.s("appreciation_request")
 
     result = await llm.generate(user_content, system_prompt)
     reply = result.get("reply", "")
@@ -195,7 +195,6 @@ async def _nudge_cycle(
         return
 
     couples = await db_mod.get_all_couples(db_path)
-    prompts_dir = getattr(config, "prompts_dir", "prompts")
     target_ratio = getattr(config, "appreciation_target_ratio", 5.0)
     check_days = getattr(config, "appreciation_check_days", 7)
 
@@ -212,10 +211,11 @@ async def _nudge_cycle(
                     user = await db_mod.get_user(db_path, uid)
                     lang = (user or {}).get("lang") or "en"
                     partner = await db_mod.get_user(db_path, pid)
-                    pname = (partner or {}).get("name") or "your partner"
+                    pname = (partner or {}).get("name") or pack.current().s(
+                        "partner_fallback",
+                    )
                     prompt = await generate_appreciation_prompt(
-                        db_path, llm, uid, pname,
-                        prompts_dir=prompts_dir, lang=lang,
+                        db_path, llm, uid, pname, lang=lang,
                     )
                     await send_func(uid, f"💛 {prompt}")
                 continue  # Skip regular nudge when appreciation is triggered
@@ -228,8 +228,7 @@ async def _nudge_cycle(
                 if (user or {}).get("paused"):
                     continue
                 nudge = await generate_nudge(
-                    db_path, llm, uid, pid,
-                    prompts_dir=prompts_dir, lang=lang,
+                    db_path, llm, uid, pid, lang=lang,
                 )
                 await send_func(uid, f"💬 {nudge}")
 

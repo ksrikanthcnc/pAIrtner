@@ -2,7 +2,32 @@
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 from couples_bot.llm import LLMResponse
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def copy_default_pack(dest_parent: Path, name: str = "pack") -> Path:
+    """Copy ``packs/default`` (without unloaded/ and eval/) under *dest_parent*.
+
+    The copy is a valid pack that tests can edit freely.  The ``eval`` and
+    ``unloaded`` manifest keys are dropped with the folders they point at.
+    """
+    import yaml
+
+    dest = dest_parent / name
+    shutil.copytree(
+        REPO_ROOT / "packs" / "default", dest,
+        ignore=shutil.ignore_patterns("unloaded", "eval"),
+    )
+    manifest = yaml.safe_load((dest / "pack.yaml").read_text(encoding="utf-8"))
+    manifest.pop("eval", None)
+    manifest.pop("unloaded", None)
+    (dest / "pack.yaml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    return dest
 
 
 class MockLLMClient:

@@ -82,7 +82,8 @@ Config (YAML + env vars)                         ← deployment-agnostic
 |--------|---------|
 | `couples_bot/db.py` | SQLite schema, migrations, all CRUD functions |
 | `couples_bot/search.py` | FTS5 virtual table, full-text search, index management |
-| `couples_bot/prompts.py` | Prompt building (persona + voice + context → LLM input) |
+| `couples_bot/prompts.py` | Prompt assembly (pack text + user context → LLM input) |
+| `couples_bot/pack.py` | Prompt pack loading, validation, hot reload, snapshots |
 | `couples_bot/llm.py` | LLM client protocol, Gemini + OpenAI-compat implementations |
 | `couples_bot/config.py` | Frozen Config dataclass, YAML + env var loading |
 | `couples_bot/handlers/service.py` | BotService — main orchestrator, mixin-based |
@@ -100,27 +101,33 @@ Config (YAML + env vars)                         ← deployment-agnostic
 
 ### Prompt Assembly
 
-Each LLM call assembles from building blocks stored in `prompts/`:
+Every word the model reads lives in a prompt pack (`packs/default/` by default, chosen with `prompt_pack` / `PROMPT_PACK`). The engine owns structure (block order, separators, which data may appear in whose prompt); the pack owns wording. Edits to pack files apply on the next message without a restart.
+```
+packs/default/
+├── pack.yaml               ← name, version, engine_contract, file map, budgets
+├── persona.md              ← core personality
+├── contract.md             ← explains the JSON output to the model
+├── blocks/                 ← role, not_therapy, tone
+├── strings.yaml            ← every other model-visible sentence and label
+├── voices/                 ← casual_en, telugu, hindi, formal_en
+├── tasks/                  ← nudge, appreciation, summarize, therapy_export
+├── eval/cases.yaml         ← evaluation cases
+└── unloaded/               ← legacy reference text, never loaded
+```
+Authoring guide: [docs/PACKS.md](docs/PACKS.md).
 
+Each LLM call is traced: a `llm_call` log line (task, model, pack name@version, pack hash, prompt hash) and a row in `llm_calls` joined to `pack_snapshots` (sha256 of every loaded pack file). No prompt text and no user id are stored.
+
+### Evaluate a pack
+
+`dev/prompt-eval/run_eval.py` runs the pack's `eval/cases.yaml` through the real engine over the REST API and saves replies, LLM calls and new memory rows per pack version. It does not judge; a person reads `summary.md`.
+
+```bash
+uv run python dev/prompt-eval/run_eval.py --llm fake      # plumbing check, no key needed
+uv run python dev/prompt-eval/run_eval.py --llm gemini    # real model, throttled for the free tier
 ```
-prompts/
-├── persona.md              ← core personality (loaded at startup)
-├── voices/
-│   ├── casual_en.md        ← relaxed English
-│   ├── telugu.md           ← Telugu/Tenglish style
-│   ├── hindi.md            ← Hindi style
-│   └── formal_en.md        ← therapy-style English
-├── tasks/
-│   ├── rewrite.md          ← tone rewriting
-│   ├── mediate.md          ← mediation
-│   ├── digest.md           ← daily digest
-│   ├── checkin.md          ← weekly check-in
-│   ├── articulate.md       ← articulation teaching
-│   └── summarize.md        ← fact summarization
-└── templates/
-    ├── user_context.md
-    └── partner_summary.md
-```
+
+Details, result layout and quota behaviour: [docs/PACKS.md](docs/PACKS.md). `dev/localtest/run_local.py --llm gemini` starts the local rig on real Gemini (Telegram is never started).
 
 ## Commands
 
@@ -174,9 +181,7 @@ All tunables live in `settings.yaml`. Every setting can be overridden via enviro
 
 | Setting | YAML | Env Var | Default |
 |---------|------|---------|---------|
-| Persona file | `persona_file` | `PERSONA_FILE` | `persona.md` |
-| Prompts directory | `prompts_dir` | `PROMPTS_DIR` | `prompts` |
-| Voices directory | `voices_dir` | `VOICES_DIR` | `prompts/voices` |
+| Prompt pack | `prompt_pack` | `PROMPT_PACK` | `packs/default` |
 | Default voice | `default_voice` | `DEFAULT_VOICE` | `casual_en` |
 | Voice intensity | `default_voice_intensity` | `DEFAULT_VOICE_INTENSITY` | `0.5` |
 | Database path | — | `DB_PATH` | `couples_bot.db` |

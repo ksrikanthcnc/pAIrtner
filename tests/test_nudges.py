@@ -162,7 +162,6 @@ async def test_nudge_cycle_skips_quiet_hours(test_db, paired_users, config, monk
         nudges_quiet_start = "23:00"
         nudges_quiet_end = "23:01"
         checkin_timezone = "UTC"
-        prompts_dir = "prompts"
         appreciation_target_ratio = 5.0
         appreciation_check_days = 7
 
@@ -185,7 +184,6 @@ async def test_nudge_cycle_sends_during_active_hours(test_db, paired_users, monk
         nudges_quiet_start = "00:00"
         nudges_quiet_end = "23:59"
         checkin_timezone = "UTC"
-        prompts_dir = "prompts"
         appreciation_target_ratio = 5.0
         appreciation_check_days = 7
 
@@ -217,7 +215,6 @@ async def test_nudge_cycle_appreciation_overrides_regular(test_db, paired_users)
         nudges_quiet_start = "00:00"
         nudges_quiet_end = "23:59"
         checkin_timezone = "UTC"
-        prompts_dir = "prompts"
         appreciation_target_ratio = 5.0
         appreciation_check_days = 7
 
@@ -245,7 +242,6 @@ async def test_nudge_cycle_disabled(test_db, paired_users):
         nudges_quiet_start = "00:00"
         nudges_quiet_end = "23:59"
         checkin_timezone = "UTC"
-        prompts_dir = "prompts"
         appreciation_target_ratio = 5.0
         appreciation_check_days = 7
 

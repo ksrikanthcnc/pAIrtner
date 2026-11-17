@@ -1,378 +1,31 @@
-"""SQLite database layer — schema, migrations, and async CRUD."""
+"""SQLite database layer — schema, migrations, and async CRUD.
+
+NOTE: This module is being gradually migrated to couples_bot.storage/.
+New code should prefer importing from the storage submodules.
+The schema and init_db now live in storage.schema; this module re-exports them.
+"""
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import json
+
 import aiosqlite
 
+# Schema and init_db are now canonical in storage.schema.
+# Re-export here for backward compatibility.
+from couples_bot.storage.schema import SCHEMA_SQL as _SCHEMA_SQL, init_db  # noqa: F401
+from couples_bot.storage.helpers import (  # noqa: F401
+    _now_iso, _row_to_dict, _fetch_one, _fetch_all, _execute,
+)
+
+# Schema SQL is in storage.schema (re-exported as _SCHEMA_SQL above)
+
+
 # ---------------------------------------------------------------------------
-# Schema
-# ---------------------------------------------------------------------------
-
-_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS users (
-    tg_id       INTEGER PRIMARY KEY,
-    name        TEXT,
-    partner_id  INTEGER REFERENCES users(tg_id),
-    lang        TEXT DEFAULT 'en',
-    paused      INTEGER DEFAULT 0,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS facts (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_id    INTEGER NOT NULL REFERENCES users(tg_id),
-    text        TEXT NOT NULL,
-    visibility  TEXT NOT NULL CHECK(visibility IN ('private', 'shared')),
-    source      TEXT,
-    category    TEXT DEFAULT NULL,
-    fact_type   TEXT DEFAULT 'stable' CHECK(fact_type IN ('transient','situational','stable')),
-    expires_at  TIMESTAMP,
-    archived_at TIMESTAMP,
-    supersedes_id INTEGER REFERENCES facts(id),
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS pending (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    sender_id     INTEGER NOT NULL REFERENCES users(tg_id),
-    receiver_id   INTEGER NOT NULL REFERENCES users(tg_id),
-    draft         TEXT NOT NULL,
-    edited_draft  TEXT,
-    status        TEXT NOT NULL DEFAULT 'awaiting_approval'
-                  CHECK(status IN ('awaiting_approval','approved','sent','discarded')),
-    send_after    TIMESTAMP,
-    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    sent_at       TIMESTAMP,
-    feedback      TEXT CHECK(feedback IN ('yes','not_sure','no')),
-    acknowledged_at TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS messages (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(tg_id),
-    role        TEXT NOT NULL,
-    content     TEXT NOT NULL,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS usage (
-    date   TEXT NOT NULL,
-    model  TEXT NOT NULL,
-    count  INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (date, model)
-);
-
-CREATE TABLE IF NOT EXISTS couple_config (
-    couple_id   TEXT NOT NULL,
-    config_key  TEXT NOT NULL,
-    config_value TEXT NOT NULL,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (couple_id, config_key)
-);
-
-CREATE TABLE IF NOT EXISTS pending_batch (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    sender_id   INTEGER NOT NULL REFERENCES users(tg_id),
-    receiver_id INTEGER NOT NULL REFERENCES users(tg_id),
-    status      TEXT NOT NULL DEFAULT 'accumulating'
-                CHECK(status IN ('accumulating','reviewing','approved','sent','discarded')),
-    send_after  TIMESTAMP,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS pending_batch_items (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    batch_id     INTEGER NOT NULL REFERENCES pending_batch(id),
-    draft        TEXT NOT NULL,
-    status       TEXT NOT NULL DEFAULT 'pending'
-                 CHECK(status IN ('pending','approved','edited','discarded')),
-    edited_draft TEXT,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS checkins (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    couple_id        TEXT NOT NULL,
-    week_start       TEXT NOT NULL,
-    partner_a_id     INTEGER NOT NULL,
-    partner_a_answers TEXT,
-    partner_b_id     INTEGER NOT NULL,
-    partner_b_answers TEXT,
-    summary          TEXT,
-    status           TEXT NOT NULL DEFAULT 'pending'
-                     CHECK(status IN ('pending','partial','complete')),
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS rate_limit (
-    user_id   INTEGER NOT NULL,
-    window    TEXT NOT NULL,
-    count     INTEGER NOT NULL DEFAULT 0,
-    reset_at  TIMESTAMP NOT NULL,
-    PRIMARY KEY (user_id, window)
-);
-
-CREATE TABLE IF NOT EXISTS user_profiles (
-    user_id       INTEGER PRIMARY KEY REFERENCES users(tg_id),
-    default_voice TEXT DEFAULT 'casual_en',
-    voice_intensity REAL DEFAULT 0.5,
-    dampening_base REAL DEFAULT 0.7,
-    onboarding_done INTEGER DEFAULT 0,
-    onboarding_step INTEGER DEFAULT 0,
-    relationship_type TEXT,
-    duration_years INTEGER,
-    has_kids INTEGER,
-    age_range TEXT,
-    love_story_brief TEXT,
-    learned_voice TEXT,
-    message_count INTEGER DEFAULT 0,
-    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS user_mood_styles (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id       INTEGER NOT NULL REFERENCES users(tg_id),
-    mood          TEXT NOT NULL,
-    voice_override TEXT,
-    dampening_override REAL,
-    response_length TEXT DEFAULT 'normal',
-    set_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    expires_at    TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_mood_user_expires ON user_mood_styles(user_id, expires_at);
-
-CREATE TABLE IF NOT EXISTS partner_perceptions (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(tg_id),
-    about_id    INTEGER NOT NULL REFERENCES users(tg_id),
-    theme       TEXT NOT NULL,
-    sentiment   TEXT DEFAULT 'neutral',
-    confidence  REAL DEFAULT 0.5,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_perceptions_user_about ON partner_perceptions(user_id, about_id);
-
-CREATE TABLE IF NOT EXISTS user_patterns (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(tg_id),
-    pattern     TEXT NOT NULL,
-    pattern_type TEXT DEFAULT 'communication'
-                CHECK(pattern_type IN ('communication','horsemen','articulation')),
-    frequency   INTEGER DEFAULT 1,
-    first_seen  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_seen   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_patterns_user ON user_patterns(user_id);
-
-CREATE TABLE IF NOT EXISTS interaction_scores (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    couple_id        TEXT NOT NULL,
-    user_id          INTEGER NOT NULL REFERENCES users(tg_id),
-    interaction_type TEXT NOT NULL CHECK(interaction_type IN ('positive','negative')),
-    source           TEXT DEFAULT 'llm' CHECK(source IN ('relay','checkin','nudge','llm')),
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_interaction_couple_created
-    ON interaction_scores(couple_id, created_at);
-
-CREATE TABLE IF NOT EXISTS user_goals (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(tg_id),
-    text        TEXT NOT NULL,
-    status      TEXT DEFAULT 'active' CHECK(status IN ('active','achieved','dropped')),
-    progress    TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_goals_user_status ON user_goals(user_id, status);
-
-CREATE TABLE IF NOT EXISTS shared_goals (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    couple_id   TEXT NOT NULL,
-    text        TEXT NOT NULL,
-    created_by  INTEGER NOT NULL REFERENCES users(tg_id),
-    status      TEXT DEFAULT 'active' CHECK(status IN ('active','achieved','dropped')),
-    progress    TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_shared_goals_couple ON shared_goals(couple_id, status);
-
--- Indexes for efficient querying
-CREATE INDEX IF NOT EXISTS idx_facts_owner_visibility
-    ON facts(owner_id, visibility);
-CREATE INDEX IF NOT EXISTS idx_facts_owner_created
-    ON facts(owner_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_messages_user_created
-    ON messages(user_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_pending_sender_status
-    ON pending(sender_id, status);
-CREATE INDEX IF NOT EXISTS idx_pending_status_send_after
-    ON pending(status, send_after);
-CREATE INDEX IF NOT EXISTS idx_batch_sender_status
-    ON pending_batch(sender_id, status);
-CREATE INDEX IF NOT EXISTS idx_batch_status_send_after
-    ON pending_batch(status, send_after);
-CREATE INDEX IF NOT EXISTS idx_batch_items_batch
-    ON pending_batch_items(batch_id);
-
-CREATE TABLE IF NOT EXISTS conflicts (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    couple_id   TEXT NOT NULL,
-    theme       TEXT NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'open'
-                CHECK(status IN ('open','resolved','recurring')),
-    opened_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    resolved_at TIMESTAMP,
-    relay_ids   TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_conflicts_couple_status
-    ON conflicts(couple_id, status);
-
-CREATE TABLE IF NOT EXISTS timeline_events (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    couple_id   TEXT NOT NULL,
-    event_type  TEXT NOT NULL
-                CHECK(event_type IN ('paired','conflict','resolution','milestone','goal','relay','checkin')),
-    summary     TEXT NOT NULL,
-    metadata    TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_timeline_couple_created
-    ON timeline_events(couple_id, created_at);
-
-CREATE TABLE IF NOT EXISTS fact_summaries (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(tg_id),
-    year_month  TEXT NOT NULL,
-    summary_text TEXT NOT NULL,
-    fact_count  INTEGER NOT NULL DEFAULT 0,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_fact_summaries_user_month
-    ON fact_summaries(user_id, year_month);
-
-CREATE TABLE IF NOT EXISTS auth_tokens (
-    user_id     INTEGER PRIMARY KEY,
-    token       TEXT NOT NULL,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS rest_outbox (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL,
-    kind        TEXT NOT NULL,
-    payload     TEXT NOT NULL,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_rest_outbox_user
-    ON rest_outbox(user_id, id);
-"""
-
-
-async def init_db(db_path: str) -> None:
-    """Create tables and indexes if they don't exist."""
-    async with aiosqlite.connect(db_path) as db:
-        await db.executescript(_SCHEMA_SQL)
-
-        # Migration: add 'paused' column to users if missing (existing DBs)
-        async with db.execute("PRAGMA table_info(users)") as cur:
-            columns = {row[1] for row in await cur.fetchall()}
-        if "paused" not in columns:
-            await db.execute(
-                "ALTER TABLE users ADD COLUMN paused INTEGER DEFAULT 0"
-            )
-
-        # Migration: add 'category' column to facts if missing (existing DBs)
-        async with db.execute("PRAGMA table_info(facts)") as cur:
-            fact_columns = {row[1] for row in await cur.fetchall()}
-        if "category" not in fact_columns:
-            await db.execute(
-                "ALTER TABLE facts ADD COLUMN category TEXT DEFAULT NULL"
-            )
-
-        # Migration: add fact lifecycle columns if missing (FEAT-003)
-        if "fact_type" not in fact_columns:
-            await db.execute(
-                "ALTER TABLE facts ADD COLUMN fact_type TEXT DEFAULT 'stable'"
-            )
-        if "expires_at" not in fact_columns:
-            await db.execute(
-                "ALTER TABLE facts ADD COLUMN expires_at TIMESTAMP"
-            )
-        if "archived_at" not in fact_columns:
-            await db.execute(
-                "ALTER TABLE facts ADD COLUMN archived_at TIMESTAMP"
-            )
-        if "supersedes_id" not in fact_columns:
-            await db.execute(
-                "ALTER TABLE facts ADD COLUMN supersedes_id INTEGER REFERENCES facts(id)"
-            )
-
-        # Migration: when a fact was last shared with the partner (D7)
-        if "shared_at" not in fact_columns:
-            await db.execute(
-                "ALTER TABLE facts ADD COLUMN shared_at TIMESTAMP"
-            )
-        # Create category index (after migration ensures column exists)
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_facts_owner_category "
-            "ON facts(owner_id, category)"
-        )
-
-        # Migration: add 'pattern_type' column to user_patterns if missing
-        async with db.execute("PRAGMA table_info(user_patterns)") as cur:
-            pattern_columns = {row[1] for row in await cur.fetchall()}
-        if "pattern_type" not in pattern_columns:
-            await db.execute(
-                "ALTER TABLE user_patterns ADD COLUMN pattern_type TEXT DEFAULT 'communication'"
-            )
-
-        # Migration: add feedback/acknowledged_at columns to pending if missing
-        async with db.execute("PRAGMA table_info(pending)") as cur:
-            pending_columns = {row[1] for row in await cur.fetchall()}
-        if "feedback" not in pending_columns:
-            await db.execute(
-                "ALTER TABLE pending ADD COLUMN feedback TEXT"
-            )
-        if "acknowledged_at" not in pending_columns:
-            await db.execute(
-                "ALTER TABLE pending ADD COLUMN acknowledged_at TIMESTAMP"
-            )
-
-        # Migration: add learned_voice and message_count to user_profiles if missing
-        async with db.execute("PRAGMA table_info(user_profiles)") as cur:
-            profile_columns = {row[1] for row in await cur.fetchall()}
-        if "learned_voice" not in profile_columns:
-            await db.execute(
-                "ALTER TABLE user_profiles ADD COLUMN learned_voice TEXT"
-            )
-        if "message_count" not in profile_columns:
-            await db.execute(
-                "ALTER TABLE user_profiles ADD COLUMN message_count INTEGER DEFAULT 0"
-            )
-
-        await db.commit()
-
-    # Initialise FTS5 search index (late import avoids circular dependency)
-    from couples_bot.search import init_fts
-    await init_fts(db_path)
-
-
+# Internal helpers are in storage.helpers (re-exported above)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -545,6 +198,106 @@ async def set_fact_visibility(
         )
         await db.commit()
         return cur.rowcount > 0
+
+
+async def update_fact_text(db_path: str, fact_id: int, new_text: str) -> bool:
+    """Update a fact's text. Returns True if updated."""
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE facts SET text = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_text, fact_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def set_fact_status(db_path: str, fact_id: int, status: str) -> bool:
+    """Set a fact's status. Returns True if updated.
+
+    Valid statuses: active, improving, resolved, outdated.
+    """
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE facts SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (status, fact_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def promote_to_core(db_path: str, fact_id: int) -> bool:
+    """Promote a fact to core kind. Returns True if updated.
+
+    Core facts are never aged or archived.
+    """
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE facts SET kind = 'core', fact_type = 'stable', "
+            "expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (fact_id,),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def append_memory_version(
+    db_path: str,
+    fact_id: int,
+    text: str,
+    status: str = "active",
+    op: str = "add",
+    reason: str | None = None,
+    source_msg_id: int | None = None,
+) -> None:
+    """Append a version record to the memory version history."""
+    async with aiosqlite.connect(db_path) as db:
+        # Get next version number
+        cursor = await db.execute(
+            "SELECT COALESCE(MAX(version), 0) FROM memory_versions WHERE fact_id = ?",
+            (fact_id,),
+        )
+        row = await cursor.fetchone()
+        next_ver = (row[0] if row else 0) + 1
+
+        await db.execute(
+            "INSERT INTO memory_versions (fact_id, version, text, status, op, reason, source_msg_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (fact_id, next_ver, text, status, op, reason, source_msg_id),
+        )
+        await db.commit()
+
+
+async def log_memory_op(
+    db_path: str,
+    user_id: int,
+    op_json: str,
+    outcome: str,
+    *,
+    message_id: int | None = None,
+    reason: str | None = None,
+    fact_id: int | None = None,
+) -> None:
+    """Log a memory operation to the audit trail."""
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "INSERT INTO memory_op_log (user_id, message_id, op_json, outcome, reason, fact_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, message_id, op_json, outcome, reason, fact_id),
+        )
+        await db.commit()
+
+
+async def get_memory_versions(
+    db_path: str, fact_id: int
+) -> list[dict[str, Any]]:
+    """Get version history for a fact."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM memory_versions WHERE fact_id = ? ORDER BY version",
+        (fact_id,),
+    )
+
+
 async def get_shared_facts_since(
     db_path: str, a: int, b: int, since: str
 ) -> list[dict[str, Any]]:
@@ -680,6 +433,33 @@ async def get_recent_messages(
     )
 
 
+async def get_full_history(
+    db_path: str, user_id: int, limit: int = 500, offset: int = 0,
+) -> list[dict[str, Any]]:
+    """Return the full message history for a user (oldest first), with timestamps.
+
+    Used by the PWA to reconstruct the full conversation on auth.
+    """
+    return await _fetch_all(
+        db_path,
+        "SELECT id, role, content, created_at FROM messages "
+        "WHERE user_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?",
+        (user_id, limit, offset),
+    )
+
+
+async def get_history_after_id(
+    db_path: str, user_id: int, after_id: int, limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Return messages after a given ID (for delta fetching by the PWA)."""
+    return await _fetch_all(
+        db_path,
+        "SELECT id, role, content, created_at FROM messages "
+        "WHERE user_id = ? AND id > ? ORDER BY created_at ASC LIMIT ?",
+        (user_id, after_id, limit),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Usage tracking
 # ---------------------------------------------------------------------------
@@ -696,6 +476,31 @@ async def increment_usage(db_path: str, model: str) -> None:
         await db.commit()
 
 
+async def record_pack_snapshot(
+    db_path: str, pack_hash: str, name: str, version: str,
+    engine_contract: int | None, files: dict[str, str],
+) -> None:
+    """Remember which file hashes make up *pack_hash* (once per distinct hash)."""
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """INSERT OR IGNORE INTO pack_snapshots
+               (pack_hash, name, version, engine_contract, files_json)
+               VALUES (?, ?, ?, ?, ?)""",
+            (pack_hash, name, version, engine_contract,
+             json.dumps(files, sort_keys=True)),
+        )
+        await db.commit()
+async def record_llm_call(
+    db_path: str, task: str, model: str | None, pack_hash: str, prompt_sha256: str,
+) -> None:
+    """Trace one LLM call: no prompt text and no user id are stored."""
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """INSERT INTO llm_calls (task, model, pack_hash, prompt_sha256)
+               VALUES (?, ?, ?, ?)""",
+            (task, model, pack_hash, prompt_sha256),
+        )
+        await db.commit()
 async def get_usage_count(db_path: str, model: str) -> int:
     """Return today's usage count for a specific *model*."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -828,6 +633,10 @@ async def get_user_context_data(
 
     Returns a dict with keys: user_name, partner_name, private_facts,
     shared_facts, recent_messages, lang.
+
+    Facts are formatted with IDs, kind labels, and status when non-active.
+    Core facts are listed first (always included), then working (ranked by
+    status: active > improving > resolved > outdated), then episodes if any.
     """
     user = await get_user(db_path, user_id)
     if not user:
@@ -840,32 +649,76 @@ async def get_user_context_data(
             "lang": "en",
         }
 
-    private_facts = [
-        f["text"] for f in await get_active_facts(db_path, user_id, "private")
-    ]
+    all_private = await get_active_facts(db_path, user_id, "private")
+
+    # Sort by kind priority, then status priority within kind
+    _KIND_ORDER = {"core": 0, "episode": 1, "working": 2, "partner_view": 3}
+    _STATUS_ORDER = {"active": 0, "improving": 1, "resolved": 2, "outdated": 3}
+
+    def _sort_key(f: dict) -> tuple[int, int, str]:
+        kind = f.get("kind") or "working"
+        status = f.get("status") or "active"
+        created = f.get("created_at") or ""
+        return (_KIND_ORDER.get(kind, 9), _STATUS_ORDER.get(status, 9), created)
+
+    all_private.sort(key=_sort_key)
+
+    private_facts: list[str] = []
+    kind_words: dict[str, int] = {}  # track words used per kind
+
+    # Budget caps (words per kind) -- loaded from pack or defaults
+    budgets = _get_context_budgets()
+
+    for f in all_private:
+        kind = f.get("kind") or "working"
+        status = f.get("status") or "active"
+        prefix = f"[{f['id']}]"
+        if kind == "core":
+            prefix += " (core)"
+        elif kind == "episode":
+            prefix += " (episode)"
+        suffix = ""
+        if status != "active":
+            suffix = f" [{status}]"
+        line = f"{prefix} {f['text']}{suffix}"
+
+        # Check budget cap
+        line_words = len(line.split())
+        budget_key = kind if kind in budgets else "working"
+        current = kind_words.get(budget_key, 0)
+        cap = budgets.get(budget_key, 400)
+        if current + line_words > cap and current > 0:
+            continue  # Over budget, skip (but allow at least one item)
+
+        private_facts.append(line)
+        kind_words[budget_key] = current + line_words
 
     partner_id = user.get("partner_id")
     partner_name = None
     if partner_id:
         shared_facts = [
-            f["text"]
+            f"[{f['id']}] {f['text']}"
             for f in await get_active_facts(db_path, user_id, "shared")
         ]
         partner_shared = [
-            f["text"]
+            f["text"]  # no IDs for partner's shared items (privacy)
             for f in await get_active_facts(db_path, partner_id, "shared")
         ]
         # Merge without duplicates while preserving order
         seen = set(shared_facts)
-        for t in partner_shared:
-            if t not in seen:
-                shared_facts.append(t)
-                seen.add(t)
+        for t_ in partner_shared:
+            if t_ not in seen:
+                shared_facts.append(t_)
+                seen.add(t_)
+
+        # Apply shared budget
+        shared_cap = budgets.get("shared", 150)
+        shared_facts = _apply_word_cap(shared_facts, shared_cap)
         partner = await get_user(db_path, partner_id)
         partner_name = partner["name"] if partner else None
     else:
         shared_facts = [
-            f["text"] for f in await get_active_facts(db_path, user_id, "shared")
+            f"[{f['id']}] {f['text']}" for f in await get_active_facts(db_path, user_id, "shared")
         ]
 
     recent = await get_recent_messages(db_path, user_id)
@@ -880,6 +733,31 @@ async def get_user_context_data(
         "recent_messages": recent_messages,
         "lang": user.get("lang") or "en",
     }
+
+
+def _get_context_budgets() -> dict[str, int]:
+    """Load context budgets from the active pack, or use defaults."""
+    try:
+        from couples_bot import pack as pack_mod
+        p = pack_mod.current()
+        manifest = p._state.manifest or {}
+        budgets_raw = manifest.get("budgets") or {}
+        return {k: int(v) for k, v in budgets_raw.items() if isinstance(v, (int, float))}
+    except Exception:
+        return {"core": 250, "shared": 150, "partner_view": 150, "working": 400, "episodes": 300}
+
+
+def _apply_word_cap(items: list[str], cap: int) -> list[str]:
+    """Keep items until the cumulative word count exceeds *cap*."""
+    result: list[str] = []
+    total = 0
+    for item in items:
+        words = len(item.split())
+        if total + words > cap and total > 0:
+            break
+        result.append(item)
+        total += words
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1279,6 +1157,22 @@ async def get_message_count(db_path: str, user_id: int) -> int:
     return profile.get("message_count") or 0
 
 
+async def update_voice_traits(
+    db_path: str, user_id: int, traits: dict[str, Any],
+) -> None:
+    """Merge new voice traits into the existing learned_voice JSON."""
+    profile = await ensure_user_profile(db_path, user_id)
+    existing_raw = profile.get("learned_voice")
+    existing: dict[str, Any] = {}
+    if existing_raw:
+        try:
+            existing = json.loads(existing_raw) if isinstance(existing_raw, str) else existing_raw
+        except (json.JSONDecodeError, TypeError):
+            pass
+    existing.update(traits)
+    await update_user_profile(db_path, user_id, learned_voice=json.dumps(existing))
+
+
 async def update_learned_voice(
     db_path: str, user_id: int, voice_json: str
 ) -> None:
@@ -1443,21 +1337,23 @@ async def run_fact_aging(db_path: str) -> list[dict[str, Any]]:
     situational_cutoff = (now - timedelta(days=30)).isoformat()
     now_iso = now.isoformat()
 
-    # Auto-archive transient facts older than 14 days
+    # Auto-archive transient facts older than 14 days (skip core)
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
             "UPDATE facts SET archived_at = ? "
             "WHERE fact_type = 'transient' AND archived_at IS NULL "
+            "AND kind != 'core' "
             "AND created_at <= ?",
             (now_iso, transient_cutoff),
         )
         await db.commit()
 
-    # Find situational facts older than 30 days that need confirmation
+    # Find situational facts older than 30 days that need confirmation (skip core)
     needs_confirmation = await _fetch_all(
         db_path,
         "SELECT * FROM facts "
         "WHERE fact_type = 'situational' AND archived_at IS NULL "
+        "AND kind != 'core' "
         "AND created_at <= ?",
         (situational_cutoff,),
     )
@@ -2181,3 +2077,95 @@ async def allocate_rest_user(
             await db.rollback()
             raise
         return new_id
+
+
+
+# ---------------------------------------------------------------------------
+# Admin: conversation history (both users interleaved)
+# ---------------------------------------------------------------------------
+
+async def get_couple_conversation(
+    db_path: str, user_a_id: int, user_b_id: int, limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Get interleaved conversation for a couple (both users + bot responses).
+
+    Returns messages from both users, ordered by created_at, with user names.
+    Used by admin dashboard to view the full conversation.
+    """
+    return await _fetch_all(
+        db_path,
+        """SELECT m.id, m.user_id, m.role, m.content, m.created_at,
+                  u.name as user_name
+           FROM messages m
+           JOIN users u ON m.user_id = u.tg_id
+           WHERE m.user_id IN (?, ?)
+           ORDER BY m.created_at ASC
+           LIMIT ?""",
+        (user_a_id, user_b_id, limit),
+    )
+
+
+
+# ---------------------------------------------------------------------------
+# Runtime settings (DB-backed, overrides static config)
+# ---------------------------------------------------------------------------
+
+async def get_runtime_setting(
+    db_path: str, key: str, default: str | None = None,
+) -> str | None:
+    """Get a runtime setting from user_meta (user_id=0 for global settings)."""
+    row = await _fetch_one(
+        db_path,
+        "SELECT value FROM user_meta WHERE user_id = 0 AND key = ?",
+        (key,),
+    )
+    return row["value"] if row else default
+
+
+async def set_runtime_setting(
+    db_path: str, key: str, value: str,
+) -> None:
+    """Set a global runtime setting (user_id=0)."""
+    import aiosqlite
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO user_meta (user_id, key, value, updated_at) "
+            "VALUES (0, ?, ?, CURRENT_TIMESTAMP)",
+            (key, value),
+        )
+        await db.commit()
+
+
+async def get_all_runtime_settings(db_path: str) -> dict[str, str]:
+    """Get all global runtime settings."""
+    rows = await _fetch_all(
+        db_path,
+        "SELECT key, value FROM user_meta WHERE user_id = 0",
+    )
+    return {r["key"]: r["value"] for r in rows}
+
+
+async def get_user_preference(
+    db_path: str, user_id: int, key: str, default: str | None = None,
+) -> str | None:
+    """Get a per-user preference from user_meta."""
+    row = await _fetch_one(
+        db_path,
+        "SELECT value FROM user_meta WHERE user_id = ? AND key = ?",
+        (user_id, key),
+    )
+    return row["value"] if row else default
+
+
+async def set_user_preference(
+    db_path: str, user_id: int, key: str, value: str,
+) -> None:
+    """Set a per-user preference."""
+    import aiosqlite
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO user_meta (user_id, key, value, updated_at) "
+            "VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+            (user_id, key, value),
+        )
+        await db.commit()

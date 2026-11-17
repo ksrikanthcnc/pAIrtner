@@ -54,6 +54,28 @@ _CRISIS_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("threat_threatening_to_kill", re.compile(
         r"\bthreatening\s+to\s+kill\b", re.IGNORECASE,
     )),
+    # Suicidal ideation phrased without "die"/"suicide".
+    ("self_harm_not_want_to_live", re.compile(
+        r"\b(don'?t|do\s+not|no\s+longer)\s+want\s+to\s+(live|be\s+alive|exist|wake\s+up)\b"
+        r"|\bno\s+reason\s+to\s+live\b|\bbetter\s+off\s+dead\b",
+        re.IGNORECASE,
+    )),
+    # Physical violence by a PERSON against the speaker. A person subject is
+    # required so "the movie hit me hard" does not match.
+    ("abuse_person_hits_me", re.compile(
+        r"\b(he|she|they|husband|wife|partner|boyfriend|girlfriend|bf|gf|"
+        r"fianc[eé]e?|in-?laws?|father|mother|dad|mom|brother|sister)\b"
+        r"(?:\W+\w+){0,3}?\W+"
+        r"(hit|hits|hitting|slap\w*|beat|beats|beating|beaten|punch\w*|kick\w*|"
+        r"chok\w*|strangl\w*|push(?:es|ed|ing)?|shov\w*|smack\w*|burn(?:s|ed|t)?)"
+        r"\s+me\b",
+        re.IGNORECASE,
+    )),
+    # Fear of being harmed by someone.
+    ("abuse_afraid_of_harm", re.compile(
+        r"\b(scared|afraid|terrified|frightened)\b.{0,40}?\b(hurt|hit|harm|kill|beat)\s+me\b",
+        re.IGNORECASE,
+    )),
 ]
 
 

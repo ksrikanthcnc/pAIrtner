@@ -29,8 +29,9 @@ SECRET_COLUMNS: dict[str, set[str]] = {
 METADATA_COLUMNS: dict[str, set[str]] = {
     "users": {"tg_id", "partner_id", "lang", "paused", "created_at"},
     "facts": {
-        "id", "owner_id", "visibility", "category", "fact_type", "expires_at",
-        "archived_at", "shared_at", "supersedes_id", "created_at", "updated_at",
+        "id", "owner_id", "visibility", "category", "fact_type", "kind", "status",
+        "expires_at", "archived_at", "shared_at", "supersedes_id",
+        "created_at", "updated_at",
     },
     "pending": {
         "id", "sender_id", "receiver_id", "status", "send_after", "created_at",
@@ -38,6 +39,11 @@ METADATA_COLUMNS: dict[str, set[str]] = {
     },
     "messages": {"id", "user_id", "role", "created_at"},
     "usage": {"date", "model", "count"},
+    "llm_calls": {"id", "created_at", "task", "model", "pack_hash", "prompt_sha256"},
+    "pack_snapshots": {
+        "pack_hash", "name", "version", "engine_contract", "files_json",
+        "first_seen_at",
+    },
     "couple_config": {"couple_id", "config_key", "created_at", "updated_at"},
     "pending_batch": {"id", "sender_id", "receiver_id", "status", "send_after", "created_at"},
     "pending_batch_items": {"id", "batch_id", "status", "created_at"},
@@ -76,6 +82,13 @@ METADATA_COLUMNS: dict[str, set[str]] = {
     "fact_summaries": {"id", "user_id", "year_month", "fact_count", "created_at"},
     "auth_tokens": {"user_id", "created_at"},
     "rest_outbox": {"id", "user_id", "kind", "created_at"},
+    "memory_versions": {
+        "id", "fact_id", "version", "status", "op", "source_msg_id", "created_at",
+    },
+    "memory_op_log": {
+        "id", "user_id", "message_id", "outcome", "fact_id", "created_at",
+    },
+    "user_meta": {"user_id", "key", "updated_at"},
 }
 
 # Known free-text columns (shown only with show_raw_text). Used by the schema
@@ -100,6 +113,9 @@ RAW_TEXT_COLUMNS: dict[str, set[str]] = {
     "timeline_events": {"summary", "metadata"},
     "fact_summaries": {"summary_text"},
     "rest_outbox": {"payload"},
+    "memory_versions": {"text", "reason"},
+    "memory_op_log": {"op_json", "reason"},
+    "user_meta": {"value"},
 }
 
 

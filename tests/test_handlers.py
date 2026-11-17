@@ -461,15 +461,17 @@ async def test_lang_creates_user_if_not_exists(service: BotService, test_db):
 
 @pytest.mark.asyncio
 async def test_whatdoyouknow_shows_timestamps(service: BotService, test_db, paired_users):
-    """Facts should display with [date] timestamps and visibility labels."""
+    """Facts should display with [id] references, timestamps, and visibility icons."""
     a_id, _ = paired_users
     responses = await service.handle_whatdoyouknow(a_id)
     text = responses[0].text
-    # Must contain timestamp brackets
+    # Must contain fact IDs in brackets
     assert "[" in text and "]" in text
-    # Must contain visibility labels
-    assert "(private)" in text
-    assert "(shared)" in text
+    # Must contain visibility icons
+    assert "🔒" in text  # private
+    assert "🔓" in text  # shared
+    # Must contain kind header
+    assert "Working Memory" in text or "💭" in text
     # Fact content still present
     assert "Alice feels stressed" in text
     assert "morning walks" in text
@@ -1444,49 +1446,38 @@ async def test_blunt_uses_blunt_prompt(service: BotService, test_db, paired_user
 
 
 @pytest.mark.asyncio
-async def test_persona_loaded_in_system_prompt(service: BotService, test_db, paired_users):
-    """System prompt should contain persona text when persona file is loaded."""
-    from couples_bot.prompts import _persona_text, load_persona
+async def test_persona_loaded_in_system_prompt(
+    service: BotService, test_db, paired_users, tmp_path,
+):
+    """System prompt contains the persona text of the active pack."""
+    from couples_bot import pack
+    from tests.helpers import copy_default_pack
 
     a_id, _ = paired_users
 
-    # Load a test persona
-    import tempfile, os
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-        f.write("You are TestBot, a helpful testing persona.")
-        persona_path = f.name
+    root = copy_default_pack(tmp_path)
+    (root / "persona.md").write_text("You are TestBot, a helpful testing persona.")
+    pack.activate(root)
 
-    try:
-        load_persona(persona_path)
+    mock = MockLLMClient([{
+        "reply": "Response",
+        "new_facts": [],
+        "relay_draft": None,
+    }])
+    service.llm = mock
 
-        mock = MockLLMClient([{
-            "reply": "Response",
-            "new_facts": [],
-            "relay_draft": None,
-        }])
-        service.llm = mock
-
-        await service.handle_message(a_id, "Alice", "Hello bot")
-        assert len(mock.calls) == 1
-        system_prompt = mock.calls[0]["system_prompt"]
-        assert "TestBot" in system_prompt
-    finally:
-        os.unlink(persona_path)
-        # Reset persona cache
-        import couples_bot.prompts as _p
-        _p._persona_text = None
+    await service.handle_message(a_id, "Alice", "Hello bot")
+    assert len(mock.calls) == 1
+    system_prompt = mock.calls[0]["system_prompt"]
+    assert "TestBot" in system_prompt
 
 
 @pytest.mark.asyncio
-async def test_persona_fallback_when_missing(service: BotService, test_db, paired_users):
-    """When persona file is missing, fallback persona is used."""
-    from couples_bot.prompts import _FALLBACK_PERSONA, load_persona
-
+async def test_default_pack_persona_in_system_prompt(
+    service: BotService, test_db, paired_users,
+):
+    """With no pack activated explicitly, the default pack's persona is used."""
     a_id, _ = paired_users
-
-    # Load a non-existent file
-    result = load_persona("/nonexistent/path/persona.md")
-    assert result == _FALLBACK_PERSONA
 
     mock = MockLLMClient([{
         "reply": "Response",
@@ -1499,10 +1490,6 @@ async def test_persona_fallback_when_missing(service: BotService, test_db, paire
     assert len(mock.calls) == 1
     system_prompt = mock.calls[0]["system_prompt"]
     assert "pAIrtner" in system_prompt
-
-    # Reset persona cache
-    import couples_bot.prompts as _p
-    _p._persona_text = None
 
 
 # ---------------------------------------------------------------------------
@@ -1679,37 +1666,36 @@ async def test_fact_category_saved(service: BotService, test_db, paired_users):
 
 
 @pytest.mark.asyncio
-async def test_whatdoyouknow_groups_by_category(
+async def test_whatdoyouknow_groups_by_kind(
     service: BotService, test_db, paired_users
 ):
-    """When facts have categories, /whatdoyouknow groups them under headers."""
-    from couples_bot.db import add_fact
+    """When facts have different kinds, /whatdoyouknow groups them under kind headers."""
+    from couples_bot.db import add_fact, promote_to_core
 
     a_id, _ = paired_users
 
-    # Add categorized facts
-    await add_fact(test_db, a_id, "Likes morning runs", "private", category="health")
-    await add_fact(test_db, a_id, "Anniversary in June", "shared", category="relationship")
+    # Add a fact and promote it to core
+    fid = await add_fact(test_db, a_id, "I'm an introvert", "private")
+    await promote_to_core(test_db, fid)
 
     responses = await service.handle_whatdoyouknow(a_id)
     text = responses[0].text
-    # Should contain category headers
-    assert "🏥" in text or "Health" in text or "ఆరోగ్యం" in text
-    assert "❤️" in text or "Relationship" in text or "సంబంధం" in text
-    assert "morning runs" in text.lower()
-    assert "anniversary" in text.lower()
+    # Should contain kind headers
+    assert "Core" in text or "📌" in text
+    assert "Working Memory" in text or "💭" in text
+    assert "introvert" in text.lower()
 
 
 @pytest.mark.asyncio
-async def test_whatdoyouknow_no_categories_uses_type_grouping(
+async def test_whatdoyouknow_shows_kind_counts(
     service: BotService, test_db, paired_users
 ):
-    """Without categories, /whatdoyouknow groups by fact type."""
+    """Kind headers should show count of facts in each group."""
     a_id, _ = paired_users
-    # The paired_users fixture adds facts without categories — default is 'stable'
+    # The paired_users fixture adds 3 facts — all default 'working' kind
     responses = await service.handle_whatdoyouknow(a_id)
     text = responses[0].text
-    assert "Stable" in text or "📌" in text
+    assert "Working Memory" in text or "💭" in text
 
 
 # ---------------------------------------------------------------------------

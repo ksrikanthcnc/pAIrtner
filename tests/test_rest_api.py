@@ -96,6 +96,8 @@ def test_route_table_decisions_are_explicit():
         ("POST", "/api/v1/message"): False,
         ("POST", "/api/v1/callback"): False,
         ("GET", "/api/v1/events"): False,
+        ("GET", "/api/v1/history"): False,
+        ("GET", "/api/v1/facts"): False,
         ("POST", "/api/v1/token/rotate"): False,
     }
     static = [r for r in ROUTES if r.handler == "_static"]

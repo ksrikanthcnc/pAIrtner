@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import os
+import sys
 
+
+from couples_bot import pack
 from couples_bot.adapters import get_adapter
 from couples_bot.adapters.cli_adapter import CLIAdapter
 from couples_bot.config import load_config
@@ -14,7 +16,7 @@ from couples_bot.db import init_db
 from couples_bot.handlers import BotService
 from couples_bot.handlers.service import PrivacyInfo
 from couples_bot.llm import create_llm_client, describe_llm
-from couples_bot.prompts import load_persona
+
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -52,14 +54,17 @@ def main() -> None:
         config.llm_provider, config.model_default,
     )
 
-    # Load persona (warm the cache)
-    persona_path = os.path.join(config.prompts_dir, "persona.md")
-    if os.path.isfile(persona_path):
-        load_persona(persona_path)
-        logger.info("Persona loaded from %s", persona_path)
-    else:
-        load_persona(config.persona_file)
-        logger.info("Persona loaded from legacy path %s", config.persona_file)
+    # Load and validate the prompt pack before touching the database.
+    try:
+        active_pack = pack.activate(config.prompt_pack)
+    except pack.PackError as exc:
+        logger.error("%s", exc)
+        sys.exit(2)
+    snapshot = active_pack.snapshot()
+    logger.info(
+        "Prompt pack loaded: %s@%s pack_hash=%s",
+        snapshot["name"], snapshot["version"], snapshot["pack_hash"][:12],
+    )
 
     # Init DB synchronously before the event loop starts
     asyncio.run(init_db(config.db_path))

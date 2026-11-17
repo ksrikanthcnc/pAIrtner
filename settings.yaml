@@ -1,12 +1,10 @@
 # pAIrtner Bot — tunables
 # Secrets (API keys, tokens, encryption keys) belong in .env, NOT here.
 
-# Bot personality file — loaded at startup as the system instruction base.
-persona_file: persona.md
-
-# Prompt directory structure.
-prompts_dir: prompts
-voices_dir: prompts/voices
+# Prompt pack: the folder holding every word the model reads (persona,
+# contract, strings, voices, tasks). Relative paths resolve against the
+# working directory, then the repo root. Env override: PROMPT_PACK.
+prompt_pack: packs/default
 default_voice: casual_en
 default_voice_intensity: 0.5
 

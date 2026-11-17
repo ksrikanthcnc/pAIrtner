@@ -99,6 +99,8 @@ ROUTES: tuple[Route, ...] = (
     Route("POST", "/api/v1/message", False, "_message", needs_json=True),
     Route("POST", "/api/v1/callback", False, "_callback", needs_json=True),
     Route("GET", "/api/v1/events", False, "_events"),
+    Route("GET", "/api/v1/history", False, "_history"),
+    Route("GET", "/api/v1/facts", False, "_facts"),
     Route("POST", "/api/v1/token/rotate", False, "_rotate"),
 ) + tuple(Route("GET", p, True, "_static") for p in STATIC_FILES)
 
@@ -375,6 +377,29 @@ class RestApi:
 
     async def _rotate(self, *, uid: int, **_: Any) -> Response:
         return _json(200, {"user_id": uid, "token": await self._issue_token(uid)})
+
+    async def _history(self, *, uid: int, query: dict[str, str], **_: Any) -> Response:
+        """Return the full message history for a user (oldest first, with timestamps)."""
+        try:
+            limit = min(int(query.get("limit", "500")), 2000)
+            offset = max(int(query.get("offset", "0")), 0)
+            offset_id = int(query.get("offset_id", "0"))
+        except ValueError:
+            raise ApiError(400, "invalid_query")
+        if offset_id > 0:
+            messages = await db_mod.get_history_after_id(self.db_path, uid, offset_id, limit=limit)
+        else:
+            messages = await db_mod.get_full_history(self.db_path, uid, limit=limit, offset=offset)
+        return _json(200, {"messages": messages, "count": len(messages)})
+
+    async def _facts(self, *, uid: int, query: dict[str, str], **_: Any) -> Response:
+        """Return the user's facts, optionally filtered by kind/visibility."""
+        kind = query.get("kind")  # core, working, episode, partner_view
+        visibility = query.get("visibility")  # private, shared
+        facts = await db_mod.get_active_facts(self.db_path, uid, visibility=visibility)
+        if kind:
+            facts = [f for f in facts if (f.get("kind") or "working") == kind]
+        return _json(200, {"facts": facts, "count": len(facts)})
 
     async def _me(self, *, uid: int, **_: Any) -> Response:
         user = await db_mod.get_user(self.db_path, uid)

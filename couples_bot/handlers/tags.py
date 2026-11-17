@@ -9,6 +9,7 @@ from __future__ import annotations
 import uuid
 
 from couples_bot import db as db_mod
+from couples_bot import pack
 from couples_bot.conflict_detector import detect_conflict_opening
 from couples_bot.dampening import get_dampening_instruction, resolve_dampening
 from couples_bot.i18n import t
@@ -46,7 +47,7 @@ class TagsMixin:
 
         profile = await db_mod.get_user_profile(self.db_path, user_id)
         voice_name = (profile or {}).get("default_voice") or self.config.default_voice
-        voice_text = load_voice(self.config.voices_dir, voice_name)
+        voice_text = load_voice(voice_name)
 
         # Check for mature learned voice profile
         if (
@@ -63,8 +64,8 @@ class TagsMixin:
                     parts = ", ".join(
                         f"{k}={v}" for k, v in traits.items()
                     )
-                    learned_instruction = (
-                        f"Match this user's communication style: {parts}"
+                    learned_instruction = pack.current().s(
+                        "learned_voice", parts=parts,
                     )
                     voice_text = learned_instruction + "\n\n" + voice_text
             except (_json.JSONDecodeError, TypeError):
@@ -124,7 +125,7 @@ class TagsMixin:
         )
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
-        count = await self._save_facts(user_id, result.get("new_facts", []))
+        count = await self._apply_memory_ops_from_result(user_id, result, text)
 
         # Fire-and-forget: auto-update profiles from LLM extras
         await process_llm_extras(self.db_path, user_id, result, self.config)
@@ -167,7 +168,7 @@ class TagsMixin:
         )
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
-        await self._save_facts(user_id, result.get("new_facts", []))
+        await self._apply_memory_ops_from_result(user_id, result, text, allow_pin=False)
 
         # Fire-and-forget: auto-update profiles from LLM extras
         await process_llm_extras(self.db_path, user_id, result, self.config)
@@ -293,7 +294,7 @@ class TagsMixin:
             if warning:
                 result["reply"] += "\n\n" + warning
 
-        count = await self._save_facts(user_id, result.get("new_facts", []))
+        count = await self._apply_memory_ops_from_result(user_id, result, text)
 
         # Fire-and-forget: auto-update profiles from LLM extras
         await process_llm_extras(self.db_path, user_id, result, self.config)
@@ -326,7 +327,7 @@ class TagsMixin:
         )
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
-        count = await self._save_facts(user_id, result.get("new_facts", []))
+        count = await self._apply_memory_ops_from_result(user_id, result, text)
 
         # Fire-and-forget: auto-update profiles from LLM extras
         await process_llm_extras(self.db_path, user_id, result, self.config)
@@ -365,7 +366,7 @@ class TagsMixin:
         )
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
-        count = await self._save_facts(user_id, result.get("new_facts", []))
+        count = await self._apply_memory_ops_from_result(user_id, result, text)
 
         # Fire-and-forget: auto-update profiles from LLM extras
         await process_llm_extras(self.db_path, user_id, result, self.config)
@@ -412,6 +413,9 @@ class TagsMixin:
             feedback_responses = await self._check_feedback(user_id, lang)
             responses.extend(feedback_responses)
 
+            # Background analysis trigger
+            await self._maybe_run_analysis(user_id)
+
             return responses
 
         responses = [BotResponse(reply_text)]
@@ -420,6 +424,9 @@ class TagsMixin:
         # Feedback check: after relay delivery, ask sender for feedback
         feedback_responses = await self._check_feedback(user_id, lang)
         responses.extend(feedback_responses)
+
+        # Background analysis trigger (fire-and-forget, every N messages)
+        await self._maybe_run_analysis(user_id)
 
         return responses
 
@@ -450,3 +457,21 @@ class TagsMixin:
             for row in button_rows
         ]
         return [BotResponse(text, buttons=buttons)]
+
+    async def _maybe_run_analysis(self, user_id: int) -> None:
+        """Trigger background analysis if enough new messages have accumulated."""
+        try:
+            from couples_bot.analysis import should_run_analysis, run_analysis
+            interval = getattr(self.config, "analysis_interval", 10)
+            if await should_run_analysis(self.db_path, user_id, interval=interval):
+                api_key = await self._get_couple_api_key(user_id)
+                await run_analysis(
+                    self.db_path, self.llm, user_id,
+                    config=self.config, api_key_override=api_key,
+                )
+        except Exception:
+            # Analysis is non-critical -- log and continue
+            import logging
+            logging.getLogger(__name__).exception(
+                "Background analysis failed for user %s", user_id,
+            )

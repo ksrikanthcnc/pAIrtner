@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from couples_bot import db as db_mod
+from couples_bot import pack
 from couples_bot.llm import LLMClient
 from couples_bot.prompts import load_task_prompt
 
@@ -17,7 +18,6 @@ async def generate_therapy_report(
     db_path: str,
     llm: LLMClient,
     user_id: int,
-    prompts_dir: str = "prompts",
 ) -> str | None:
     """Gather context and generate a structured therapy report.
 
@@ -59,7 +59,10 @@ async def generate_therapy_report(
         return None
 
     # ── Build context for LLM ────────────────────────────────────────
+    p = pack.current()
+    pack.set_trace(p, "therapy_export")
     sections: list[str] = []
+
 
     # Timeline
     if events:
@@ -70,79 +73,86 @@ async def generate_therapy_report(
                 date_str = dt.strftime("%Y-%m-%d")
             except (ValueError, TypeError):
                 date_str = "?"
-            event_lines.append(f"- [{date_str}] {ev['event_type']}: {ev['summary']}")
-        sections.append("## Timeline Events\n" + "\n".join(event_lines))
+            line = p.s(
+                "therapy_timeline_line", date=date_str,
+                event_type=ev["event_type"], summary=ev["summary"],
+            )
+            event_lines.append(f"- {line}")
+        sections.append(
+            f"## {p.s('therapy_timeline_heading')}\n" + "\n".join(event_lines)
+        )
 
     if timeline_summary:
         summary_line = ", ".join(
             f"{k}: {v}" for k, v in timeline_summary.items()
         )
-        sections.append(f"## Event Counts\n{summary_line}")
+        sections.append(f"## {p.s('therapy_counts_heading')}\n{summary_line}")
 
     # Communication patterns
     if patterns:
         pat_lines = [
-            f"- {p['pattern']} (type: {p.get('pattern_type', 'communication')}, "
-            f"frequency: {p['frequency']})"
-            for p in patterns
+            "- " + p.s(
+                "therapy_pattern_line", pattern=pat["pattern"],
+                pattern_type=pat.get("pattern_type", "communication"),
+                frequency=pat["frequency"],
+            )
+            for pat in patterns
         ]
-        sections.append("## Communication Patterns\n" + "\n".join(pat_lines))
+        sections.append(
+            f"## {p.s('therapy_patterns_heading')}\n" + "\n".join(pat_lines)
+        )
 
     # Facts (user's own private + shared only)
     if private_facts:
         fact_lines = [f"- {f['text']}" for f in private_facts[:20]]
-        sections.append("## User's Context Notes\n" + "\n".join(fact_lines))
+        sections.append(
+            f"## {p.s('therapy_notes_heading')}\n" + "\n".join(fact_lines)
+        )
 
     if shared_facts:
         shared_lines = [f"- {f['text']}" for f in shared_facts[:20]]
-        sections.append("## Shared Context\n" + "\n".join(shared_lines))
+        sections.append(
+            f"## {p.s('therapy_shared_heading')}\n" + "\n".join(shared_lines)
+        )
 
     # Goals
     goal_parts = []
     if personal_goals:
         goal_parts.extend(
-            f"- Personal: {g['text']} ({g['status']})" for g in personal_goals
+            "- " + p.s("therapy_goal_personal", text=g["text"], status=g["status"])
+            for g in personal_goals
         )
     if shared_goals:
         goal_parts.extend(
-            f"- Shared: {g['text']} ({g['status']})" for g in shared_goals
+            "- " + p.s("therapy_goal_shared", text=g["text"], status=g["status"])
+            for g in shared_goals
         )
     if goal_parts:
-        sections.append("## Goals\n" + "\n".join(goal_parts))
+        sections.append(
+            f"## {p.s('therapy_goals_heading')}\n" + "\n".join(goal_parts)
+        )
 
     # Interaction ratio
     if pos + neg > 0:
         ratio_str = f"{pos / neg:.1f}" if neg > 0 else f"{pos}:0"
-        sections.append(
-            f"## Interaction Ratio (30 days)\n"
-            f"Positive: {pos}, Negative: {neg}, Ratio: {ratio_str}"
+        ratio_line = p.s(
+            "therapy_ratio_line", positive=pos, negative=neg, ratio=ratio_str,
         )
+        sections.append(f"## {p.s('therapy_ratio_heading')}\n{ratio_line}")
 
     context_block = "\n\n".join(sections)
 
     # ── Build prompt ─────────────────────────────────────────────────
-    task_prompt = load_task_prompt(prompts_dir, "therapy_export")
-    if not task_prompt:
-        task_prompt = (
-            "Generate a structured therapy-ready report. Sections: "
-            "Relationship Timeline, Communication Patterns, Recurring Themes, "
-            "Goal Progress, Growth Areas. Be factual, non-judgmental. "
-            "Never include raw messages — only summaries and patterns."
-        )
+    task_prompt = load_task_prompt("therapy_export") or ""
 
     system_prompt = (
-        "You are a clinical note generator for a couples therapy context. "
-        "Your output will be read by a therapist to quickly understand "
-        "the couple's dynamics.\n\n"
+        f"{p.s('therapy_intro')}\n\n"
         f"{task_prompt}\n\n"
-        "CRITICAL PRIVACY RULE: The data below only contains the requesting "
-        "user's own information and shared data. Do NOT speculate about the "
-        "partner's private thoughts. Output as plain text with clear section "
-        "headers. Do NOT use JSON format."
+        f"{p.s('therapy_privacy')}"
     )
 
     user_content = (
-        f"Generate a therapy report for {user_name}.\n\n{context_block}"
+        f"{p.s('therapy_request', user_name=user_name)}\n\n{context_block}"
     )
 
     result = await llm.generate(user_content, system_prompt)

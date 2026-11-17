@@ -3,35 +3,47 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import ipaddress
 import json
 import logging
-from typing import Any, Protocol, runtime_checkable
+import sqlite3
+from typing import Any, Callable, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
+import aiosqlite
 from google import genai
 from google.genai import types as genai_types
 from openai import AsyncOpenAI
 
 from couples_bot.config import Config
 from couples_bot import db as db_mod
+from couples_bot import pack
 
 logger = logging.getLogger(__name__)
+trace_logger = logging.getLogger("couples_bot.trace")
+
+# Shown to users when every model failed; also lets callers detect that case.
+FALLBACK_REPLY = "I'm having trouble connecting right now. Please try again in a moment."
 
 # ---------------------------------------------------------------------------
 # Response type
 # ---------------------------------------------------------------------------
 
 LLMResponse = dict[str, Any]
-"""Expected shape: {"reply": str, "new_facts": list[dict], "relay_draft": str|None}"""
+"""Expected shape: {"reply": str, "memory_ops": list[dict], "new_facts": list[dict], "relay_draft": str|None}"""
 
 
 def parse_llm_response(raw: str) -> LLMResponse:
-    """Parse LLM JSON output, with graceful fallback."""
+    """Parse LLM JSON output, with graceful fallback.
+
+    Supports both contract 1 (new_facts) and contract 2 (memory_ops).
+    """
     try:
         data = json.loads(raw)
         return {
             "reply": data.get("reply", raw),
+            "memory_ops": data.get("memory_ops", []),
             "new_facts": data.get("new_facts", []),
             "relay_draft": data.get("relay_draft"),
             "detected_mood": data.get("detected_mood"),
@@ -44,6 +56,7 @@ def parse_llm_response(raw: str) -> LLMResponse:
     except (json.JSONDecodeError, TypeError):
         return {
             "reply": raw,
+            "memory_ops": [],
             "new_facts": [],
             "relay_draft": None,
             "detected_mood": None,
@@ -163,7 +176,8 @@ class GeminiClient:
 
         # All models exhausted — return a safe fallback
         return {
-            "reply": "I'm having trouble connecting right now. Please try again in a moment.",
+            "reply": FALLBACK_REPLY,
+            "memory_ops": [],
             "new_facts": [],
             "relay_draft": None,
         }
@@ -297,7 +311,8 @@ class OpenAICompatClient:
                     raise
 
         return {
-            "reply": "I'm having trouble connecting right now. Please try again in a moment.",
+            "reply": FALLBACK_REPLY,
+            "memory_ops": [],
             "new_facts": [],
             "relay_draft": None,
         }
@@ -346,7 +361,84 @@ def _is_local_host(host: str) -> bool:
     return ip.is_loopback or ip.is_private
 
 
+class TracingLLM:
+    """Wrap an LLM client and trace which prompt pack built each call.
+
+    Reads the ``(task, snapshot)`` that prompt assembly stored in
+    ``pack.last_trace``, so the hash is the one active at assembly time even
+    if a hot reload happened before ``generate``.  Logs one ``llm_call`` line
+    and writes ``llm_calls`` / ``pack_snapshots`` rows (hashes only, no prompt
+    text, no user id).  Database errors are logged and swallowed.
+    """
+
+    def __init__(
+        self,
+        inner: Any,
+        db_path: str,
+        on_call: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
+        self._inner = inner
+        self._db_path = db_path
+        self._on_call = on_call
+
+    def __getattr__(self, name: str) -> Any:
+        # Only reached for attributes not defined here (check_usage_warning...).
+        return getattr(self._inner, name)
+
+    async def generate(
+        self,
+        user_content: str,
+        system_prompt: str,
+        model: str | None = None,
+        api_key_override: str | None = None,
+    ) -> LLMResponse:
+        traced = pack.last_trace.get()
+        if traced is None:
+            task, snap = "unknown", pack.current().snapshot()
+        else:
+            task, snap = traced
+        prompt_sha = hashlib.sha256(
+            (system_prompt + "\x00" + user_content).encode("utf-8")
+        ).hexdigest()
+        model_name = model or getattr(
+            getattr(self._inner, "_config", None), "model_default", None,
+        ) or getattr(self._inner, "_default_model", None)
+        trace_logger.info(
+            "llm_call task=%s model=%s pack=%s@%s pack_hash=%s prompt_sha=%s",
+            task, model_name, snap["name"], snap["version"],
+            snap["pack_hash"][:12], prompt_sha[:12],
+        )
+        record = {
+            "task": task, "model": model_name, "pack": snap,
+            "prompt_sha256": prompt_sha,
+        }
+        try:
+            await db_mod.record_pack_snapshot(
+                self._db_path, snap["pack_hash"], snap["name"], snap["version"],
+                pack.ENGINE_CONTRACT, snap["files"],
+            )
+            await db_mod.record_llm_call(
+                self._db_path, task, model_name, snap["pack_hash"], prompt_sha,
+            )
+        except (sqlite3.Error, aiosqlite.Error) as exc:
+            logger.warning("could not record llm_call trace: %s", exc)
+        result = await self._inner.generate(
+            user_content, system_prompt, model, api_key_override,
+        )
+        if self._on_call is not None:
+            self._on_call({
+                **record, "system": system_prompt,
+                "user_content": user_content, "result": result,
+            })
+        return result
+
+
 def create_llm_client(config: Config, db_path: str) -> LLMClient:
+    """Return the right LLM client (wrapped in call tracing)."""
+    return TracingLLM(_create_inner_client(config, db_path), db_path)
+
+
+def _create_inner_client(config: Config, db_path: str) -> LLMClient:
     """Return the right LLM client based on config.llm_provider."""
     if config.llm_provider == "openai_compat":
         return OpenAICompatClient(

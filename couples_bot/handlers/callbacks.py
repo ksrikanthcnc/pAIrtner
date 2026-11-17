@@ -459,7 +459,47 @@ class CallbacksMixin:
         key = "fact_now_shared" if new_vis == "shared" else "fact_now_private"
         return [BotResponse(t(lang, key, id=fact_id))]
 
+    # ── memory core proposal callbacks ───────────────────────────────────
+
+    async def _cb_make_core_confirm(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Handle mc:<id>:y|n — confirm or dismiss a core memory proposal."""
+        parts = data.split(":")
+        if len(parts) < 3:
+            return [BotResponse(t(lang, "error_generic"))]
+        try:
+            fact_id = int(parts[1])
+        except (ValueError, IndexError):
+            return [BotResponse(t(lang, "error_generic"))]
+        choice = parts[2]
+
+        if choice == "y":
+            if await db_mod.promote_to_core(self.db_path, fact_id):
+                return [BotResponse(t(lang, "core_saved"))]
+            return [BotResponse(t(lang, "error_generic"))]
+        else:
+            # Dismissed — keep as working memory, no action needed
+            return [BotResponse(t(lang, "core_dismissed"))]
+
     # ── goal callbacks ───────────────────────────────────────────────────
+
+    async def _cb_archive_memory(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Handle ar:<id> — archive a memory from /review."""
+        try:
+            fact_id = int(data.split(":")[1])
+        except (ValueError, IndexError):
+            return [BotResponse(t(lang, "error_generic"))]
+
+        # Verify ownership
+        fact = await db_mod.get_fact_by_id(self.db_path, fact_id)
+        if not fact or fact["owner_id"] != user_id:
+            return [BotResponse(t(lang, "forget_not_found"))]
+
+        await db_mod.archive_fact(self.db_path, fact_id)
+        return [BotResponse(f"📦 Archived memory #{fact_id}.")]
 
     async def _cb_goal_achieved(
         self, user_id: int, data: str, lang: str

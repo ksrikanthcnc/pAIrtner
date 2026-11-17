@@ -1,0 +1,120 @@
+# Model-visible wording that is not a persona, block, voice or task file.
+# Plain strings; {placeholders} are filled by the engine (str.format_map),
+# literal braces are doubled. The engine adds markdown markers ("## ", "- "),
+# newlines and block order, so keep markup out of these values.
+# The engine contract (couples_bot/pack.py STRING_KEYS) lists every required
+# key and the placeholders each one may use.
+
+# --- system prompt headings ---------------------------------------------
+style_heading: "Communication Style"
+task_heading: "Task Instructions"
+
+# --- per-mode paragraphs (intro goes before the JSON contract, tail after) ---
+tell_intro: "The user wants to send a message to their partner. Your job is to rewrite it so it's kind, gentle, and non-confrontational while preserving the substance."
+tell_tail: "IMPORTANT: relay_draft is REQUIRED for this request — always provide a softened version of the message."
+
+mediate_intro: "The user is asking for a neutral, balanced perspective on their relationship situation. Use ONLY the shared context below — do NOT reference anything private."
+mediate_tail: "IMPORTANT: relay_draft should be null for mediation responses."
+
+keep_intro: "The user wants to save some information. Extract key facts from their message. Do NOT draft a relay."
+keep_tail: "IMPORTANT: relay_draft MUST be null for #keep messages."
+
+blunt_intro: "The user has requested BLUNT MODE. Give your direct, honest assessment. No sugar coating, no hedging. Be blunt but constructive — honest doesn't mean cruel. This is for the sender's own reflection and growth."
+blunt_tail: "IMPORTANT: relay_draft should be null for blunt responses (unless #send is also present, but that is handled separately)."
+
+digest_system: "Generate a brief, neutral daily summary of today's shared activity. Keep it warm and balanced. Do not take sides. Do not use JSON — reply with plain text only."
+checkin_system: "Generate a warm, blame-free summary of both partners' reflections. Never reveal which partner said what specifically. Focus on common themes and positive momentum. Do not use JSON — reply with plain text only."
+
+# --- data-block labels ----------------------------------------------------
+label_private_notes: "Your private notes"
+label_shared_notes: "Shared notes"
+label_recent_conversation: "Recent conversation"
+label_current_message: "Current message"
+label_current_message_blunt: "Current message (blunt feedback requested)"
+label_relay_message: "Message to relay to partner"
+label_keep_message: "Message to save"
+label_period: "Period covered"
+label_shared_context: "Shared context (both partners agreed to share)"
+label_impressions: "Impressions each partner has noted about the other"
+impressions_intro: "These are unverified impressions. They may be inaccurate and must not be stated as fact. Give both partners equal weight."
+impressions_of: "Impressions {who} has noted about {about}:"
+impressions_one_sided: "Only one partner has provided impressions, so the picture is one-sided. Say so in your reply."
+label_request: "Request"
+request_text: "Please provide a neutral, balanced perspective on our situation based on the shared context above."
+partner_a_fallback: "Partner A"
+partner_b_fallback: "Partner B"
+
+# --- goals, partner summary, smart context ---------------------------------
+goals_heading: "Your Goals"
+goals_personal: "Personal"
+goals_shared: "Shared"
+goals_closing: "If the conversation touches on any of these goals, mention the progress or connection."
+partner_summary_heading: "What your partner seems to feel"
+smart_recent: "Recent notes (last {recent_days} days)"
+smart_relevant: "Relevant notes"
+smart_monthly: "Monthly summaries"
+
+# --- conversation history labels ---------------------------------------------
+history_assistant: "You"
+history_user: "User"
+
+# --- style: dampening (thresholds live in code) and learned voice -----------
+dampening_very_high: "Respond very gently, soften everything significantly. Use warm, indirect phrasing. Avoid any bluntness."
+dampening_high: "Respond warmly and kindly. Soften harsh edges but keep the core message clear."
+dampening_medium: "Be clear and direct while remaining respectful. Light softening is fine."
+dampening_low: "Be completely direct and clear — minimal softening."
+dampening_blunt_bypass: "Be completely direct — no softening."
+learned_voice: "Match this user's communication style: {parts}"
+
+# --- daily digest and weekly check-in summary -------------------------------
+digest_facts_heading: "New shared facts today"
+digest_relays_heading: "Messages exchanged today"
+digest_request: "Please summarise today's activity in a warm, balanced way."
+
+checkin_partner_a_heading: "Partner A reflections"
+checkin_partner_b_heading: "Partner B reflections"
+checkin_shared_heading: "Shared context"
+checkin_request: "Please provide a warm, blame-free summary focusing on common themes and growth opportunities."
+checkin_goals_heading: "Active Goals"
+checkin_goals_personal: "Personal"
+checkin_goals_shared: "Shared"
+checkin_trends_heading: "Interaction Trends"
+trend_strong: "Positive interactions have been strong this week."
+trend_tense: "This week has had more tense moments than positive ones. Focus on expressing needs rather than complaints."
+trend_counts: "This week: {pos} positive and {neg} tense interactions."
+trend_horsemen: "Some communication patterns this week could use attention — focus on expressing feelings without blame."
+checkin_conflicts_heading: "Conflict Resolution"
+conflict_resolved: "This week: {resolved} out of {total} topics raised were resolved."
+conflict_open: "Still open: {open_themes}"
+conflict_all_resolved: "All topics resolved."
+conflict_none: "none"
+
+# --- nudges and appreciation prompts ------------------------------------------
+partner_fallback: "your partner"
+nudge_partner: "The user's partner is named {partner_name}."
+nudge_language: "Language: {lang}"
+nudge_facts_heading: "Shared positive memories"
+nudge_request: "Generate a warm, tailored nudge based on these shared memories."
+appreciation_request: "Generate a warm appreciation prompt. Do NOT mention ratios, metrics, or clinical terms."
+
+# --- monthly fact summary ---------------------------------------------------
+summarize_heading: "Facts for {year_month}"
+summarize_fact_line: "[{category}] ({visibility}) {text}"
+summarize_request: "Please provide a concise summary."
+
+# --- therapy export -------------------------------------------------------
+therapy_intro: "You are a clinical note generator for a couples therapy context. Your output will be read by a therapist to quickly understand the couple's dynamics."
+therapy_privacy: "CRITICAL PRIVACY RULE: The data below only contains the requesting user's own information and shared data. Do NOT speculate about the partner's private thoughts. Output as plain text with clear section headers. Do NOT use JSON format."
+therapy_timeline_heading: "Timeline Events"
+therapy_timeline_line: "[{date}] {event_type}: {summary}"
+therapy_counts_heading: "Event Counts"
+therapy_patterns_heading: "Communication Patterns"
+therapy_pattern_line: "{pattern} (type: {pattern_type}, frequency: {frequency})"
+therapy_notes_heading: "User's Context Notes"
+therapy_shared_heading: "Shared Context"
+therapy_goals_heading: "Goals"
+therapy_goal_personal: "Personal: {text} ({status})"
+therapy_goal_shared: "Shared: {text} ({status})"
+therapy_ratio_heading: "Interaction Ratio (30 days)"
+therapy_ratio_line: "Positive: {positive}, Negative: {negative}, Ratio: {ratio}"
+therapy_request: "Generate a therapy report for {user_name}."

@@ -35,13 +35,18 @@ couples_bot/           # Main package
 ├── config.py          # YAML + env config
 ├── db.py              # SQLite schema and CRUD
 ├── llm.py             # LLM client (Gemini + OpenAI-compat)
-├── prompts.py         # Prompt assembly (loads from prompts/)
+├── prompts.py         # Prompt assembly (text comes from the active pack)
 └── ...                # Other modules
 
-prompts/               # Editable prompt files (no code changes needed)
+packs/default/         # Editable prompt pack (no code changes needed)
+├── pack.yaml          # Name, version, engine contract, file map
 ├── persona.md         # Bot personality
+├── contract.md        # JSON output explanation
+├── blocks/            # Role, not-therapy, tone
+├── strings.yaml       # Other model-visible sentences and labels
 ├── voices/            # Cultural voice presets
-└── tasks/             # Task-specific prompts
+├── tasks/             # Task-specific prompts
+└── eval/cases.yaml    # Evaluation cases
 
 tests/                 # Test suite
 settings.yaml          # All configurable settings
@@ -51,9 +56,11 @@ settings.yaml          # All configurable settings
 
 1. **New command (simple)**: Add a handler method in the appropriate `handlers/` file, register it in `__main__.py`, add i18n keys for en + te, add tests.
 
-2. **New prompt**: Add a `.md` file in `prompts/tasks/`, reference it in `prompts.py`. No code changes needed if it follows existing patterns.
+2. **Change prompt wording**: Edit the pack file (`packs/default/`); it is picked up on the next message. A new task prompt needs a `.md` in `tasks/` and a call site that loads it with `load_task_prompt`. New model-visible text belongs in the pack (`strings.yaml`), never in Python; add the key to `STRING_KEYS` in `pack.py`.
 
-3. **New voice/vibe**: Add a `.md` file in `prompts/voices/`. The voice system picks it up automatically.
+2b. **Evaluate a pack change**: `uv run python dev/prompt-eval/run_eval.py --llm gemini` and compare summaries; see `docs/PACKS.md`.
+
+3. **New voice/vibe**: Add a `.md` file in `packs/default/voices/`. The voice system picks it up automatically.
 
 ## Rules
 

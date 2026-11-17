@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 
 from couples_bot import db as db_mod
+from couples_bot import pack
 from couples_bot.config import Config
 
 
@@ -42,22 +43,14 @@ def get_dampening_instruction(level: float) -> str:
 
     Higher level → softer language.
     """
+    p = pack.current()
     if level >= 0.8:
-        return (
-            "Respond very gently, soften everything significantly. "
-            "Use warm, indirect phrasing. Avoid any bluntness."
-        )
+        return p.s("dampening_very_high")
     if level >= 0.5:
-        return (
-            "Respond warmly and kindly. Soften harsh edges but keep "
-            "the core message clear."
-        )
+        return p.s("dampening_high")
     if level >= 0.2:
-        return (
-            "Be clear and direct while remaining respectful. "
-            "Light softening is fine."
-        )
-    return "Be completely direct and clear — minimal softening."
+        return p.s("dampening_medium")
+    return p.s("dampening_low")
 
 
 async def resolve_dampening(
@@ -70,13 +63,13 @@ async def resolve_dampening(
 
     Returns ``(level, instruction_text)``.
     If *has_blunt_tag* and ``config.dampening_blunt_bypass``, returns
-    ``(0.0, 'Be completely direct — no softening.')``.
+    ``(0.0, <the pack's blunt-bypass instruction>)``.
     """
     if has_blunt_tag and config.dampening_blunt_bypass:
-        return 0.0, "Be completely direct — no softening."
+        return 0.0, pack.current().s("dampening_blunt_bypass")
 
     if not config.dampening_enabled:
-        return 0.0, "Be completely direct and clear — minimal softening."
+        return 0.0, pack.current().s("dampening_low")
 
     profile = await db_mod.get_user_profile(db_path, user_id)
     base = (profile or {}).get("dampening_base", config.dampening_default_base)

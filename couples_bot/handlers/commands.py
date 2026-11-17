@@ -10,6 +10,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 from couples_bot import db as db_mod
+from couples_bot.sanitize import detect_crisis
 from couples_bot.config import is_user_allowed
 from couples_bot.crypto import decrypt_value, encrypt_value, mask_key
 from couples_bot.i18n import t
@@ -47,6 +48,10 @@ class CommandsMixin:
             return []
 
         lang = await self._get_lang(user_id)
+        # Safety first: a disclosure of violence or self-harm must never be
+        # turned into a relay draft.
+        if text and detect_crisis(text)[0]:
+            return [BotResponse(t(lang, "emergency_response"))]
 
         rate_resp = await self._check_rate_limit(user_id)
         if rate_resp:
@@ -73,7 +78,7 @@ class CommandsMixin:
         )
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
 
-        await self._save_facts(user_id, result.get("new_facts", []))
+        await self._apply_memory_ops_from_result(user_id, result, clean, allow_pin=False)
 
         # Fire-and-forget: auto-update profiles from LLM extras
         await process_llm_extras(self.db_path, user_id, result, self.config)
@@ -200,7 +205,7 @@ class CommandsMixin:
     # ── /whatdoyouknow ───────────────────────────────────────────────────
 
     async def handle_whatdoyouknow(self, user_id: int) -> list[BotResponse]:
-        """List all stored facts for the user, grouped by fact type and category."""
+        """List all stored facts for the user, grouped by memory kind."""
         if not is_user_allowed(self.config, user_id):
             return []
 
@@ -216,70 +221,66 @@ class CommandsMixin:
 
         parts = [t(lang, "whatdoyouknow_header")]
 
-        # Group by fact_type first, then by category within each type
-        type_order = ["stable", "situational", "transient"]
-        type_labels = {
-            "stable": t(lang, "fact_type_stable"),
-            "situational": t(lang, "fact_type_situational"),
-            "transient": t(lang, "fact_type_transient"),
+        # Group by memory kind
+        kind_order = ["core", "working", "partner_view", "shared"]
+        kind_i18n = {
+            "core": "kind_core",
+            "working": "kind_working",
+            "partner_view": "kind_partner_view",
+            "shared": "kind_shared",
         }
-        cat_order = [
-            "relationship", "household", "emotional",
-            "work", "health", "other", None,
-        ]
+        status_i18n = {
+            "active": "status_active",
+            "improving": "status_improving",
+            "resolved": "status_resolved",
+            "outdated": "status_outdated",
+        }
 
-        for ftype in type_order:
-            facts_of_type = [
+        for kind in kind_order:
+            facts_of_kind = [
                 f for f in all_facts
-                if (f.get("fact_type") or "stable") == ftype
+                if (f.get("kind") or "working") == kind
             ]
-            if not facts_of_type:
+            if not facts_of_kind:
                 continue
 
-            parts.append(f"\n<b>{type_labels.get(ftype, ftype)}:</b>\n")
+            header_key = kind_i18n.get(kind, "kind_working")
+            parts.append(f"\n<b>{t(lang, header_key)}</b> ({len(facts_of_kind)})\n")
 
-            has_categories = any(f.get("category") for f in facts_of_type)
-            if has_categories:
-                grouped: dict[str | None, list[dict]] = {}
-                for f in facts_of_type:
-                    cat = f.get("category") or None
-                    grouped.setdefault(cat, []).append(f)
-                for cat in cat_order:
-                    facts_in_cat = grouped.get(cat)
-                    if not facts_in_cat:
-                        continue
-                    i18n_key = _CATEGORY_I18N.get(cat, "cat_other")
-                    parts.append(f"  <i>{t(lang, i18n_key)}:</i>\n")
-                    for f in facts_in_cat:
-                        parts.append(self._format_fact_line(f, lang))
-            else:
-                for f in facts_of_type:
-                    parts.append(self._format_fact_line(f, lang))
+            for f in facts_of_kind:
+                age = format_relative_time(f.get("created_at"))
+                status = f.get("status") or "active"
+                status_label = t(lang, status_i18n.get(status, "status_active"))
+                vis = f["visibility"]
+                vis_icon = "🔓" if vis == "shared" else "🔒"
+                line = f"  [{f['id']}] {f['text']}"
+                # Add status if not active (active is the default, don't clutter)
+                if status != "active":
+                    line += f" <i>({status_label})</i>"
+                line += f" {vis_icon} <i>{age}</i>\n"
+                parts.append(line)
+                self._append_fact_expiry(parts, f, lang)
 
+        # Buttons: share/unshare + pin-to-core + archive
         recent = sorted(all_facts, key=lambda f: f["id"], reverse=True)[:_MAX_SHARE_BUTTONS]
         if len(all_facts) > len(recent):
             parts.append(t(lang, "whatdoyouknow_more", count=len(all_facts) - len(recent)))
         buttons: list[list[InlineButton]] = []
         row: list[InlineButton] = []
         for f in recent:
+            # Share/unshare toggle
             key = "btn_unshare_fact" if f["visibility"] == "shared" else "btn_share_fact"
             row.append(InlineButton(t(lang, key, id=f["id"]), f"fv:{f['id']}"))
-            if len(row) == 2:
-                buttons.append(row)
-                row = []
-        if row:
+            # Pin to core (only for working facts)
+            if (f.get("kind") or "working") == "working":
+                row.append(InlineButton(t(lang, "btn_make_core", id=f["id"]), f"mc:confirm:{f['id']}"))
             buttons.append(row)
+            row = []
         return [BotResponse("".join(parts), buttons=buttons)]
 
-    def _format_fact_line(self, f: dict, lang: str) -> str:
-        """Format a single fact line with age and expiry info."""
-        age = format_relative_time(f.get("created_at"))
-        line = t(
-            lang, "fact_item",
-            id=f["id"], date=age, text=f["text"],
-            visibility=f["visibility"],
-        )
-        # Show expiry warning if approaching
+    @staticmethod
+    def _append_fact_expiry(parts: list[str], f: dict, lang: str) -> None:
+        """Append expiry warning if a fact is approaching expiration."""
         if f.get("expires_at"):
             from datetime import datetime, timezone
             try:
@@ -291,13 +292,12 @@ class CommandsMixin:
                 if remaining.total_seconds() > 0:
                     days = remaining.days
                     if days > 0:
-                        line = line.rstrip("\n") + f" {t(lang, 'fact_expiring', time=f'{days}d')}\n"
+                        parts[-1] = parts[-1].rstrip("\n") + f" {t(lang, 'fact_expiring', time=f'{days}d')}\n"
                     else:
                         hours = int(remaining.total_seconds() // 3600)
-                        line = line.rstrip("\n") + f" {t(lang, 'fact_expiring', time=f'{hours}h')}\n"
+                        parts[-1] = parts[-1].rstrip("\n") + f" {t(lang, 'fact_expiring', time=f'{hours}h')}\n"
             except (ValueError, TypeError):
                 pass
-        return line
 
     # ── /status ──────────────────────────────────────────────────────────
 
@@ -550,7 +550,6 @@ class CommandsMixin:
             generating_msg = t(lang, "export_therapy_generating")
             report = await generate_therapy_report(
                 self.db_path, self.llm, user_id,
-                prompts_dir=self.config.prompts_dir,
             )
             if not report:
                 return [BotResponse(t(lang, "export_therapy_empty"))]
@@ -884,6 +883,56 @@ class CommandsMixin:
         header = t(lang, "remember_header")
         item = t(lang, "remember_item", text=fact["text"])
         return [BotResponse(f"{header}\n{item}")]
+
+    # ── /review ────────────────────────────────────────────────────────
+
+    async def handle_review(self, user_id: int) -> list[BotResponse]:
+        """Show a curated memory review — core + important working memories."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+        all_facts = await db_mod.get_active_facts(self.db_path, user_id)
+
+        core_facts = [f for f in all_facts if (f.get("kind") or "working") == "core"]
+        working_active = [
+            f for f in all_facts
+            if (f.get("kind") or "working") == "working"
+            and (f.get("status") or "active") == "active"
+        ]
+
+        if not core_facts and not working_active:
+            return [BotResponse(t(lang, "review_empty"))]
+
+        parts = [t(lang, "review_header")]
+
+        if core_facts:
+            parts.append(t(lang, "review_core_section"))
+            for f in core_facts:
+                parts.append(f"  [{f['id']}] {f['text']}\n")
+
+        if working_active:
+            parts.append(t(lang, "review_working_section"))
+            # Show most recent 10 working memories
+            recent_working = sorted(working_active, key=lambda x: x["id"], reverse=True)[:10]
+            for f in recent_working:
+                age = format_relative_time(f.get("created_at"))
+                parts.append(f"  [{f['id']}] {f['text']} <i>({age})</i>\n")
+
+        parts.append(t(lang, "review_footer"))
+
+        # Buttons: forget + make-core for working, forget for core
+        buttons: list[list[InlineButton]] = []
+        shown = (core_facts + working_active)[:_MAX_SHARE_BUTTONS]
+        for f in shown:
+            row: list[InlineButton] = []
+            kind = f.get("kind") or "working"
+            if kind == "working":
+                row.append(InlineButton(t(lang, "btn_make_core", id=f["id"]), f"mc:confirm:{f['id']}"))
+            row.append(InlineButton(t(lang, "btn_archive", id=f["id"]), f"ar:{f['id']}"))
+            buttons.append(row)
+
+        return [BotResponse("".join(parts), buttons=buttons)]
 
     # ── /search ──────────────────────────────────────────────────────────
 

@@ -324,3 +324,37 @@ def couple_timeline(
                          f"check-in week {r['week_start']} ({r['status']})",
                          r["summary"], show_raw))
     return _finish(ev, limit)
+
+
+# ---------------------------------------------------------------------------
+# Conversation view (admin)
+# ---------------------------------------------------------------------------
+
+def user_name(conn: sqlite3.Connection, user_id: int) -> str:
+    """Get a user's name, or 'User <id>' if not found."""
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT name FROM users WHERE tg_id = ?", (user_id,)).fetchone()
+    return (row["name"] if row and row["name"] else f"User {user_id}")
+
+
+def couple_conversation(
+    conn: sqlite3.Connection, user_a: int, user_b: int, show_raw: bool,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Get interleaved conversation messages for a couple.
+
+    Returns both users' messages + bot responses, ordered chronologically.
+    Text is redacted when show_raw is False.
+    """
+    conn.row_factory = sqlite3.Row
+    content_col = "m.content" if show_raw else "NULL"
+    rows = conn.execute(
+        f"SELECT m.id, m.user_id, m.role, {content_col} as content, "
+        "datetime(m.created_at) as created_at, u.name as user_name "
+        "FROM messages m "
+        "JOIN users u ON m.user_id = u.tg_id "
+        "WHERE m.user_id IN (?, ?) "
+        "ORDER BY m.created_at ASC LIMIT ?",
+        (user_a, user_b, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]

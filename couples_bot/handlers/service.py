@@ -23,6 +23,11 @@ from couples_bot.onboarding import (
     process_onboarding_answer,
     should_start_onboarding,
 )
+from couples_bot.memory import (
+    OpsResult,
+    apply_memory_ops,
+    parse_memory_ops,
+)
 from couples_bot.prompts import UserContext
 from couples_bot.sanitize import detect_crisis, sanitize_input
 
@@ -204,6 +209,77 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         result = list(self._pending_contradictions)
         self._pending_contradictions = []
         return result
+
+    async def _apply_memory_ops_from_result(
+        self,
+        user_id: int,
+        result: dict,
+        user_message: str,
+        *,
+        allow_pin: bool = True,
+    ) -> int:
+        """Apply memory operations from an LLM result.
+
+        Supports both contract 2 (memory_ops) and contract 1 (new_facts).
+        If memory_ops is present and non-empty, uses the new path.
+        Otherwise falls back to the old _save_facts path.
+
+        Returns the count of applied operations.
+        """
+        memory_ops_raw = result.get("memory_ops", [])
+
+        if memory_ops_raw:
+            # New path: memory_ops
+            # Get user's fact IDs for ownership validation
+            user_facts = await db_mod.get_active_facts(self.db_path, user_id)
+            user_fact_ids = {f["id"] for f in user_facts}
+            existing_facts = user_facts
+
+            ops = parse_memory_ops(
+                memory_ops_raw,
+                user_fact_ids,
+                max_ops=self.config.memory_max_ops if hasattr(self.config, "memory_max_ops") else 5,
+            )
+
+            if not ops:
+                return 0
+
+            ops_result = await apply_memory_ops(
+                self.db_path,
+                user_id,
+                ops,
+                user_message,
+                allow_pin=allow_pin,
+                existing_facts=existing_facts,
+            )
+
+            # Handle propose_core items — queue confirm buttons
+            for item in ops_result.propose_core_items:
+                fact_id = item.get("id")
+                text = item.get("text", "")
+                if fact_id and text:
+                    lang = await self._get_lang(user_id)
+                    self._pending_contradictions.append(
+                        BotResponse(
+                            t(lang, "propose_core_confirm", text=text),
+                            buttons=[
+                                InlineButton(t(lang, "yes"), f"mc:{fact_id}:y"),
+                                InlineButton(t(lang, "no"), f"mc:{fact_id}:n"),
+                            ],
+                        )
+                    )
+
+            applied = sum(
+                1 for o in ops_result.outcomes if o.outcome == "applied"
+            )
+            return applied
+
+        # Fallback: old new_facts path
+        new_facts = result.get("new_facts", [])
+        if new_facts:
+            return await self._save_facts(user_id, new_facts)
+
+        return 0
 
     async def _check_contradiction(
         self,
@@ -436,6 +512,12 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         self._forget_confirm.discard(user_id)
 
         # Check if user is in profile-edit state (settings)
+        # Emergency / crisis detection — fires FIRST, before edit states,
+        # rate limits, tags, LLM, or any other processing.
+        is_crisis, _crisis_pattern = detect_crisis(text)
+        if is_crisis:
+            lang = await self._get_lang(user_id)
+            return [BotResponse(t(lang, "emergency_response"))]
         if user_id in self._profile_edit_state:
             return await self._handle_profile_edit_input(user_id, text)
 
@@ -447,12 +529,6 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         if user_id in self._edit_state:
             return await self._handle_edit_input(user_id, text)
 
-        # Emergency / crisis detection — fires FIRST, before rate limits,
-        # tags, LLM, or any other processing.
-        is_crisis, _crisis_pattern = detect_crisis(text)
-        if is_crisis:
-            lang = await self._get_lang(user_id)
-            return [BotResponse(t(lang, "emergency_response"))]
 
         # Rate limiting (for actual message processing, not edit inputs)
         rate_resp = await self._check_rate_limit(user_id)
@@ -565,6 +641,15 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         # Fact contradiction callbacks
         if callback_data.startswith("fv:"):
             return await self._cb_fact_toggle_visibility(user_id, callback_data, lang)
+
+        # Memory core proposal callbacks
+        if callback_data.startswith("mc:"):
+            return await self._cb_make_core_confirm(user_id, callback_data, lang)
+
+        # Memory archive callback
+        if callback_data.startswith("ar:"):
+            return await self._cb_archive_memory(user_id, callback_data, lang)
+
         if callback_data.startswith("fc_new:"):
             return await self._cb_fact_keep_new(user_id, callback_data, lang)
         if callback_data.startswith("fc_both:"):
