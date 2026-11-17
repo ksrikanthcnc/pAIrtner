@@ -309,8 +309,11 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # Onboarding interview
         "onboard_welcome": (
-            "🎉 Great, you're paired! Let me get to know you a little. "
-            "Answer a few quick questions (or send /skip to skip)."
+            "🎉 Great, you're paired! Tell me a bit about yourself and "
+            "your relationship — anything you'd like me to know. For example: "
+            "how long you've been together, if you have kids, what you "
+            "appreciate about your partner, or what you'd like to work on.\n\n"
+            "Or send /skip to jump right into chatting."
         ),
         "onboard_q_relationship_type": "What's your relationship type? (married / dating / other)",
         "onboard_q_duration": "How many years have you been together? (just the number)",
@@ -747,8 +750,10 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # Onboarding interview
         "onboard_welcome": (
-            "🎉 బాగుంది, మీరు జత చేయబడ్డారు! మిమ్మల్ని కొంచెం తెలుసుకుంటాను. "
-            "కొన్ని ప్రశ్నలకు సమాధానం ఇవ్వండి (లేదా /skip పంపండి)."
+            "🎉 బాగుంది, మీరు జత చేయబడ్డారు! మీ గురించి, మీ relationship గురించి "
+            "చెప్పండి — ఎంత కాలం కలిసి ఉన్నారు, పిల్లలు ఉన్నారా, "
+            "మీ partner గురించి ఏమి ఇష్టం, ఏమి మెరుగుపరచాలనుకుంటున్నారు.\n\n"
+            "లేదా /skip పంపండి."
         ),
         "onboard_q_relationship_type": "మీ సంబంధం ఏ రకం? (married / dating / other)",
         "onboard_q_duration": "ఎన్ని సంవత్సరాలుగా కలిసి ఉన్నారు? (సంఖ్య మాత్రమే)",

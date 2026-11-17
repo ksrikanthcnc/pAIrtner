@@ -52,6 +52,7 @@ def _validate_free_text(text: str) -> str | None:
 
 
 ONBOARDING_QUESTIONS: list[tuple[int, str, str, object]] = [
+    # Step 0 is free-text (handled specially in process_onboarding_answer)
     (1, "onboard_q_relationship_type", "relationship_type", _validate_relationship_type),
     (2, "onboard_q_duration", "duration_years", _validate_duration),
     (3, "onboard_q_kids", "has_kids", _validate_has_kids),
@@ -59,6 +60,42 @@ ONBOARDING_QUESTIONS: list[tuple[int, str, str, object]] = [
     (5, "onboard_q_appreciate", "_appreciate", _validate_free_text),
     (6, "onboard_q_wish", "_wish", _validate_free_text),
 ]
+
+
+def _extract_from_free_text(text: str) -> dict:
+    """Best-effort extraction of structured data from free-text onboarding.
+
+    Returns a dict of profile fields found. The LLM does the real extraction
+    later via memory_ops; this catches the obvious structured bits.
+    """
+    result: dict = {}
+    low = text.lower()
+
+    # Relationship type
+    for word in ("married", "dating"):
+        if word in low:
+            result["relationship_type"] = word
+            break
+
+    # Duration (look for "N years" or just a number in context)
+    import re
+    dur_match = re.search(r'(\d+)\s*(?:years?|yrs?|yr)', low)
+    if dur_match:
+        result["duration_years"] = int(dur_match.group(1))
+
+    # Kids
+    if any(w in low for w in ("kids", "children", "son", "daughter", "child")):
+        if any(w in low for w in ("no kids", "no children", "don't have kids", "dont have kids")):
+            result["has_kids"] = 0
+        else:
+            result["has_kids"] = 1
+
+    # Age
+    age_match = re.search(r'\b(\d{2})\s*(?:years?\s*old|yo|age)\b', low)
+    if age_match:
+        result["age_range"] = age_match.group(1)
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +147,41 @@ async def process_onboarding_answer(
         return True, t(lang, "onboard_skip")
 
     current_step = profile["onboarding_step"]
+
+    # Step 0: first response after pairing — try free-text extraction
+    if current_step == 0:
+        extracted = _extract_from_free_text(text)
+        if extracted:
+            # Save whatever we extracted
+            await db_mod.update_user_profile(db_path, user_id, **extracted)
+
+        # If the text is substantial (30+ chars), save as love_story_brief and complete
+        if len(text.strip()) >= 30:
+            await db_mod.update_user_profile(
+                db_path, user_id,
+                onboarding_step=6,
+                onboarding_done=1,
+                love_story_brief=text.strip()[:500],
+            )
+            # Also save the free text as a core fact
+            fid = await db_mod.add_fact(db_path, user_id, text.strip()[:500], "private", fact_type="stable")
+            await db_mod.promote_to_core(db_path, fid)
+            await save_onboarding_as_facts(db_path, user_id)
+            return True, t(lang, "onboard_complete")
+
+        # Short answer — try to validate as relationship_type, then advance to structured Qs
+        rel = _validate_relationship_type(text)
+        if rel:
+            await db_mod.update_user_profile(db_path, user_id, onboarding_step=1, relationship_type=rel)
+            nxt = await get_onboarding_question(db_path, user_id, lang)
+            return True, nxt[0] if nxt else t(lang, "onboard_complete")
+
+        # Can't parse — just save as brief and ask first structured question
+        if text.strip():
+            await db_mod.update_user_profile(db_path, user_id, onboarding_step=0, love_story_brief=text.strip()[:500])
+        nxt = await get_onboarding_question(db_path, user_id, lang)
+        return True, nxt[0] if nxt else t(lang, "onboard_complete")
+
     # Find the question for current_step + 1 (next unanswered)
     target_q = None
     for q_step, _key, field, validator in ONBOARDING_QUESTIONS:
