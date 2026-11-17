@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f5f6fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111318" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>pAIrtner</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main id="auth" class="screen" hidden>
+  <h1>pAIrtner</h1>
+  <p id="privacy" class="notice"></p>
+  <p id="auth-error" class="error" role="alert" hidden></p>
+  <form id="signup">
+    <label><span data-i18n="name">Display name</span>
+      <input id="name" maxlength="40" autocomplete="nickname" required></label>
+    <label id="invite-row" hidden><span data-i18n="invite">Invite code</span>
+      <input id="invite" autocomplete="off"></label>
+    <label><span data-i18n="language">Language</span>
+      <select id="lang"></select></label>
+    <button type="submit" class="primary" data-i18n="signup">Sign up</button>
+  </form>
+  <details>
+    <summary data-i18n="have_token">I already have a token</summary>
+    <form id="signin">
+      <label><span data-i18n="token">Token</span>
+        <input id="token" autocomplete="off" spellcheck="false" required></label>
+      <button type="submit" data-i18n="signin">Sign in</button>
+    </form>
+  </details>
+</main>
+<main id="chat" class="screen chat" hidden>
+  <header>
+    <b id="who"></b>
+    <span id="status" class="status"></span>
+    <button id="menu-btn" type="button" aria-label="menu">&#8942;</button>
+  </header>
+  <div id="menu" class="menu" hidden>
+    <button id="rotate" type="button" data-i18n="rotate">Rotate token</button>
+    <button id="signout" type="button" data-i18n="signout">Sign out</button>
+  </div>
+  <section id="log" aria-live="polite"></section>
+  <form id="composer">
+    <input id="text" autocomplete="off" data-i18n-placeholder="message" placeholder="Message">
+    <button type="submit" class="primary" data-i18n="send">Send</button>
+  </form>
+</main>
+<script src="/render.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
