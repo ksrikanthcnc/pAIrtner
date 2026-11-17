@@ -24,7 +24,7 @@ class DispatchMixin:
             "start": lambda: self.handle_start(uid, name),
             "join": lambda: self.handle_join(uid, name, arg),
             "tell": lambda: self.handle_tell(uid, arg),
-            "mediate": lambda: self.handle_mediate(uid),
+            "mediate": lambda: self.handle_mediate(uid, arg),
             "whatdoyouknow": lambda: self.handle_whatdoyouknow(uid),
             "forget": lambda: self.handle_forget(uid, arg),
             "export": lambda: self.handle_export(uid, arg),

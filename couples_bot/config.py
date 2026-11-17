@@ -122,6 +122,12 @@ class Config:
     nudges_interval_hours: int = 24
     nudges_quiet_start: str = "09:00"
     nudges_quiet_end: str = "21:00"
+    # /mediate window and perception inputs
+    mediate_default_days: int = 7
+    mediate_max_days: int = 90
+    mediate_include_perceptions: bool = True
+    mediate_min_confidence: float = 0.4
+    mediate_max_themes_per_side: int = 8
     appreciation_enabled: bool = True
     appreciation_target_ratio: float = 5.0
     appreciation_check_days: int = 7
@@ -401,6 +407,34 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         nudges_quiet_end=os.getenv(
             "NUDGES_QUIET_END",
             yaml_cfg.get("nudges", {}).get("quiet_end", "21:00"),
+        ),
+        mediate_default_days=int(
+            os.getenv(
+                "MEDIATE_DEFAULT_DAYS",
+                str(yaml_cfg.get("mediate", {}).get("default_days", 7)),
+            )
+        ),
+        mediate_max_days=int(
+            os.getenv(
+                "MEDIATE_MAX_DAYS",
+                str(yaml_cfg.get("mediate", {}).get("max_days", 90)),
+            )
+        ),
+        mediate_include_perceptions=_parse_bool(
+            os.environ.get("MEDIATE_INCLUDE_PERCEPTIONS"),
+            yaml_cfg.get("mediate", {}).get("include_perceptions", True),
+        ),
+        mediate_min_confidence=float(
+            os.getenv(
+                "MEDIATE_MIN_CONFIDENCE",
+                str(yaml_cfg.get("mediate", {}).get("min_confidence", 0.4)),
+            )
+        ),
+        mediate_max_themes_per_side=int(
+            os.getenv(
+                "MEDIATE_MAX_THEMES_PER_SIDE",
+                str(yaml_cfg.get("mediate", {}).get("max_themes_per_side", 8)),
+            )
         ),
         appreciation_enabled=_parse_bool(
             os.environ.get("APPRECIATION_ENABLED"),

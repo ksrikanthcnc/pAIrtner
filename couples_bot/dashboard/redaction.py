@@ -30,7 +30,7 @@ METADATA_COLUMNS: dict[str, set[str]] = {
     "users": {"tg_id", "partner_id", "lang", "paused", "created_at"},
     "facts": {
         "id", "owner_id", "visibility", "category", "fact_type", "expires_at",
-        "archived_at", "supersedes_id", "created_at", "updated_at",
+        "archived_at", "shared_at", "supersedes_id", "created_at", "updated_at",
     },
     "pending": {
         "id", "sender_id", "receiver_id", "status", "send_after", "created_at",

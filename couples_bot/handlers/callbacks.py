@@ -437,6 +437,28 @@ class CallbacksMixin:
         await db_mod.archive_fact(self.db_path, new_id)
         return [BotResponse(t(lang, "fact_contradiction_resolved"))]
 
+    # ── fact visibility toggle ───────────────────────────────────────────
+
+    async def _cb_fact_toggle_visibility(
+        self, user_id: int, data: str, lang: str
+    ) -> list[BotResponse]:
+        """Flip a fact between private and shared; only its owner may do so."""
+        try:
+            fact_id = int(data.split(":")[1])
+        except (ValueError, IndexError):
+            return [BotResponse(t(lang, "error_generic"))]
+        facts = await db_mod.get_active_facts(self.db_path, user_id)
+        fact = next((f for f in facts if f["id"] == fact_id), None)
+        if fact is None:
+            return [BotResponse(t(lang, "error_generic"))]
+        new_vis = "private" if fact["visibility"] == "shared" else "shared"
+        if not await db_mod.set_fact_visibility(
+            self.db_path, fact_id, user_id, new_vis
+        ):
+            return [BotResponse(t(lang, "error_generic"))]
+        key = "fact_now_shared" if new_vis == "shared" else "fact_now_private"
+        return [BotResponse(t(lang, key, id=fact_id))]
+
     # ── goal callbacks ───────────────────────────────────────────────────
 
     async def _cb_goal_achieved(

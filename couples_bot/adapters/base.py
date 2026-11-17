@@ -26,6 +26,9 @@ class BaseAdapter(ABC):
     shared ``_start_background_tasks()`` helper.
     """
 
+    # Shown in the /start and /help privacy note. Subclasses override.
+    transport_description = "this server only (no third-party messaging service)"
+
     def __init__(self, service: BotService, config: Config) -> None:
         self.service = service
         self.config = config

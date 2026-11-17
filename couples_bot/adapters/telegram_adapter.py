@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 class TelegramAdapter(BaseAdapter):
     """Adapter that bridges BotService to the python-telegram-bot library."""
 
+    transport_description = "Telegram servers (not end-to-end encrypted)"
+
     def __init__(self, service, config) -> None:
         super().__init__(service, config)
         self._app: Application | None = None
@@ -288,7 +290,7 @@ class TelegramAdapter(BaseAdapter):
         if not is_user_allowed(self.config, user.id):
             return
         await update.effective_chat.send_action(ChatAction.TYPING)
-        responses = await self.service.handle_mediate(user.id)
+        responses = await self.service.handle_mediate(user.id, " ".join(ctx.args) or None)
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 

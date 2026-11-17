@@ -58,13 +58,14 @@ class TestI18n:
         assert "therapy" in result.lower()
 
     def test_privacy_disclaimer_en(self):
-        result = t("en", "not_therapy")
+        # not_therapy is split: the privacy sentence is now privacy_note.
+        result = t("en", "privacy_note", transport="Telegram servers", llm="Google Gemini")
         assert "telegram" in result.lower()
         assert "gemini" in result.lower()
         assert "stored locally" in result.lower()
 
     def test_privacy_disclaimer_te(self):
-        result = t("te", "not_therapy")
+        result = t("te", "privacy_note", transport="Telegram servers", llm="Google Gemini")
         assert "Telegram" in result
         assert "Gemini" in result
 

@@ -473,11 +473,20 @@ def build_tell_prompt(
     return system, "".join(parts)
 
 
-def build_mediate_prompt(shared_facts: list[str]) -> tuple[str, str]:
+def build_mediate_prompt(
+    shared_facts: list[str],
+    *,
+    perceptions_a: list[str] | None = None,
+    perceptions_b: list[str] | None = None,
+    name_a: str = "",
+    name_b: str = "",
+    window_label: str = "",
+) -> tuple[str, str]:
     """Build prompt for /mediate — neutral perspective.
 
-    PRIVACY: uses ONLY shared facts. No private facts from either partner.
-
+    PRIVACY: uses ONLY shared facts and pre-filtered perception themes.
+    No raw messages and no private facts from either partner.
+    ``perceptions_a`` are A's impressions of B; ``perceptions_b`` are B's of A.
     Returns (system_prompt, user_content).
     """
     persona = _get_persona()
@@ -489,20 +498,40 @@ def build_mediate_prompt(shared_facts: list[str]) -> tuple[str, str]:
         f"{_JSON_FORMAT}\n"
         "IMPORTANT: relay_draft should be null for mediation responses."
     )
-
     parts: list[str] = []
-    parts.append(_format_facts(
-        "Shared context (both partners agreed to share)", shared_facts
-    ))
+    if window_label:
+        parts.append(f"## Period covered\n{window_label}\n\n")
+    if shared_facts:
+        parts.append(_format_facts(
+            "Shared context (both partners agreed to share)", shared_facts
+        ))
+    has_a = bool(perceptions_a)
+    has_b = bool(perceptions_b)
+    if has_a or has_b:
+        na = name_a or "Partner A"
+        nb = name_b or "Partner B"
+        parts.append(
+            "\n## Impressions each partner has noted about the other\n"
+            "These are unverified impressions. They may be inaccurate and "
+            "must not be stated as fact. Give both partners equal weight.\n"
+        )
+        for who, about, items in (
+            (na, nb, perceptions_a), (nb, na, perceptions_b),
+        ):
+            if items:
+                parts.append(f"Impressions {who} has noted about {about}:\n")
+                parts.extend(f"- {item}\n" for item in items)
+        if has_a != has_b:
+            parts.append(
+                "Only one partner has provided impressions, so the picture "
+                "is one-sided. Say so in your reply.\n"
+            )
     parts.append(
         "\n## Request\n"
         "Please provide a neutral, balanced perspective on our situation "
         "based on the shared context above."
     )
-
     return system, "".join(parts)
-
-
 def build_keep_prompt(
     ctx: UserContext,
     message: str,

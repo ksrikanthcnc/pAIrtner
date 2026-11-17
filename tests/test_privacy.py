@@ -220,3 +220,36 @@ async def test_partner_perceptions_only_themes_in_prompt(test_db, paired_users):
 
     # Raw partner messages must never appear
     assert "I am so frustrated with money" not in content
+
+
+# ---------------------------------------------------------------------------
+# /mediate redesign: new prompt inputs (perceptions, window)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_mediate_prompt_with_perceptions_has_no_private_or_raw(
+    test_db, paired_users
+):
+    """New mediate inputs carry only shared facts and filtered themes."""
+    a_id, b_id = paired_users
+    await log_message(test_db, b_id, "user", "RAW-PRIVACY-SENTINEL-8841")
+    shared = [f["text"] for f in await get_shared_facts_for_pair(test_db, a_id, b_id)]
+    _sys, content = build_mediate_prompt(
+        shared,
+        perceptions_a=["seems to feel unheard"],
+        perceptions_b=["wants more date nights"],
+        name_a="Alice", name_b="Bob", window_label="the last 7 days",
+    )
+    assert "seems to feel unheard" in content
+    assert "Impressions Alice has noted about Bob" in content
+    assert "Impressions Bob has noted about Alice" in content
+    assert "RAW-PRIVACY-SENTINEL-8841" not in content
+    for private in ("stressed about work", "morning walks",
+                    "anxious about finances", "quiet evenings"):
+        assert private not in content
+
+
+def test_mediate_prompt_positional_call_still_valid():
+    _sys, content = build_mediate_prompt(["we cook on weekends"])
+    assert "we cook on weekends" in content
+    assert "Impressions" not in content

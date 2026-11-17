@@ -35,6 +35,8 @@ class WebSocketAdapter(BaseAdapter):
         {"type": "error", "text": "..."}
     """
 
+    transport_description = "this server over WebSocket (no third-party messaging service)"
+
     def __init__(self, service, config) -> None:
         super().__init__(service, config)
         self._connections: dict[str, object] = {}  # user_id -> websocket

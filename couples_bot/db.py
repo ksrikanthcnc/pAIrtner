@@ -313,6 +313,11 @@ async def init_db(db_path: str) -> None:
                 "ALTER TABLE facts ADD COLUMN supersedes_id INTEGER REFERENCES facts(id)"
             )
 
+        # Migration: when a fact was last shared with the partner (D7)
+        if "shared_at" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN shared_at TIMESTAMP"
+            )
         # Create category index (after migration ensures column exists)
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_facts_owner_category "
@@ -510,6 +515,37 @@ async def get_shared_facts_for_pair(
     )
 
 
+async def set_fact_visibility(
+    db_path: str, fact_id: int, owner_id: int, visibility: str
+) -> bool:
+    """Set an active fact's visibility; only its owner can change it.
+
+    ``shared_at`` is stamped when shared and cleared when made private.
+    Returns True if a row was updated.
+    """
+    if visibility not in ("private", "shared"):
+        raise ValueError(f"invalid visibility: {visibility!r}")
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE facts SET visibility = ?, "
+            "shared_at = CASE WHEN ? = 'shared' THEN CURRENT_TIMESTAMP ELSE NULL END, "
+            "updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ? AND owner_id = ? AND archived_at IS NULL",
+            (visibility, visibility, fact_id, owner_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+async def get_shared_facts_since(
+    db_path: str, a: int, b: int, since: str
+) -> list[dict[str, Any]]:
+    """Active shared facts of either partner shared/created at or after ``since``."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM facts WHERE owner_id IN (?, ?) AND visibility = 'shared' "
+        "AND archived_at IS NULL AND COALESCE(shared_at, created_at) >= ? "
+        "ORDER BY COALESCE(shared_at, created_at)",
+        (a, b, since),
+    )
 async def delete_fact(db_path: str, fact_id: int, owner_id: int) -> bool:
     """Delete a specific fact owned by the user. Returns True if deleted."""
     async with aiosqlite.connect(db_path) as db:
@@ -1529,6 +1565,17 @@ async def get_partner_perceptions(
     )
 
 
+async def get_perceptions_between(
+    db_path: str, a: int, b: int, since: str
+) -> list[dict[str, Any]]:
+    """Perceptions in both directions (a about b, b about a) updated since ``since``."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM partner_perceptions "
+        "WHERE ((user_id = ? AND about_id = ?) OR (user_id = ? AND about_id = ?)) "
+        "AND updated_at >= ? ORDER BY updated_at DESC, id DESC",
+        (a, b, b, a, since),
+    )
 async def update_perception_confidence(
     db_path: str, perception_id: int, confidence: float
 ) -> None:

@@ -24,6 +24,8 @@ class CLIAdapter(BaseAdapter):
     In single-user mode (``user_id`` provided), uses a single prompt.
     """
 
+    transport_description = "this server's terminal (no third-party messaging service)"
+
     def __init__(self, service, config, user_id: int | None = None) -> None:
         super().__init__(service, config)
         self._single_user_id = user_id

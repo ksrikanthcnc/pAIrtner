@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+from dataclasses import dataclass
 from typing import Any
 
 from couples_bot import db as db_mod
@@ -39,6 +40,14 @@ def _normalise_fact(text: str) -> str:
     return " ".join(text.lower().split()).rstrip(" .!?")
 
 
+@dataclass(frozen=True)
+class PrivacyInfo:
+    """Where messages travel; shown in /start and /help. Set by the launcher."""
+
+    transport: str = "Telegram servers (not end-to-end encrypted)"
+    llm: str = "Google Gemini"
+
+
 class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
     """Stateful bot logic — transport-agnostic.
 
@@ -52,6 +61,8 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         self.config = config
         self.db_path = db_path
         self.llm = llm
+        # Plain data, set by the launcher; the service itself stays transport-unaware.
+        self.privacy_info = PrivacyInfo()
 
         # Ephemeral in-memory state (lost on restart — acceptable for MVP)
         self._pairing_codes: dict[str, int] = {}
@@ -67,6 +78,13 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         # a local list + closure to avoid concurrency issues.
 
     # ── helpers ──────────────────────────────────────────────────────────
+
+    def _disclaimer(self, lang: str) -> str:
+        """Therapy disclaimer plus the transport/LLM-aware privacy note."""
+        return t(lang, "not_therapy") + "\n\n" + t(
+            lang, "privacy_note",
+            transport=self.privacy_info.transport, llm=self.privacy_info.llm,
+        )
 
     async def _get_lang(self, user_id: int) -> str:
         """Return the user's preferred language code, defaulting to ``'en'``."""
@@ -293,7 +311,7 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
             pname = (partner or {}).get("name") or "your partner"
             return [BotResponse(
                 t(lang, "already_paired", partner_name=pname)
-                + "\n\n" + t(lang, "not_therapy")
+                + "\n\n" + self._disclaimer(lang)
                 + "\n\n" + t(lang, "crisis_resources")
             )]
 
@@ -302,7 +320,7 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
 
         parts = [
             t(lang, "welcome", code=code),
-            t(lang, "not_therapy"),
+            self._disclaimer(lang),
             t(lang, "crisis_resources"),
         ]
         return [BotResponse("\n\n".join(parts))]
@@ -379,7 +397,7 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         lang = await self._get_lang(user_id)
         parts = [
             t(lang, "help"),
-            t(lang, "not_therapy"),
+            self._disclaimer(lang),
             t(lang, "crisis_resources"),
         ]
         return [BotResponse("\n\n".join(parts))]
@@ -545,6 +563,8 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
             return await self._cb_style_intensity(user_id, callback_data, lang)
 
         # Fact contradiction callbacks
+        if callback_data.startswith("fv:"):
+            return await self._cb_fact_toggle_visibility(user_id, callback_data, lang)
         if callback_data.startswith("fc_new:"):
             return await self._cb_fact_keep_new(user_id, callback_data, lang)
         if callback_data.startswith("fc_both:"):

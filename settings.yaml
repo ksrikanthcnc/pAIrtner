@@ -100,6 +100,14 @@ nudges:
   quiet_start: "09:00"
   quiet_end: "21:00"
 
+# /mediate — neutral perspective from shared facts and filtered partner impressions.
+mediate:
+  default_days: 7
+  max_days: 90
+  include_perceptions: true
+  min_confidence: 0.4
+  max_themes_per_side: 8
+
 # Appreciation ratio tracking (Gottman 5:1).
 appreciation:
   enabled: true

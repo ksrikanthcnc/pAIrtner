@@ -13,11 +13,14 @@ from couples_bot import db as db_mod
 from couples_bot.config import is_user_allowed
 from couples_bot.crypto import decrypt_value, encrypt_value, mask_key
 from couples_bot.i18n import t
+from couples_bot.mediate import filter_perceptions, parse_window, since_timestamp
 from couples_bot.profile_updater import process_llm_extras
 from couples_bot.prompts import build_mediate_prompt, build_tell_prompt
 from couples_bot.search import search_facts
 
 from .models import BotResponse, InlineButton, format_fact_date, format_relative_time, parse_tags
+
+_MAX_SHARE_BUTTONS = 30
 
 # Category key → i18n key mapping
 _CATEGORY_I18N: dict[str | None, str] = {
@@ -132,38 +135,66 @@ class CommandsMixin:
 
     # ── /mediate ─────────────────────────────────────────────────────────
 
-    async def handle_mediate(self, user_id: int) -> list[BotResponse]:
-        """Provide a neutral perspective based on shared facts."""
+    async def handle_mediate(
+        self, user_id: int, arg: str | None = None
+    ) -> list[BotResponse]:
+        """Neutral perspective from shared facts and filtered impressions in a window."""
         if not is_user_allowed(self.config, user_id):
             return []
-
         lang = await self._get_lang(user_id)
         user = await db_mod.get_user(self.db_path, user_id)
         if not user or not user.get("partner_id"):
             return [BotResponse(t(lang, "mediate_no_partner"))]
-
-        shared = await db_mod.get_shared_facts_for_pair(
-            self.db_path, user_id, user["partner_id"]
+        cfg = self.config
+        window = parse_window(arg, cfg.mediate_default_days, cfg.mediate_max_days)
+        if window is None:
+            return [BotResponse(t(lang, "mediate_usage"))]
+        days, label = window
+        partner_id = user["partner_id"]
+        since = since_timestamp(days)
+        shared = await db_mod.get_shared_facts_since(
+            self.db_path, user_id, partner_id, since
         )
         shared_texts = [f["text"] for f in shared]
-        if not shared_texts:
-            return [BotResponse(t(lang, "mediate_no_shared"))]
-
-        system, content = build_mediate_prompt(shared_texts)
-
+        perc_user: list[str] = []
+        perc_partner: list[str] = []
+        if cfg.mediate_include_perceptions:
+            rows = await db_mod.get_perceptions_between(
+                self.db_path, user_id, partner_id, since
+            )
+            # Observer facts are used only for the overlap check, never prompted.
+            for observer, out in ((user_id, perc_user), (partner_id, perc_partner)):
+                own = [
+                    f["text"]
+                    for f in await db_mod.get_active_facts(self.db_path, observer)
+                ]
+                out.extend(filter_perceptions(
+                    [r for r in rows if r["user_id"] == observer],
+                    own,
+                    cfg.mediate_min_confidence,
+                    cfg.mediate_max_themes_per_side,
+                ))
+        if not shared_texts and not perc_user and not perc_partner:
+            return [BotResponse(t(lang, "mediate_no_input", window=label))]
+        partner = await db_mod.get_user(self.db_path, partner_id)
+        system, content = build_mediate_prompt(
+            shared_texts,
+            perceptions_a=perc_user,
+            perceptions_b=perc_partner,
+            name_a=user.get("name") or "",
+            name_b=(partner or {}).get("name") or "",
+            window_label=label,
+        )
         model = self.config.model_heavy[0] if self.config.model_heavy else None
         api_key = await self._get_couple_api_key(user_id)
         result = await self.llm.generate(
             content, system, model=model, api_key_override=api_key,
         )
-
         await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
-
         if model and hasattr(self.llm, "check_usage_warning"):
             warning = await self.llm.check_usage_warning(model)
             if warning:
                 result["reply"] += "\n\n" + warning
-
         return [BotResponse(result["reply"])]
 
     # ── /whatdoyouknow ───────────────────────────────────────────────────
@@ -225,7 +256,20 @@ class CommandsMixin:
                 for f in facts_of_type:
                     parts.append(self._format_fact_line(f, lang))
 
-        return [BotResponse("".join(parts))]
+        recent = sorted(all_facts, key=lambda f: f["id"], reverse=True)[:_MAX_SHARE_BUTTONS]
+        if len(all_facts) > len(recent):
+            parts.append(t(lang, "whatdoyouknow_more", count=len(all_facts) - len(recent)))
+        buttons: list[list[InlineButton]] = []
+        row: list[InlineButton] = []
+        for f in recent:
+            key = "btn_unshare_fact" if f["visibility"] == "shared" else "btn_share_fact"
+            row.append(InlineButton(t(lang, key, id=f["id"]), f"fv:{f['id']}"))
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        if row:
+            buttons.append(row)
+        return [BotResponse("".join(parts), buttons=buttons)]
 
     def _format_fact_line(self, f: dict, lang: str) -> str:
         """Format a single fact line with age and expiry info."""

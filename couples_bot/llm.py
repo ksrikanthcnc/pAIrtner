@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 from typing import Any, Protocol, runtime_checkable
+from urllib.parse import urlparse
 
 from google import genai
 from google.genai import types as genai_types
@@ -322,6 +324,27 @@ class OpenAICompatClient:
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
+def describe_llm(config: Config) -> str:
+    """Human-readable description of where LLM calls go. Never includes keys."""
+    if config.llm_provider != "openai_compat":
+        return "Google Gemini"
+    host = (urlparse(config.llm_base_url).hostname or "").lower()
+    model = config.llm_model_default or config.model_default
+    if _is_local_host(host):
+        return f"a local model ({model}) on your own network"
+    return f"an external service at {host or 'unknown host'}"
+
+
+def _is_local_host(host: str) -> bool:
+    if host in ("localhost", "host.docker.internal"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private
+
 
 def create_llm_client(config: Config, db_path: str) -> LLMClient:
     """Return the right LLM client based on config.llm_provider."""

@@ -22,9 +22,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "not_therapy": (
             "⚠️ <b>This bot is not a substitute for professional therapy "
             "or counseling.</b> If you or someone you know is in crisis, "
-            "please reach out to professional help.\n\n"
-            "🔒 <b>Privacy note:</b> Messages pass through Telegram servers "
-            "(not end-to-end encrypted) and are processed by Google Gemini AI. "
+            "please reach out to professional help."
+        ),
+        "privacy_note": (
+            "🔒 <b>Privacy note:</b> Messages pass through {transport} "
+            "and are processed by {llm}. "
             "Your facts are stored locally on the bot server."
         ),
         "crisis_resources": (
@@ -68,6 +70,23 @@ _STRINGS: dict[str, dict[str, str]] = {
         # Mediate
         "mediate_no_partner": "You need to pair with a partner first.",
         "mediate_no_shared": "No shared context yet. Chat with me and share some thoughts first.",
+        "mediate_usage": (
+            "Usage: /mediate [window]\n"
+            "Window: week (default), month, a number of days like 14 or 14d, "
+            "or weeks like 2w."
+        ),
+        "mediate_no_input": (
+            "I have nothing to go on for {window}: no shared facts and no "
+            "usable impressions. Share a fact with /whatdoyouknow or chat "
+            "with me first, or try a longer window like /mediate month."
+        ),
+        "fact_now_shared": "🔓 Fact #{id} is now shared with your partner.",
+        "fact_now_private": "🔒 Fact #{id} is now private.",
+        "btn_share_fact": "🔓 Share #{id}",
+        "btn_unshare_fact": "🔒 Make private #{id}",
+        "whatdoyouknow_more": (
+            "\n…and {count} more facts. Buttons are shown for the 30 most recent."
+        ),
 
         # Facts
         "whatdoyouknow_header": "📋 <b>Here's what I know about you:</b>\n\n",
@@ -427,10 +446,12 @@ _STRINGS: dict[str, dict[str, str]] = {
             "మీ భాగస్వామికి ఈ కోడ్ ఇవ్వండి: /join {code}"
         ),
         "not_therapy": (
-            "⚠️ <b>ఈ బాట్ వృత్తిపరమైన థెరపీకి ప్రత్యామ్నాయం కాదు.</b>\n\n"
-            "🔒 <b>గోప్యతా గమనిక:</b> సందేశాలు Telegram సర్వర్ల ద్వారా వెళ్తాయి "
-            "(ఎండ్-టు-ఎండ్ ఎన్‌క్రిప్ట్ చేయబడవు) మరియు Google Gemini AI ద్వారా "
-            "ప్రాసెస్ చేయబడతాయి. మీ విషయాలు బాట్ సర్వర్‌లో స్థానికంగా నిల్వ చేయబడతాయి."
+            "⚠️ <b>ఈ బాట్ వృత్తిపరమైన థెరపీకి ప్రత్యామ్నాయం కాదు.</b>"
+        ),
+        "privacy_note": (
+            "🔒 <b>గోప్యతా గమనిక:</b> సందేశాలు {transport} ద్వారా వెళ్తాయి "
+            "మరియు {llm} ద్వారా ప్రాసెస్ చేయబడతాయి. "
+            "మీ విషయాలు బాట్ సర్వర్‌లో స్థానికంగా నిల్వ చేయబడతాయి."
         ),
         "crisis_resources": (
             "🆘 <b>సంక్షోభ సహాయం (India):</b>\n"
@@ -468,6 +489,23 @@ _STRINGS: dict[str, dict[str, str]] = {
         # Mediate
         "mediate_no_partner": "ముందు భాగస్వామితో జత చేయండి.",
         "mediate_no_shared": "ఇంకా షేర్డ్ సందర్భం లేదు.",
+        "mediate_usage": (
+            "వాడకం: /mediate [కాలం]\n"
+            "కాలం: week (డిఫాల్ట్), month, 14 లేదా 14d వంటి రోజులు, "
+            "లేదా 2w వంటి వారాలు."
+        ),
+        "mediate_no_input": (
+            "{window} కోసం నా దగ్గర ఏమీ లేదు: షేర్ చేసిన విషయాలు లేవు, "
+            "ఉపయోగపడే అభిప్రాయాలూ లేవు. ముందు /whatdoyouknow నుండి ఒక విషయాన్ని "
+            "షేర్ చేయండి లేదా నాతో మాట్లాడండి, లేదా /mediate month ప్రయత్నించండి."
+        ),
+        "fact_now_shared": "🔓 #{id} విషయం ఇప్పుడు మీ భాగస్వామికి షేర్ చేయబడింది.",
+        "fact_now_private": "🔒 #{id} విషయం ఇప్పుడు ప్రైవేట్.",
+        "btn_share_fact": "🔓 షేర్ #{id}",
+        "btn_unshare_fact": "🔒 ప్రైవేట్ చేయి #{id}",
+        "whatdoyouknow_more": (
+            "\n…ఇంకా {count} విషయాలు ఉన్నాయి. తాజా 30 కోసం మాత్రమే బటన్లు చూపబడతాయి."
+        ),
 
         # Facts
         "whatdoyouknow_header": "📋 <b>నాకు మీ గురించి తెలిసినవి:</b>\n\n",
