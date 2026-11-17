@@ -154,7 +154,16 @@
     addBubble("bot err", tr("failed"));
   }
 
-  function setStatus(key) { $("status").textContent = tr(key); }
+  function setStatus(key) {
+    var el = $("status");
+    if (key === "offline") {
+      el.textContent = "⚡ " + tr(key);
+      el.className = "status offline-badge";
+    } else {
+      el.textContent = (meta && meta.llm) ? meta.llm : tr(key);
+      el.className = "status";
+    }
+  }
 
   /* ---- long poll ---- */
 
@@ -205,6 +214,10 @@
   function enterChat(name) {
     $("who").textContent = name || "";
     $("log").textContent = "";
+    if (meta && meta.llm) {
+      $("status").textContent = meta.llm;
+      $("status").title = "LLM provider";
+    }
     show("chat");
     applyLang();
     loadHistory();
