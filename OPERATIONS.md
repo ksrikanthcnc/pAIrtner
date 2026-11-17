@@ -4,17 +4,13 @@ Quick reference for starting, stopping, and managing the bot.
 
 ## Location
 
-**Windows**: `E:\media\docker\pairtner\`
-**WSL path**: `/mnt/e/media/docker/pairtner/`
+The project lives wherever you cloned it. For Docker deployment, the project root contains `Dockerfile` and `docker-compose.yml`.
 
 ## First-time setup
 
 ```bash
-# Enter WSL
-wsl -d Ubuntu-26.04 -u root
-
-# Go to project
-cd /mnt/e/media/docker/pairtner
+# Enter your deployment environment (WSL, SSH, or local terminal)
+cd /path/to/pairtner
 
 # Create .env from example
 cp .env.example .env
@@ -53,14 +49,12 @@ DASHBOARD_TOKEN=your-admin-token-here
 ## Start / Stop
 
 ```bash
-# Enter WSL as root
-wsl -d Ubuntu-26.04 -u root
-cd /mnt/e/media/docker/pairtner
+cd /path/to/pairtner
 
 # Start bot
 docker compose up -d pairtner
 
-# Start dashboard
+# Start dashboard (bind to your LAN interface for remote access)
 DASHBOARD_BIND=0.0.0.0 docker compose --profile dashboard up -d dashboard
 
 # Stop everything
@@ -79,16 +73,16 @@ DASHBOARD_BIND=0.0.0.0 docker compose --profile dashboard up -d --build dashboar
 
 | Service | URL | Auth |
 |---------|-----|------|
-| **PWA** | http://192.168.1.7:8780 | Sign up with invite code from .env |
-| **Dashboard** | http://192.168.1.7:8765 | DASHBOARD_TOKEN from .env |
-| **Duo test** | http://192.168.1.7:8780/duo.html | Same as PWA |
+| **PWA** | http://YOUR_HOST:8780 | Sign up with invite code from .env |
+| **Dashboard** | http://YOUR_HOST:8765 | DASHBOARD_TOKEN from .env |
+| **Duo test** | http://YOUR_HOST:8780/duo.html | Same as PWA |
 | **Telegram** | Via your bot on Telegram | /start to begin |
 
-Via Tailscale (remote): replace `192.168.1.7` with `100.123.91.124`
+Replace `YOUR_HOST` with your server's LAN IP, Tailscale IP, or `localhost`.
 
 ## Dashboard login
 
-Open `http://192.168.1.7:8765`, enter the `DASHBOARD_TOKEN` from your `.env`. You'll see:
+Open `http://YOUR_HOST:8765`, enter the `DASHBOARD_TOKEN` from your `.env`. You'll see:
 - **Overview**: user counts, message counts, usage stats
 - **Users**: per-user activity
 - **Couples**: paired users, conversation viewer (💬 button)

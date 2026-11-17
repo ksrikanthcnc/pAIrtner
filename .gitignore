@@ -17,6 +17,13 @@ comms/
 HANDOFF.md
 tmp-kiro/
 
+# Personal deploy scripts (not for public)
+.rsyncignore
+dev/deploy.sh
+dev/deploy-wsl.sh
+dev/sync-to-wsl.sh
+dev/deploy.env
+
 # Worktrees
 .worktrees/
 .crew-worktrees/
