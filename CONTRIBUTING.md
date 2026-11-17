@@ -6,7 +6,7 @@ Thanks for your interest in improving pAIrtner!
 
 ```bash
 # Clone the repo
-git clone https://github.com/ksrujankanth/pAIrtner.git
+git clone https://github.com/ksrikanthcnc/pAIrtner.git
 cd pAIrtner
 
 # Install uv (if you don't have it)
