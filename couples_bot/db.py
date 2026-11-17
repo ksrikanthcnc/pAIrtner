@@ -439,11 +439,12 @@ async def get_full_history(
     """Return the full message history for a user (oldest first), with timestamps.
 
     Used by the PWA to reconstruct the full conversation on auth.
+    Excludes soft-deleted messages.
     """
     return await _fetch_all(
         db_path,
         "SELECT id, role, content, created_at FROM messages "
-        "WHERE user_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?",
+        "WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ? OFFSET ?",
         (user_id, limit, offset),
     )
 
@@ -455,9 +456,24 @@ async def get_history_after_id(
     return await _fetch_all(
         db_path,
         "SELECT id, role, content, created_at FROM messages "
-        "WHERE user_id = ? AND id > ? ORDER BY created_at ASC LIMIT ?",
+        "WHERE user_id = ? AND id > ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?",
         (user_id, after_id, limit),
     )
+
+
+async def soft_delete_message(
+    db_path: str, user_id: int, message_id: int,
+) -> bool:
+    """Soft-delete a message (set deleted_at). Returns True if found and owned."""
+    import aiosqlite
+    async with aiosqlite.connect(db_path) as db:
+        cursor = await db.execute(
+            "UPDATE messages SET deleted_at = CURRENT_TIMESTAMP "
+            "WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+            (message_id, user_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
 
 
 # ---------------------------------------------------------------------------

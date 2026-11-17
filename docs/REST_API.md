@@ -142,6 +142,22 @@ Cursor and long-poll rules:
 - A non-numeric or negative value gives `400 invalid_query`.
 - Loop pattern: `GET /events?after=$cursor&wait=25`, handle events, set `cursor`, repeat.
 
+### `DELETE /api/v1/message`
+
+Soft-delete a message (sets `deleted_at`, excluded from future history fetches). The message must belong to the authenticated user.
+
+Request body:
+```json
+{"id": 42}
+```
+
+Response `200`:
+```json
+{"deleted": 42}
+```
+
+`404` if the message doesn't exist or doesn't belong to you.
+
 ### `POST /api/v1/token/rotate`
 
 No body needed. Returns `{"user_id": ..., "token": "<uid>:<new secret>"}` and invalidates the old token at once.
@@ -213,6 +229,7 @@ With `ALLOWED_USER_IDS` set on the server, registration also needs an explicit a
 | 400 | `invalid_lang` | `lang` is not `en` or `te` |
 | 400 | `invalid_data` | `data` missing, blank, or over 256 chars |
 | 400 | `invalid_query` | Bad `after` or `wait` |
+| 400 | `invalid_id` | Message id missing or not a positive integer |
 | 401 | `unauthorized` | Bad or missing token (response has `WWW-Authenticate`) |
 | 403 | `not_allowed` | Id not in `ALLOWED_USER_IDS` |
 | 403 | `registration_closed` | Mode is `closed` |

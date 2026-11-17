@@ -101,6 +101,7 @@ ROUTES: tuple[Route, ...] = (
     Route("GET", "/api/v1/events", False, "_events"),
     Route("GET", "/api/v1/history", False, "_history"),
     Route("GET", "/api/v1/facts", False, "_facts"),
+    Route("DELETE", "/api/v1/message", False, "_delete_message", needs_json=True),
     Route("POST", "/api/v1/token/rotate", False, "_rotate"),
 ) + tuple(Route("GET", p, True, "_static") for p in STATIC_FILES)
 
@@ -400,6 +401,16 @@ class RestApi:
         if kind:
             facts = [f for f in facts if (f.get("kind") or "working") == kind]
         return _json(200, {"facts": facts, "count": len(facts)})
+
+    async def _delete_message(self, *, uid: int, body: dict[str, Any], **_: Any) -> Response:
+        """Soft-delete a message by ID (must be owned by the user)."""
+        msg_id = body.get("id")
+        if not isinstance(msg_id, int) or msg_id < 1:
+            raise ApiError(400, "invalid_id")
+        deleted = await db_mod.soft_delete_message(self.db_path, uid, msg_id)
+        if not deleted:
+            raise ApiError(404, "not_found")
+        return _json(200, {"deleted": msg_id})
 
     async def _me(self, *, uid: int, **_: Any) -> Response:
         user = await db_mod.get_user(self.db_path, uid)

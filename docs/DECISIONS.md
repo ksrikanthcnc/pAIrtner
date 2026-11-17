@@ -82,3 +82,8 @@ Why pAIrtner is built the way it is. Newest first. Each entry: the decision, why
 - **Decision:** `pin_core` (add directly to core, bypassing confirm) is accepted only when the engine detects a command/tag (`/remember`, `#remember`) or clear directive phrasing. Detection is keyword-based in the engine, not LLM-based.
 - **Why:** the LLM's judgment on "is this explicit enough?" is unreliable. A keyword check is deterministic. The model can always `propose_core` (with user confirm) as the safe fallback.
 - **Rejected:** LLM decides if the request is explicit (too ambiguous); all core additions require confirm tap (friction for explicit requests like "remember this about me").
+
+## 2026-11-17 — First-person vs third-person mode (planned)
+- **Decision:** add a `/mode` setting with two values: `mediator` (default, third-person — the AI is a visible intermediary) and `voice` (first-person — the AI writes as the user, in their voice). Affects relay drafting and bot framing.
+- **Why:** first-person relays read more naturally to the receiver ("I've been feeling..." vs "Your partner feels..."). Some couples prefer the bot invisible; others want the mediator framing. Making it a mode lets both work.
+- **Status:** planned, not yet implemented. Needs changes to persona.md, contract.md relay section, and relay drafting logic.

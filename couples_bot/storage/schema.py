@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS messages (
     user_id     INTEGER NOT NULL REFERENCES users(tg_id),
     role        TEXT NOT NULL,
     content     TEXT NOT NULL,
+    deleted_at  TIMESTAMP,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -435,6 +436,12 @@ async def init_db(db_path: str) -> None:
             await db.execute(
                 "ALTER TABLE user_profiles ADD COLUMN message_count INTEGER DEFAULT 0"
             )
+
+        # Migration: add deleted_at to messages if missing
+        async with db.execute("PRAGMA table_info(messages)") as cur:
+            msg_columns = {row[1] for row in await cur.fetchall()}
+        if "deleted_at" not in msg_columns:
+            await db.execute("ALTER TABLE messages ADD COLUMN deleted_at TIMESTAMP")
 
         await db.commit()
 

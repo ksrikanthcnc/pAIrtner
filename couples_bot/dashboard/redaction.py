@@ -37,7 +37,7 @@ METADATA_COLUMNS: dict[str, set[str]] = {
         "id", "sender_id", "receiver_id", "status", "send_after", "created_at",
         "sent_at", "feedback", "acknowledged_at",
     },
-    "messages": {"id", "user_id", "role", "created_at"},
+    "messages": {"id", "user_id", "role", "deleted_at", "created_at"},
     "usage": {"date", "model", "count"},
     "llm_calls": {"id", "created_at", "task", "model", "pack_hash", "prompt_sha256"},
     "pack_snapshots": {
