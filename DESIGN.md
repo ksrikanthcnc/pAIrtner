@@ -75,5 +75,5 @@ Routing (model names in config, with fallback list):
 
 ## Addendum: transport, hosting, export
 - Transport: start with long polling (no public URL). Keep handlers transport-agnostic so a webhook can replace polling if moved to serverless.
-- Hosting options (verify current free-tier terms): own machine for testing; always-free VM (e.g. Oracle) for always-on with SQLite; serverless webhook (Cloud Run / Lambda / Workers) needs external DB (Neon/Supabase) plus a scheduler for digest and cool-down delivery. Not on Nielsen AWS/KaaS: personal project only. Host operator can read the DB.
+- Hosting options (verify current free-tier terms): own machine for testing; always-free VM (e.g. Oracle) for always-on with SQLite; serverless webhook (Cloud Run / Lambda / Workers) needs external DB (Neon/Supabase) plus a scheduler for digest and cool-down delivery. Personal project — self-hosted only. Host operator can read the DB.
 - Knowledge stays in SQLite. No Google Docs API. Add `/export`: sends a user their OWN facts as a text file in Telegram.

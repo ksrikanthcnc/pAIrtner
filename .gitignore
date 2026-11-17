@@ -1,20 +1,35 @@
+# Secrets & data
 .env
 *.db
+dev/deploy.env
+
+# Python
 __pycache__/
-tmp-kiro/
-agents/
-.agents/
-.venv/
 *.pyc
+.venv/
 .pytest_cache/
 .ruff_cache/
-backups/
+
+# Agent internals (Kiro Crew / IDE)
+agents/
+.agents/
 comms/
 HANDOFF.md
+tmp-kiro/
+
+# Worktrees
 .worktrees/
+.crew-worktrees/
+
+# Backups & logs
+backups/
 dev/localtest/*.log
 dev/localtest/*.out
 dev/localtest/transcript-*.log
-dev/deploy.env
+
+# Eval results (generated, not checked in)
 dev/prompt-eval/runs/
-.crew-worktrees/
+
+# OS
+.DS_Store
+Thumbs.db
