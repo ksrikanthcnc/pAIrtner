@@ -10,6 +10,7 @@ agents/
 .ruff_cache/
 backups/
 comms/
+HANDOFF.md
 .worktrees/
 dev/localtest/*.log
 dev/localtest/*.out
