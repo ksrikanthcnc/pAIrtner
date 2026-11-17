@@ -239,7 +239,7 @@
     show("auth");
     applyLang();
     authError("");
-    $("privacy").textContent = meta ? meta.privacy : "";
+    var pv = $("privacy"); pv.textContent = ""; if (meta) { R.renderMarkup(meta.privacy, pv); }
     $("invite-row").hidden = !(meta && meta.registration === "invite");
     var sel = $("lang");
     sel.textContent = "";
