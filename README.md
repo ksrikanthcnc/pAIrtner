@@ -21,7 +21,7 @@ A private bot that helps couples communicate more gently. Each partner chats pri
 ### Setup
 
 ```bash
-git clone <repo-url> && cd couples-bot
+git clone https://github.com/ksrikanthcnc/pAIrtner.git && cd pAIrtner
 uv sync
 
 cp .env.example .env
@@ -62,18 +62,95 @@ Open the URL in a browser, register with a name (and the invite code), then pair
 
 ## Architecture
 
+### System Overview
+
+```mermaid
+graph TB
+    subgraph Transport["Transport Layer (swappable)"]
+        TG[Telegram Bot]
+        PWA[PWA / REST API]
+        WS[WebSocket]
+        CLI[CLI Adapter]
+    end
+
+    subgraph Core["Engine (transport-agnostic)"]
+        SVC[BotService<br/>Orchestrator]
+        MEM[Memory Engine<br/>Ops · Validation · Dedup]
+        PROMPT[Prompt Assembly<br/>Pack + Context → LLM Input]
+        ANALYSIS[Background Analysis<br/>Patterns · Horsemen · Voice]
+        CONSOL[Consolidation<br/>Episodes from old memories]
+    end
+
+    subgraph LLM["LLM Layer (provider-agnostic)"]
+        GEMINI[Gemini Flash]
+        OLLAMA[Ollama / Local]
+        FAKE[Fake LLM<br/>for testing]
+    end
+
+    subgraph Storage["Storage Layer"]
+        DB[(SQLite + FTS5)]
+        PACKS[Prompt Packs<br/>Markdown + YAML]
+    end
+
+    subgraph Admin["Admin Dashboard"]
+        DASH[Stats · Explorer<br/>Conversations · Config]
+    end
+
+    TG --> SVC
+    PWA --> SVC
+    WS --> SVC
+    CLI --> SVC
+    SVC --> MEM
+    SVC --> PROMPT
+    SVC --> ANALYSIS
+    SVC --> CONSOL
+    PROMPT --> PACKS
+    SVC --> GEMINI
+    SVC --> OLLAMA
+    SVC --> FAKE
+    MEM --> DB
+    SVC --> DB
+    DASH --> DB
 ```
-Transport (Telegram / REST+PWA / WebSocket / CLI) ← swappable adapter
-    ↓
-BotService (handlers, business logic)            ← transport-agnostic
-    ↓
-Prompt Assembly (persona + voice + context)      ← template-based, file-driven
-    ↓
-LLM Client (Gemini / OpenAI-compat / Ollama)    ← provider-agnostic
-    ↓
-DB (SQLite + FTS5)                               ← storage layer
-    ↓
-Config (YAML + env vars)                         ← deployment-agnostic
+
+### Message Flow
+
+```mermaid
+sequenceDiagram
+    participant A as Alice (User)
+    participant T as Transport<br/>(Telegram/PWA)
+    participant E as Engine
+    participant M as Memory
+    participant L as LLM
+    participant D as Database
+
+    A->>T: "The kitchen remodel is stressing me out"
+    T->>E: dispatch(user_id, text)
+    E->>D: load user context (facts, history)
+    E->>M: build context (budget-capped, ranked by kind)
+    M-->>E: curated facts with IDs
+    E->>L: generate(system_prompt + context + message)
+    L-->>E: {reply, memory_ops, relay_draft, mood}
+    E->>M: validate memory_ops (ownership, dedup, caps)
+    M->>D: apply ops (add/revise/status/promote)
+    M->>D: log to memory_op_log + memory_versions
+    E-->>T: BotResponse(reply + buttons)
+    T-->>A: "That sounds really overwhelming..."
+```
+
+### Memory Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> Working: New fact extracted
+    Working --> Core: User confirms (propose_core)
+    Working --> Improving: Situation getting better
+    Improving --> Resolved: Issue done
+    Resolved --> Episode: Consolidation (90+ days)
+    Working --> Outdated: No longer relevant
+    Outdated --> Episode: Consolidation
+    Core --> Core: Never ages
+    Episode --> [*]: Retrieved only via FTS match
 ```
 
 ### Module Map
@@ -81,6 +158,10 @@ Config (YAML + env vars)                         ← deployment-agnostic
 | Module | Purpose |
 |--------|---------|
 | `couples_bot/db.py` | SQLite schema, migrations, all CRUD functions |
+| `couples_bot/storage/` | Modular storage layer (schema, helpers; migration in progress) |
+| `couples_bot/memory.py` | Memory engine — ops parsing, validation, dedup, pin detection |
+| `couples_bot/analysis.py` | Background analysis — patterns, horsemen, voice traits |
+| `couples_bot/consolidation.py` | Memory consolidation — compress old facts into episodes |
 | `couples_bot/search.py` | FTS5 virtual table, full-text search, index management |
 | `couples_bot/prompts.py` | Prompt assembly (pack text + user context → LLM input) |
 | `couples_bot/pack.py` | Prompt pack loading, validation, hot reload, snapshots |
@@ -90,14 +171,16 @@ Config (YAML + env vars)                         ← deployment-agnostic
 | `couples_bot/handlers/tags.py` | Tag handlers (#keep, #send, #deep, #blunt, #now) |
 | `couples_bot/handlers/commands.py` | Slash command handlers |
 | `couples_bot/handlers/callbacks.py` | Inline button callback handlers |
+| `couples_bot/handlers/dispatch.py` | Command routing table |
 | `couples_bot/handlers/models.py` | BotResponse dataclass |
-| `couples_bot/profile_updater.py` | Background profile/voice trait extraction from LLM output |
 | `couples_bot/dampening.py` | Logarithmic dampening curves |
-| `couples_bot/summarizer.py` | On-demand monthly fact summaries |
 | `couples_bot/i18n.py` | Internationalization (English + Telugu) |
-| `couples_bot/adapters/` | Transport adapters (Telegram, WebSocket, CLI) |
-| `couples_bot/__main__.py` | Thin launcher — picks adapter from config/CLI args |
-| `couples_bot/dashboard/` | Standalone admin web dashboard (stats, SQLite explorer, backup/clear actions); separate process |
+| `couples_bot/adapters/` | Transport adapters (Telegram, REST, WebSocket, CLI) |
+| `couples_bot/rest/` | REST API (routes, auth, long-poll, static files) |
+| `couples_bot/web/` | PWA frontend (offline-capable, installable) |
+| `couples_bot/dashboard/` | Admin dashboard (stats, conversations, config, SQLite explorer) |
+| `packs/default/` | Stock prompt pack |
+| `packs/template/` | Starter template for custom packs |
 
 ### Prompt Assembly
 
