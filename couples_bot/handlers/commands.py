@@ -69,7 +69,8 @@ class CommandsMixin:
         skip_cooldown = "#now" in tags
 
         ctx = await self._build_ctx(user_id)
-        system, content = build_tell_prompt(ctx, clean)
+        mode = await db_mod.get_user_preference(self.db_path, user_id, "mode", default="mediator") or "mediator"
+        system, content = build_tell_prompt(ctx, clean, mode=mode)
 
         api_key = await self._get_couple_api_key(user_id)
         await db_mod.log_message(self.db_path, user_id, "user", clean)
@@ -883,6 +884,43 @@ class CommandsMixin:
         header = t(lang, "remember_header")
         item = t(lang, "remember_item", text=fact["text"])
         return [BotResponse(f"{header}\n{item}")]
+
+    # ── /mode ──────────────────────────────────────────────────────────
+
+    async def handle_mode(self, user_id: int, arg: str | None) -> list[BotResponse]:
+        """Switch between mediator (third-person) and voice (first-person) mode."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+        valid_modes = {"mediator", "voice"}
+
+        if not arg or arg.strip().lower() not in valid_modes:
+            # Show current mode
+            current = await db_mod.get_user_preference(
+                self.db_path, user_id, "mode", default="mediator",
+            )
+            return [BotResponse(
+                f"🎭 Current mode: <b>{current}</b>\n\n"
+                "<b>mediator</b> — I speak as a third party, helping you communicate\n"
+                "<b>voice</b> — I write as you, in your voice (relays sound like they came from you)\n\n"
+                "Switch with: /mode mediator  or  /mode voice"
+            )]
+
+        mode = arg.strip().lower()
+        await db_mod.set_user_preference(self.db_path, user_id, "mode", mode)
+
+        if mode == "voice":
+            return [BotResponse(
+                "🎭 Switched to <b>voice</b> mode.\n"
+                "Relay drafts will now be written in first person, "
+                "as if coming directly from you."
+            )]
+        else:
+            return [BotResponse(
+                "🎭 Switched to <b>mediator</b> mode.\n"
+                "I'll speak as a neutral third party when drafting relays."
+            )]
 
     # ── /review ────────────────────────────────────────────────────────
 

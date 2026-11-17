@@ -321,9 +321,11 @@ def build_tell_prompt(
     partner_summary: str | None = None,
     goals_text: str | None = None,
     smart_ctx: SmartContext | None = None,
+    mode: str = "mediator",
 ) -> tuple[str, str]:
     """Build prompt for /tell or #send — relay drafting.
 
+    mode: 'mediator' (third-person, default) or 'voice' (first-person, writes as the user).
     Returns (system_prompt, user_content).
     """
     p = pack.current()
@@ -332,6 +334,17 @@ def build_tell_prompt(
     goals_section = ""
     if goals_text:
         goals_section = "\n" + goals_text
+
+    mode_instruction = ""
+    if mode == "voice":
+        mode_instruction = (
+            "\n\n## Relay Mode: VOICE (first-person)\n"
+            "Write the relay draft in FIRST PERSON, as if the sender wrote it themselves. "
+            "Use 'I', 'me', 'my'. Match the sender's natural voice and style. "
+            "The receiver should feel like they're reading a message from their partner, "
+            "not from a bot. Still soften and dampen, but keep the personal voice."
+        )
+
     system = (
         f"{_head(p)}\n\n"
         f"{p.s('tell_intro')}\n\n"
@@ -339,6 +352,7 @@ def build_tell_prompt(
         f"{p.s('tell_tail')}"
         f"{style_section}"
         f"{goals_section}"
+        f"{mode_instruction}"
     )
 
     parts: list[str] = []

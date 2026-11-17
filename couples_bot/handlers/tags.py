@@ -159,6 +159,7 @@ class TagsMixin:
             partner_summary=partner_summary,
             goals_text=goals_text,
             smart_ctx=smart_ctx,
+            mode=await db_mod.get_user_preference(self.db_path, user_id, "mode", default="mediator") or "mediator",
         )
 
         api_key = await self._get_couple_api_key(user_id)

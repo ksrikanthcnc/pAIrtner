@@ -169,6 +169,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/goals — View your active goals\n\n"
             "<b>Personalization</b>\n"
             "/settings — Open settings menu\n"
+            "/mode — Switch between mediator and voice mode\n"
             "/vibe — View your learned voice profile\n"
             "/style — Alias for /vibe\n"
             "/mood &lt;mood&gt; — Set your mood (stressed|happy|angry|reflective)\n"
