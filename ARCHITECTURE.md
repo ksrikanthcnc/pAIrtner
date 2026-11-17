@@ -233,7 +233,7 @@ Run: `uv run python -m couples_bot.dashboard` or `docker compose up dashboard`
 |---|---|
 | Local dev | `uv run python dev/localtest/run_local.py --llm fake` |
 | Docker (Win plex-stack) | `docker compose up -d` at `/mnt/e/media/docker/pairtner/` |
-| Mac → Win sync | `bash dev/localtest/deploy.sh --rebuild` or rsync with `.rsyncignore` |
+| Mac → Win sync | `bash dev/deploy.sh --rebuild` or rsync with `.rsyncignore` |
 
 ## Roadmap (next priorities)
 

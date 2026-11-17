@@ -19,7 +19,7 @@ services:
     volumes:
       - ./couples_bot.db:/app/couples_bot.db
       - ./settings.yaml:/app/settings.yaml:ro
-      - ./persona.md:/app/persona.md:ro
+      - ./prompts:/app/prompts:ro   # persona/voices/tasks: edit on the host, then restart
       - ./backups:/app/backups
     restart: unless-stopped
     # Uncomment for WebSocket adapter:

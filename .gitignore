@@ -11,3 +11,7 @@ agents/
 backups/
 comms/
 .worktrees/
+dev/localtest/web/tokens.json
+dev/localtest/*.log
+dev/localtest/*.out
+dev/localtest/transcript-*.log
