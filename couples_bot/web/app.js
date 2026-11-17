@@ -272,6 +272,7 @@
     var cls = m.role === "user" ? "me" : "bot";
     var div = document.createElement("div");
     div.className = "msg " + cls;
+    if (m.id) { div.dataset.msgId = m.id; }
     if (m.created_at) {
       var ts = document.createElement("span");
       ts.className = "ts";
@@ -281,6 +282,25 @@
     var content = document.createElement("span");
     PairtnerRender.renderMarkup(m.content, content, document);
     div.appendChild(content);
+    // Long-press to delete (mobile-friendly)
+    if (m.id && m.role === "user") {
+      var timer = null;
+      div.addEventListener("pointerdown", function () {
+        timer = setTimeout(function () {
+          if (confirm("Delete this message?")) {
+            api("DELETE", "/api/v1/message", { id: m.id }).then(function () {
+              div.style.opacity = "0.3";
+              div.style.textDecoration = "line-through";
+              // Remove from local cache
+              var cached = JSON.parse(store.get("history") || "[]");
+              store.set("history", JSON.stringify(cached.filter(function (c) { return c.id !== m.id; })));
+            }).catch(function () { /* ignore delete failures */ });
+          }
+        }, 600);
+      });
+      div.addEventListener("pointerup", function () { clearTimeout(timer); });
+      div.addEventListener("pointerleave", function () { clearTimeout(timer); });
+    }
     $("log").appendChild(div);
   }
 
