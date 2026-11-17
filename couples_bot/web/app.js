@@ -364,7 +364,12 @@
       if (!text) { return; }
       input.value = "";
       addBubble("me", text);
-      api("POST", "/api/v1/message", { text: text }).then(showReplies).catch(function (err) {
+      var typing = addBubble("bot typing", "●●●");
+      api("POST", "/api/v1/message", { text: text }).then(function (data) {
+        typing.remove();
+        showReplies(data);
+      }).catch(function (err) {
+        typing.remove();
         if (!navigator.onLine) {
           // Queue for later
           var queue = JSON.parse(store.get("outbox") || "[]");

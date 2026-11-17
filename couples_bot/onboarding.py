@@ -106,6 +106,7 @@ async def process_onboarding_answer(
     # /skip ends onboarding early
     if text.strip().lower() == "/skip":
         await db_mod.update_user_profile(db_path, user_id, onboarding_done=1)
+        await save_onboarding_as_facts(db_path, user_id)
         return True, t(lang, "onboard_skip")
 
     current_step = profile["onboarding_step"]
@@ -119,6 +120,7 @@ async def process_onboarding_answer(
     if target_q is None:
         # All questions answered — mark done
         await db_mod.update_user_profile(db_path, user_id, onboarding_done=1)
+        await save_onboarding_as_facts(db_path, user_id)
         return False, None
 
     q_step, field_name, validator = target_q
@@ -143,6 +145,7 @@ async def process_onboarding_answer(
             onboarding_done=1,
             love_story_brief=combined,
         )
+        await save_onboarding_as_facts(db_path, user_id)
         return True, t(lang, "onboard_complete")
     elif field_name == "duration_years":
         if validated is None:
@@ -173,3 +176,48 @@ async def process_onboarding_answer(
     if nxt:
         return True, nxt[0]
     return True, t(lang, "onboard_complete")
+
+
+async def save_onboarding_as_facts(db_path: str, user_id: int) -> int:
+    """Convert onboarding profile answers into core facts for the LLM.
+
+    Called when onboarding completes. Returns the number of facts created.
+    """
+    profile = await db_mod.get_user_profile(db_path, user_id)
+    if not profile:
+        return 0
+
+    user = await db_mod.get_user(db_path, user_id)
+    partner_name = None
+    if user and user.get("partner_id"):
+        partner = await db_mod.get_user(db_path, user["partner_id"])
+        partner_name = (partner or {}).get("name")
+
+    facts: list[str] = []
+
+    rel = profile.get("relationship_type")
+    dur = profile.get("duration_years")
+    if rel and dur:
+        partner_part = f" to {partner_name}" if partner_name else ""
+        facts.append(f"{rel.capitalize()}{partner_part}, {dur} years")
+    elif rel:
+        facts.append(f"Relationship type: {rel}")
+
+    if profile.get("has_kids"):
+        facts.append("Has kids")
+
+    age = profile.get("age_range")
+    if age:
+        facts.append(f"Age: {age}")
+
+    brief = profile.get("love_story_brief")
+    if brief:
+        facts.append(brief)
+
+    count = 0
+    for text in facts:
+        fid = await db_mod.add_fact(db_path, user_id, text, "private", fact_type="stable")
+        await db_mod.promote_to_core(db_path, fid)
+        count += 1
+
+    return count

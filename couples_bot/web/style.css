@@ -51,6 +51,8 @@ summary { min-height: 44px; display: flex; align-items: center; cursor: pointer;
 .msg pre { margin: 4px 0; white-space: pre-wrap; }
 .msg .ts { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
 .msg.me .ts { color: rgba(255,255,255,.7); }
+.msg.typing { opacity: 0.5; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 0.7; } }
 .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; white-space: normal; }
 .btns button { min-height: 44px; }
 .doc { display: block; margin-top: 8px; color: inherit; }
