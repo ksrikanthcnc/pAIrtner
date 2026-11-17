@@ -26,6 +26,29 @@ trace_logger = logging.getLogger("couples_bot.trace")
 # Shown to users when every model failed; also lets callers detect that case.
 FALLBACK_REPLY = "I'm having trouble connecting right now. Please try again in a moment."
 
+def _make_fallback(provider: str = "", model: str = "") -> dict:
+    """Build a fallback response with a more helpful error message."""
+    if provider == "openai_compat":
+        msg = (
+            "I couldn't reach the local LLM. "
+            "Check that Ollama is running (`ollama serve`) "
+            f"and the model is pulled{f' (`ollama pull {model}`)' if model else ''}."
+        )
+    elif provider == "gemini":
+        msg = (
+            "I couldn't reach Gemini. "
+            "Check that GEMINI_API_KEY is set in your .env "
+            "and you have API quota remaining."
+        )
+    else:
+        msg = FALLBACK_REPLY
+    return {
+        "reply": msg,
+        "memory_ops": [],
+        "new_facts": [],
+        "relay_draft": None,
+    }
+
 # ---------------------------------------------------------------------------
 # Response type
 # ---------------------------------------------------------------------------
@@ -175,12 +198,7 @@ class GeminiClient:
                     raise
 
         # All models exhausted — return a safe fallback
-        return {
-            "reply": FALLBACK_REPLY,
-            "memory_ops": [],
-            "new_facts": [],
-            "relay_draft": None,
-        }
+        return _make_fallback("gemini", models_to_try[0] if models_to_try else "")
 
     async def check_usage_warning(self, model: str) -> str | None:
         """Return a warning string if usage is approaching the cap, else None."""
@@ -310,12 +328,7 @@ class OpenAICompatClient:
                 else:
                     raise
 
-        return {
-            "reply": FALLBACK_REPLY,
-            "memory_ops": [],
-            "new_facts": [],
-            "relay_draft": None,
-        }
+        return _make_fallback("openai_compat", models_to_try[0] if models_to_try else "")
 
     async def check_usage_warning(self, model: str) -> str | None:
         """Return a warning string if usage is approaching the cap, else None."""

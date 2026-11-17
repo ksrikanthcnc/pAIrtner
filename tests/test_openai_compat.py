@@ -160,7 +160,7 @@ async def test_all_models_exhausted(test_db):
     )
     result = await client.generate("Hello", "System", model="heavy-1")
 
-    assert "trouble" in result["reply"].lower() or "try again" in result["reply"].lower()
+    assert "trouble" in result["reply"].lower() or "couldn't reach" in result["reply"].lower()
 
 
 # ---------------------------------------------------------------------------
