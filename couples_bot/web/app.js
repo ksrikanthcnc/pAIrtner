@@ -239,7 +239,7 @@
     show("auth");
     applyLang();
     authError("");
-    var pv = $("privacy"); pv.textContent = ""; if (meta) { R.renderMarkup(meta.privacy, pv); }
+    var pv = $("privacy"); pv.textContent = ""; if (meta) { PairtnerRender.renderMarkup(meta.privacy, pv, document); }
     $("invite-row").hidden = !(meta && meta.registration === "invite");
     var sel = $("lang");
     sel.textContent = "";
