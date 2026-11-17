@@ -56,7 +56,7 @@ Routing (model names in config, with fallback list):
 
 ## Config / secrets
 - Env vars: `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`, `MODEL_DEFAULT`, `MODEL_HEAVY` (comma list). `.env` gitignored.
-- Do NOT copy keys into the repo. The user's key file is `/Users/srkalyan2401/work/tasks/kiro-ide/t` (two keys; use one). Consider rotating since keys appeared in a chat transcript.
+- Do NOT copy keys into the repo. Keep keys only in `.env` (gitignored). Consider rotating since keys appeared in a chat transcript.
 
 ## Testing
 - Unit test: partner-private facts never appear in the other user's prompt.
@@ -71,7 +71,7 @@ Routing (model names in config, with fallback list):
 
 ## Reference
 - Test scripts: `tmp-kiro/keytest.py`, `limits.py`, `burst.py` (read keys by regex, `KEYIDX` env selects).
-- Research PDF: `/Users/srkalyan2401/Downloads/gemini-cop.pdf`.
+- Research notes: kept outside the repo.
 
 ## Addendum: transport, hosting, export
 - Transport: start with long polling (no public URL). Keep handlers transport-agnostic so a webhook can replace polling if moved to serverless.

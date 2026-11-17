@@ -251,7 +251,7 @@ Run: `uv run python -m couples_bot.dashboard` or `docker compose up dashboard`
 |---|---|
 | Local dev | `uv run python dev/localtest/run_local.py --llm fake` |
 | Web app only | `ADAPTER=rest REST_INVITE_CODE=... uv run python -m couples_bot`; HTTPS via Tailscale `serve` or a proxy to install the PWA (see DEPLOYMENT.md) |
-| Docker (Win plex-stack) | `docker compose up -d` at `/mnt/e/media/docker/pairtner/` |
+| Docker (any host) | `docker compose up -d` in the project folder on the host |
 | Mac → Win sync | `bash dev/deploy.sh --rebuild` or rsync with `.rsyncignore` |
 
 ## Roadmap (next priorities)

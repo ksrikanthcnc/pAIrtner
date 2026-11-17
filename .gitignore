@@ -14,3 +14,4 @@ comms/
 dev/localtest/*.log
 dev/localtest/*.out
 dev/localtest/transcript-*.log
+dev/deploy.env

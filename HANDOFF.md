@@ -17,4 +17,4 @@ Out of scope: voice, weekly check-in scheduler, daily digest (add after MVP), mu
 
 Rules: ask before choosing a hosting target. Commit only once tests pass. Do not read the DB contents when testing with real users.
 
-Keys: `/Users/srkalyan2401/work/tasks/kiro-ide/t` holds two Gemini keys. Ask the user which to use and put it in `.env`; do not copy the file.
+Keys: ask the user for the Gemini key and put it in `.env`; never commit it.
