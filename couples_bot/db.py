@@ -271,6 +271,16 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
     token       TEXT NOT NULL,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS rest_outbox (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    kind        TEXT NOT NULL,
+    payload     TEXT NOT NULL,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_rest_outbox_user
+    ON rest_outbox(user_id, id);
 """
 
 
@@ -2105,3 +2115,69 @@ async def validate_auth_token(
     if stored is None:
         return False
     return _secrets.compare_digest(stored, token)
+
+
+# ---------------------------------------------------------------------------
+# REST adapter: durable outbox and user-id allocation
+# ---------------------------------------------------------------------------
+
+async def add_outbox_event(
+    db_path: str, user_id: int, kind: str, payload: str
+) -> int:
+    """Append an event for *user_id*; return its id (the poll cursor)."""
+    return await _execute(
+        db_path,
+        "INSERT INTO rest_outbox (user_id, kind, payload) VALUES (?, ?, ?)",
+        (user_id, kind, payload),
+    )
+
+
+async def get_outbox_events(
+    db_path: str, user_id: int, after: int = 0, limit: int = 100
+) -> list[dict[str, Any]]:
+    """Events for *user_id* with id > *after*, oldest first."""
+    return await _fetch_all(
+        db_path,
+        "SELECT id, kind, payload, created_at FROM rest_outbox "
+        "WHERE user_id = ? AND id > ? ORDER BY id LIMIT ?",
+        (user_id, after, limit),
+    )
+
+
+async def prune_outbox(db_path: str, older_than_days: int) -> int:
+    """Delete outbox events older than *older_than_days*; return rows removed."""
+    modifier = f"-{int(older_than_days)} days"
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "DELETE FROM rest_outbox WHERE created_at < datetime('now', ?)",
+            (modifier,),
+        )
+        await db.commit()
+        return cur.rowcount
+
+
+async def allocate_rest_user(
+    db_path: str, name: str, lang: str, base: int
+) -> int:
+    """Create a user with the next free id >= *base* and return that id.
+
+    The SELECT MAX and the INSERT run on one connection inside an immediate
+    transaction, so concurrent callers cannot receive the same id.
+    """
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            async with db.execute(
+                "SELECT MAX(tg_id) FROM users WHERE tg_id >= ?", (base,)
+            ) as cur:
+                row = await cur.fetchone()
+            new_id = base if row is None or row[0] is None else row[0] + 1
+            await db.execute(
+                "INSERT INTO users (tg_id, name, lang) VALUES (?, ?, ?)",
+                (new_id, name, lang),
+            )
+            await db.commit()
+        except BaseException:
+            await db.rollback()
+            raise
+        return new_id

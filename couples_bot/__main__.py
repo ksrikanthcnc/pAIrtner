@@ -12,7 +12,8 @@ from couples_bot.adapters.cli_adapter import CLIAdapter
 from couples_bot.config import load_config
 from couples_bot.db import init_db
 from couples_bot.handlers import BotService
-from couples_bot.llm import create_llm_client
+from couples_bot.handlers.service import PrivacyInfo
+from couples_bot.llm import create_llm_client, describe_llm
 from couples_bot.prompts import load_persona
 
 logging.basicConfig(
@@ -30,7 +31,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="pAIrtner couples bot")
     parser.add_argument(
         "--adapter",
-        choices=["telegram", "websocket", "cli", "both"],
+        choices=["telegram", "websocket", "cli", "both", "rest", "telegram+rest"],
         default=None,
         help="Transport adapter (default: from config)",
     )
@@ -75,13 +76,35 @@ def main() -> None:
     if adapter_name == "both":
         # Run Telegram + WebSocket concurrently
         asyncio.run(_run_both(service, config))
+    elif adapter_name == "telegram+rest":
+        asyncio.run(_run_telegram_rest(service, config))
     elif adapter_name == "cli":
         adapter = CLIAdapter(service, config, user_id=args.user_id)
         asyncio.run(adapter.start())
     else:
         adapter_cls = get_adapter(adapter_name)
         adapter = adapter_cls(service, config)
+        _set_privacy_info(service, config, [adapter])
         asyncio.run(adapter.start())
+
+
+def _set_privacy_info(service: BotService, config, adapters: list) -> None:
+    """Tell the service where messages travel, for the /start and /help note."""
+    transport = " and ".join(a.transport_description for a in adapters)
+    service.privacy_info = PrivacyInfo(transport=transport, llm=describe_llm(config))
+
+
+async def _run_telegram_rest(service: BotService, config) -> None:
+    """Run Telegram and REST together with one shared set of background loops."""
+    from couples_bot.adapters.multi import MultiAdapter
+    from couples_bot.adapters.rest_adapter import RestAdapter
+    from couples_bot.adapters.telegram_adapter import TelegramAdapter
+
+    tg = TelegramAdapter(service, config, run_background=False)
+    rest = RestAdapter(service, config, run_background=False)
+    multi = MultiAdapter([tg, rest])
+    _set_privacy_info(service, config, [tg, rest])
+    await multi.start()
 
 
 async def _run_both(service: BotService, config) -> None:

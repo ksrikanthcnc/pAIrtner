@@ -6,13 +6,10 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 
-from couples_bot.approval import delivery_loop
-from couples_bot.backup import backup_loop
-from couples_bot.checkin import checkin_loop
 from couples_bot.config import Config
-from couples_bot.digest import digest_loop
 from couples_bot.handlers import BotService
-from couples_bot.nudges import nudge_loop
+
+from .loops import start_background_loops
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +55,12 @@ class BaseAdapter(ABC):
 
     # ── shared background loops ──────────────────────────────────────────
 
+    def owns_user(self, user_id: int) -> bool:
+        """Whether this transport delivers to *user_id* (used by MultiAdapter)."""
+        return True
+
     async def _start_background_tasks(self) -> None:
         """Start background loops, routing messages through this adapter."""
-
         async def _send(user_id: int, text: str) -> None:
             await self.send_message(user_id, text)
 
@@ -69,59 +69,10 @@ class BaseAdapter(ABC):
         ) -> None:
             await self.send_message(user_id, text, buttons=buttons)
 
-        task = asyncio.create_task(delivery_loop(
-            self.service.db_path, _send,
-            send_buttons_func=_send_with_buttons,
-            poll_interval=self.config.delivery_check_interval_seconds,
-            review_before_send=self.config.review_before_send,
+        self._background_tasks.extend(start_background_loops(
+            self.service, self.config, _send, _send_with_buttons,
+            asyncio.create_task,
         ))
-        self._background_tasks.append(task)
-        logger.info("Delivery loop started")
-
-        if self.config.backup_enabled:
-            task = asyncio.create_task(backup_loop(
-                self.config.db_path,
-                self.config.backup_directory,
-                daily_count=self.config.backup_daily_count,
-                weekly_count=self.config.backup_weekly_count,
-            ))
-            self._background_tasks.append(task)
-            logger.info("Backup loop started")
-
-        if self.config.digest_enabled:
-            task = asyncio.create_task(digest_loop(
-                self.service.db_path,
-                self.service.llm,
-                _send,
-                digest_time=self.config.digest_time,
-                digest_tz=self.config.digest_timezone,
-            ))
-            self._background_tasks.append(task)
-            logger.info("Digest loop started")
-
-        if self.config.checkin_enabled:
-            task = asyncio.create_task(checkin_loop(
-                self.service.db_path,
-                self.service.llm,
-                _send,
-                checkin_day=self.config.checkin_day,
-                checkin_time=self.config.checkin_time,
-                checkin_tz=self.config.checkin_timezone,
-                checkin_questions=self.config.checkin_questions,
-            ))
-            self._background_tasks.append(task)
-            logger.info("Check-in loop started")
-
-        if self.config.nudges_enabled or self.config.appreciation_enabled:
-            task = asyncio.create_task(nudge_loop(
-                self.service.db_path,
-                self.service.llm,
-                _send,
-                config=self.config,
-                poll_interval=self.config.nudges_interval_hours * 3600,
-            ))
-            self._background_tasks.append(task)
-            logger.info("Nudge loop started")
 
     async def _cancel_background_tasks(self) -> None:
         """Cancel all running background tasks."""

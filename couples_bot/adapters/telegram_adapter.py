@@ -20,7 +20,10 @@ from telegram.ext import (
 from couples_bot.config import is_user_allowed
 from couples_bot.handlers import BotResponse
 
+from couples_bot.rest.ids import REST_ID_BASE
+
 from .base import BaseAdapter
+from .loops import start_background_loops
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +33,17 @@ class TelegramAdapter(BaseAdapter):
 
     transport_description = "Telegram servers (not end-to-end encrypted)"
 
-    def __init__(self, service, config) -> None:
+    def __init__(self, service, config, run_background: bool = True) -> None:
         super().__init__(service, config)
+        # False when a MultiAdapter owns the loops (started once for all transports).
+        self.run_background = run_background
         self._app: Application | None = None
         self._stop_event: asyncio.Event | None = None
 
     # ── public interface ─────────────────────────────────────────────────
+
+    def owns_user(self, user_id: int) -> bool:
+        return user_id < REST_ID_BASE
 
     async def start(self) -> None:
         """Build the Telegram Application, register handlers, start polling.
@@ -200,60 +208,12 @@ class TelegramAdapter(BaseAdapter):
                 parse_mode="HTML",
             )
 
-        from couples_bot.approval import delivery_loop
-        from couples_bot.backup import backup_loop
-        from couples_bot.checkin import checkin_loop
-        from couples_bot.digest import digest_loop
-        from couples_bot.nudges import nudge_loop
-
-        app.create_task(delivery_loop(
-            self.service.db_path, _send,
-            send_buttons_func=_send_with_buttons,
-            poll_interval=self.config.delivery_check_interval_seconds,
-            review_before_send=self.config.review_before_send,
-        ))
-        logger.info("Delivery loop started")
-
-        if self.config.backup_enabled:
-            app.create_task(backup_loop(
-                self.config.db_path,
-                self.config.backup_directory,
-                daily_count=self.config.backup_daily_count,
-                weekly_count=self.config.backup_weekly_count,
-            ))
-            logger.info("Backup loop started")
-
-        if self.config.digest_enabled:
-            app.create_task(digest_loop(
-                self.service.db_path,
-                self.service.llm,
-                _send,
-                digest_time=self.config.digest_time,
-                digest_tz=self.config.digest_timezone,
-            ))
-            logger.info("Digest loop started")
-
-        if self.config.checkin_enabled:
-            app.create_task(checkin_loop(
-                self.service.db_path,
-                self.service.llm,
-                _send,
-                checkin_day=self.config.checkin_day,
-                checkin_time=self.config.checkin_time,
-                checkin_tz=self.config.checkin_timezone,
-                checkin_questions=self.config.checkin_questions,
-            ))
-            logger.info("Check-in loop started")
-
-        if self.config.nudges_enabled or self.config.appreciation_enabled:
-            app.create_task(nudge_loop(
-                self.service.db_path,
-                self.service.llm,
-                _send,
-                config=self.config,
-                poll_interval=self.config.nudges_interval_hours * 3600,
-            ))
-            logger.info("Nudge loop started")
+        if not self.run_background:
+            return
+        start_background_loops(
+            self.service, self.config, _send, _send_with_buttons,
+            app.create_task,
+        )
 
     # ── command adapters ─────────────────────────────────────────────────
 

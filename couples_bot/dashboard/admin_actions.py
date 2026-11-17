@@ -60,6 +60,7 @@ USER_SCOPES: list[tuple[str, str]] = [
     ("couple_config", _COUPLE),
     ("rate_limit", "user_id = :uid"),
     ("auth_tokens", "user_id = :uid"),
+    ("rest_outbox", "user_id = :uid"),
     ("users", "tg_id = :uid"),
 ]
 # Tables with no per-user key (aggregate counters).

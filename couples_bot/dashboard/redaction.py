@@ -75,6 +75,7 @@ METADATA_COLUMNS: dict[str, set[str]] = {
     "timeline_events": {"id", "couple_id", "event_type", "created_at"},
     "fact_summaries": {"id", "user_id", "year_month", "fact_count", "created_at"},
     "auth_tokens": {"user_id", "created_at"},
+    "rest_outbox": {"id", "user_id", "kind", "created_at"},
 }
 
 # Known free-text columns (shown only with show_raw_text). Used by the schema
@@ -98,6 +99,7 @@ RAW_TEXT_COLUMNS: dict[str, set[str]] = {
     "conflicts": {"theme"},
     "timeline_events": {"summary", "metadata"},
     "fact_summaries": {"summary_text"},
+    "rest_outbox": {"payload"},
 }
 
 

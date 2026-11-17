@@ -112,7 +112,7 @@ async def test_base_adapter_passes_flag_to_loop(test_db, flag):
     async def fake_loop(*args, **kwargs):
         captured.update(kwargs)
 
-    with patch("couples_bot.adapters.base.delivery_loop", fake_loop):
+    with patch("couples_bot.adapters.loops.delivery_loop", fake_loop):
         await adapter._start_background_tasks()
         await asyncio.sleep(0.05)
         for task in adapter._background_tasks:
@@ -134,10 +134,31 @@ async def test_telegram_post_init_passes_flag_to_loop(test_db, flag):
     app = MagicMock()
     created: list = []
     app.create_task = lambda coro: created.append(asyncio.ensure_future(coro))
-    with patch("couples_bot.approval.delivery_loop", fake_loop):
+    with patch("couples_bot.adapters.loops.delivery_loop", fake_loop):
         await adapter._post_init(app)
         await asyncio.sleep(0.05)
         for task in created:
             task.cancel()
         await asyncio.gather(*created, return_exceptions=True)
+    assert captured["review_before_send"] is flag
+
+
+@pytest.mark.parametrize("flag", [True, False])
+async def test_rest_adapter_passes_flag_to_loop(test_db, flag):
+    from couples_bot.adapters.rest_adapter import RestAdapter
+
+    cfg = _cfg(test_db, flag)
+    svc = BotService(config=cfg, db_path=test_db, llm=MockLLMClient())
+    adapter = RestAdapter(svc, cfg)
+    captured: dict = {}
+
+    async def fake_loop(*args, **kwargs):
+        captured.update(kwargs)
+
+    with patch("couples_bot.adapters.loops.delivery_loop", fake_loop):
+        await adapter._start_background_tasks()
+        await asyncio.sleep(0.05)
+        for task in adapter._background_tasks:
+            task.cancel()
+        await asyncio.gather(*adapter._background_tasks, return_exceptions=True)
     assert captured["review_before_send"] is flag

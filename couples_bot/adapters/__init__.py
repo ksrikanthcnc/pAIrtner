@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from .base import BaseAdapter
 from .cli_adapter import CLIAdapter
+from .multi import MultiAdapter
+from .rest_adapter import RestAdapter
 from .telegram_adapter import TelegramAdapter
 from .websocket_adapter import WebSocketAdapter
 
@@ -11,6 +13,7 @@ ADAPTER_REGISTRY: dict[str, type[BaseAdapter]] = {
     "telegram": TelegramAdapter,
     "websocket": WebSocketAdapter,
     "cli": CLIAdapter,
+    "rest": RestAdapter,
 }
 
 
@@ -28,4 +31,4 @@ def get_adapter(name: str) -> type[BaseAdapter]:
     return cls
 
 
-__all__ = ["BaseAdapter", "get_adapter", "ADAPTER_REGISTRY"]
+__all__ = ["BaseAdapter", "get_adapter", "ADAPTER_REGISTRY", "MultiAdapter"]

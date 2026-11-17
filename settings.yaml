@@ -162,8 +162,33 @@ voice:
   learn_after_messages: 10
 
 # Adapter architecture — which transport to start by default.
+# telegram | websocket | cli | both | rest | telegram+rest
 adapter: telegram
 ws_port: 8080
+
+# REST adapter (JSON over HTTP; also serves the PWA from couples_bot/web).
+# registration: closed | invite | open. With "invite" the secret comes from the
+# REST_INVITE_CODE environment variable (never stored here). "open" is for a
+# trusted loopback/LAN only. Env overrides: REST_HOST, REST_PORT,
+# REST_REGISTRATION, REST_MAX_TEXT_CHARS, REST_EVENT_RETENTION_DAYS,
+# REST_LONG_POLL_MAX_SECONDS.
+rest:
+  host: 127.0.0.1
+  port: 8780
+  registration: invite
+  max_text_chars: 4000
+  event_retention_days: 14
+  long_poll_max_seconds: 25
+
+# Background loop intervals in seconds (defaults match the old fixed values).
+# nudge_interval_seconds 0 = use nudges.interval_hours * 3600.
+# Env overrides: LOOPS_DIGEST_POLL_SECONDS, LOOPS_CHECKIN_POLL_SECONDS,
+# LOOPS_NUDGE_INTERVAL_SECONDS, LOOPS_BACKUP_INTERVAL_SECONDS.
+loops:
+  digest_poll_seconds: 60
+  checkin_poll_seconds: 60
+  nudge_interval_seconds: 0
+  backup_interval_seconds: 3600
 # Admin dashboard — standalone web UI (python -m couples_bot.dashboard).
 # The access token is NOT here: set DASHBOARD_TOKEN in the environment.
 # Every key can be overridden by DASHBOARD_HOST / _PORT / _SHOW_RAW_TEXT /

@@ -170,6 +170,19 @@ class Config:
     # Adapter architecture (FEAT-003 batch5)
     adapter: str = "telegram"
     ws_port: int = 8080
+    # REST adapter (the invite code is read from REST_INVITE_CODE at use time
+    # and is deliberately not a Config field, so it never shows in a repr).
+    rest_host: str = "127.0.0.1"
+    rest_port: int = 8780
+    rest_registration: str = "invite"  # closed | invite | open
+    rest_max_text_chars: int = 4000
+    rest_event_retention_days: int = 14
+    rest_long_poll_max_seconds: int = 25
+    # Background loop intervals (defaults equal the old hard-coded values)
+    loops_digest_poll_seconds: int = 60
+    loops_checkin_poll_seconds: int = 60
+    loops_nudge_interval_seconds: int = 0  # 0 = nudges.interval_hours * 3600
+    loops_backup_interval_seconds: int = 3600
 
 
 def is_user_allowed(config: Config, user_id: int) -> bool:
@@ -177,6 +190,24 @@ def is_user_allowed(config: Config, user_id: int) -> bool:
     if not config.allowed_user_ids:
         return True
     return user_id in config.allowed_user_ids
+
+
+def _needs_telegram(adapter_name: str) -> bool:
+    """True when the adapter selection includes the Telegram transport."""
+    return "telegram" in adapter_name or adapter_name == "both"
+
+
+_VALID_REGISTRATION = ("closed", "invite", "open")
+
+
+def _parse_registration(value: str) -> str:
+    value = value.strip().lower()
+    if value not in _VALID_REGISTRATION:
+        raise ValueError(
+            f"Invalid REST_REGISTRATION={value!r}. "
+            f"Valid: {', '.join(_VALID_REGISTRATION)}"
+        )
+    return value
 
 
 def load_config(yaml_path: str = "settings.yaml") -> Config:
@@ -189,6 +220,8 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
 
     yaml_cfg = _load_yaml(yaml_path)
     models = yaml_cfg.get("models", {})
+    rest_cfg = yaml_cfg.get("rest") or {}
+    loops_cfg = yaml_cfg.get("loops") or {}
 
     # --- Provider validation (early) ---
     llm_provider = os.getenv("LLM_PROVIDER", yaml_cfg.get("llm_provider", "gemini"))
@@ -199,8 +232,9 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         )
 
     # --- Secrets (env only) ---
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    if not token:
+    adapter_name = os.getenv("ADAPTER", yaml_cfg.get("adapter", "telegram"))
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    if not token and _needs_telegram(adapter_name):
         raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
 
     gemini_api_key = os.environ.get("GEMINI_API_KEY", "")
@@ -543,4 +577,28 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
                 str(yaml_cfg.get("ws_port", 8080)),
             )
         ),
+        rest_host=os.getenv("REST_HOST", str(rest_cfg.get("host", "127.0.0.1"))),
+        rest_port=int(os.getenv("REST_PORT", str(rest_cfg.get("port", 8780)))),
+        rest_registration=_parse_registration(os.getenv(
+            "REST_REGISTRATION", str(rest_cfg.get("registration", "invite")))),
+        rest_max_text_chars=int(os.getenv(
+            "REST_MAX_TEXT_CHARS", str(rest_cfg.get("max_text_chars", 4000)))),
+        rest_event_retention_days=int(os.getenv(
+            "REST_EVENT_RETENTION_DAYS",
+            str(rest_cfg.get("event_retention_days", 14)))),
+        rest_long_poll_max_seconds=int(os.getenv(
+            "REST_LONG_POLL_MAX_SECONDS",
+            str(rest_cfg.get("long_poll_max_seconds", 25)))),
+        loops_digest_poll_seconds=int(os.getenv(
+            "LOOPS_DIGEST_POLL_SECONDS",
+            str(loops_cfg.get("digest_poll_seconds", 60)))),
+        loops_checkin_poll_seconds=int(os.getenv(
+            "LOOPS_CHECKIN_POLL_SECONDS",
+            str(loops_cfg.get("checkin_poll_seconds", 60)))),
+        loops_nudge_interval_seconds=int(os.getenv(
+            "LOOPS_NUDGE_INTERVAL_SECONDS",
+            str(loops_cfg.get("nudge_interval_seconds", 0)))),
+        loops_backup_interval_seconds=int(os.getenv(
+            "LOOPS_BACKUP_INTERVAL_SECONDS",
+            str(loops_cfg.get("backup_interval_seconds", 3600)))),
     )
