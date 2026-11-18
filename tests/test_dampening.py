@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from pairtner.config import Config
-from pairtner.dampening import (
+from pairtner.core.dampening import (
     calculate_dampening,
     get_dampening_instruction,
     resolve_dampening,

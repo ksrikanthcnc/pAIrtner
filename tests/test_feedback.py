@@ -9,7 +9,7 @@ import pytest_asyncio
 
 from pairtner import db as db_mod
 from pairtner.config import Config
-from pairtner.feedback import (
+from pairtner.features.feedback import (
     adjust_dampening_from_feedback,
     check_for_feedback_opportunity,
     generate_feedback_request,

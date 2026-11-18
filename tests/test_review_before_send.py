@@ -9,7 +9,7 @@ import pytest
 from pairtner.adapters.base import BaseAdapter
 from pairtner.adapters.cli_adapter import CLIAdapter
 from pairtner.adapters.telegram_adapter import TelegramAdapter
-from pairtner.approval import delivery_loop
+from pairtner.features.approval import delivery_loop
 from pairtner.config import Config, load_config
 from pairtner.db import create_pending, get_batch
 from pairtner.handlers import BotService

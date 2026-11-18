@@ -5,7 +5,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 
 from pairtner import db as db_mod
-from pairtner.consolidation import (
+from pairtner.core.consolidation import (
     run_consolidation,
     _find_consolidation_candidates,
     _group_by_period,

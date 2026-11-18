@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from pairtner import db as db_mod
-from pairtner.nudges import (
+from pairtner.features.nudges import (
     _is_quiet_hours,
     _nudge_cycle,
     check_appreciation_ratio,

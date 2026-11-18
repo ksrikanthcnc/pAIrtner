@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pairtner.memory import (
+from pairtner.core.memory import (
     DEFAULT_CORE_PHRASES,
     MemoryOp,
     _normalise_text,

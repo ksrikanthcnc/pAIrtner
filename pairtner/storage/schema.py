@@ -446,5 +446,5 @@ async def init_db(db_path: str) -> None:
         await db.commit()
 
     # Initialise FTS5 search index
-    from pairtner.search import init_fts
+    from pairtner.core.search import init_fts
     await init_fts(db_path)

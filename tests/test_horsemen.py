@@ -8,7 +8,7 @@ import pytest
 
 from pairtner import db as db_mod
 from pairtner.llm import parse_llm_response
-from pairtner.profile_updater import process_llm_extras
+from pairtner.core.profile_updater import process_llm_extras
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +255,7 @@ class TestJargonFree:
 
     def test_nudge_prompt_no_jargon(self):
         """The nudge prompt file should not contain Gottman jargon."""
-        from pairtner.prompts import load_task_prompt
+        from pairtner.core.prompts import load_task_prompt
 
         content = load_task_prompt("nudge")
         if content:
@@ -264,7 +264,7 @@ class TestJargonFree:
 
     def test_appreciation_prompt_no_jargon(self):
         """The appreciation prompt file should not reference clinical terms."""
-        from pairtner.prompts import load_task_prompt
+        from pairtner.core.prompts import load_task_prompt
 
         content = load_task_prompt("appreciation")
         if content:

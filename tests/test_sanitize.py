@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pairtner.sanitize import detect_crisis, sanitize_input
+from pairtner.core.sanitize import detect_crisis, sanitize_input
 
 
 class TestSanitizeInput:

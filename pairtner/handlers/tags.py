@@ -10,11 +10,11 @@ import uuid
 
 from pairtner import db as db_mod
 from pairtner import pack
-from pairtner.conflict_detector import detect_conflict_opening
-from pairtner.dampening import get_dampening_instruction, resolve_dampening
+from pairtner.features.conflict_detector import detect_conflict_opening
+from pairtner.core.dampening import get_dampening_instruction, resolve_dampening
 from pairtner.i18n import t
-from pairtner.profile_updater import process_llm_extras
-from pairtner.prompts import (
+from pairtner.core.profile_updater import process_llm_extras
+from pairtner.core.prompts import (
     build_blunt_prompt,
     build_chat_prompt,
     build_goals_section,
@@ -445,7 +445,7 @@ class TagsMixin:
         """Check if feedback should be requested for recently delivered relays."""
         if not self.config.feedback_enabled:
             return []
-        from pairtner.feedback import (
+        from pairtner.features.feedback import (
             check_for_feedback_opportunity,
             generate_feedback_request,
         )
@@ -462,7 +462,7 @@ class TagsMixin:
     async def _maybe_run_analysis(self, user_id: int) -> None:
         """Trigger background analysis if enough new messages have accumulated."""
         try:
-            from pairtner.analysis import should_run_analysis, run_analysis
+            from pairtner.core.analysis import should_run_analysis, run_analysis
             interval = getattr(self.config, "analysis_interval", 10)
             if await should_run_analysis(self.db_path, user_id, interval=interval):
                 api_key = await self._get_couple_api_key(user_id)

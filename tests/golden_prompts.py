@@ -41,7 +41,7 @@ def activate_default_prompts() -> None:
     try:
         from pairtner import pack
     except ImportError:
-        from pairtner.prompts import load_persona
+        from pairtner.core.prompts import load_persona
 
         load_persona("prompts/persona.md")
     else:
@@ -68,8 +68,8 @@ TASK = "TASK-TEXT: do the special task."
 
 
 def _direct() -> dict[str, tuple[str, str]]:
-    from pairtner import prompts as P
-    from pairtner.dampening import get_dampening_instruction
+    from pairtner.core import prompts as P
+    from pairtner.core.dampening import get_dampening_instruction
 
     out: dict[str, tuple[str, str]] = {}
 
@@ -654,7 +654,7 @@ async def _therapy_seed(w: World, *, events=True, patterns=True, facts=True,
 
 @scenario("cs.therapy.full")
 async def _(w):
-    from pairtner.therapy_export import generate_therapy_report
+    from pairtner.features.therapy_export import generate_therapy_report
 
     await _therapy_seed(w)
     await generate_therapy_report(w.db, w.llm, A_ID)
@@ -668,7 +668,7 @@ async def _(w):
 
 @scenario("cs.therapy.shared_only", seed=False)
 async def _(w):
-    from pairtner.therapy_export import generate_therapy_report
+    from pairtner.features.therapy_export import generate_therapy_report
 
     await w.fact(A_ID, "We cook together on weekends", "shared", 18)
     await generate_therapy_report(w.db, w.llm, A_ID)
@@ -676,7 +676,7 @@ async def _(w):
 
 @scenario("cs.therapy.patterns_only", seed=False)
 async def _(w):
-    from pairtner.therapy_export import generate_therapy_report
+    from pairtner.features.therapy_export import generate_therapy_report
 
     await _therapy_seed(w, events=False, facts=False, goals=False, ratio=False)
     await generate_therapy_report(w.db, w.llm, A_ID)
@@ -684,7 +684,7 @@ async def _(w):
 
 @scenario("cs.therapy.events_zero_negative", seed=False)
 async def _(w):
-    from pairtner.therapy_export import generate_therapy_report
+    from pairtner.features.therapy_export import generate_therapy_report
 
     await _therapy_seed(w, patterns=False, facts=False, goals=False, ratio=False)
     await w.interactions(4, 0)
@@ -692,7 +692,7 @@ async def _(w):
 
 
 async def _digest(w: World, last_digest: str | None) -> None:
-    from pairtner.digest import _send_digest_for_couple
+    from pairtner.features.digest import _send_digest_for_couple
 
     async def send(uid: int, text: str) -> None:
         return None
@@ -726,7 +726,7 @@ async def _(w):
 async def _checkin(w: World, *, goals: bool = False, horsemen: bool = False,
                    pos: int = 0, neg: int = 0, conflicts: bool = False) -> None:
     from pairtner import db as db_mod
-    from pairtner.checkin import _generate_summary
+    from pairtner.features.checkin import _generate_summary
 
     await w.fact(A_ID, "We love our Sunday walks", "shared", 4)
     if goals:
@@ -806,7 +806,7 @@ async def _positive_facts(w: World) -> None:
 
 @scenario("cs.nudge.positive_facts_en", seed=False)
 async def _(w):
-    from pairtner.nudges import generate_nudge
+    from pairtner.features.nudges import generate_nudge
 
     await _positive_facts(w)
     random.seed(0)
@@ -815,7 +815,7 @@ async def _(w):
 
 @scenario("cs.nudge.positive_facts_te", seed=False)
 async def _(w):
-    from pairtner.nudges import generate_nudge
+    from pairtner.features.nudges import generate_nudge
 
     await _positive_facts(w)
     random.seed(0)
@@ -824,21 +824,21 @@ async def _(w):
 
 @scenario("cs.appreciation.en", seed=False)
 async def _(w):
-    from pairtner.nudges import generate_appreciation_prompt
+    from pairtner.features.nudges import generate_appreciation_prompt
 
     await generate_appreciation_prompt(w.db, w.llm, A_ID, "Bob", lang="en")
 
 
 @scenario("cs.appreciation.te", seed=False)
 async def _(w):
-    from pairtner.nudges import generate_appreciation_prompt
+    from pairtner.features.nudges import generate_appreciation_prompt
 
     await generate_appreciation_prompt(w.db, w.llm, B_ID, "Alice", lang="te")
 
 
 @scenario("cs.monthly_summary.november", seed=False)
 async def _(w):
-    from pairtner.summarizer import generate_monthly_summary
+    from pairtner.core.summarizer import generate_monthly_summary
 
     for when, text, vis, cat in [
         ("2025-10-31 23:00:00", "OUT-OF-RANGE october fact", "private", "other"),
@@ -858,7 +858,7 @@ async def _(w):
 
 @scenario("cs.monthly_summary.december", seed=False)
 async def _(w):
-    from pairtner.summarizer import generate_monthly_summary
+    from pairtner.core.summarizer import generate_monthly_summary
 
     await w.x(
         "INSERT INTO facts (owner_id, text, visibility, source, category, "

@@ -12,7 +12,7 @@ from pairtner.db import (
     get_user_patterns,
     set_partner,
 )
-from pairtner.profile_updater import process_llm_extras
+from pairtner.core.profile_updater import process_llm_extras
 
 
 def _config(**overrides) -> Config:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pairtner import pack
-from pairtner.prompts import (
+from pairtner.core.prompts import (
     build_system_prompt,
     load_task_prompt,
     load_voice,

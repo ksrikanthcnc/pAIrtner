@@ -562,7 +562,7 @@ async def test_delivery_loop_skips_paused_receiver(test_db, paired_users):
     """delivery_loop should skip delivery when receiver is paused."""
     import asyncio
 
-    from pairtner.approval import delivery_loop
+    from pairtner.features.approval import delivery_loop
     from pairtner.db import create_pending, set_user_paused, update_pending_status
 
     a_id, b_id = paired_users
@@ -601,7 +601,7 @@ async def test_delivery_loop_skips_paused_sender(test_db, paired_users):
     """delivery_loop should skip delivery when sender is paused."""
     import asyncio
 
-    from pairtner.approval import delivery_loop
+    from pairtner.features.approval import delivery_loop
     from pairtner.db import create_pending, set_user_paused, update_pending_status
 
     a_id, b_id = paired_users
@@ -635,7 +635,7 @@ async def test_delivery_resumes_after_unpause(test_db, paired_users):
     """After unpausing, delivery loop delivers the held message."""
     import asyncio
 
-    from pairtner.approval import delivery_loop
+    from pairtner.features.approval import delivery_loop
     from pairtner.db import create_pending, set_user_paused, update_pending_status
 
     a_id, b_id = paired_users
@@ -672,7 +672,7 @@ async def test_delivery_logs_message_to_receiver_history(test_db, paired_users):
     so the LLM can reference them in future conversations."""
     import asyncio
 
-    from pairtner.approval import delivery_loop
+    from pairtner.features.approval import delivery_loop
     from pairtner.db import (
         create_pending, update_pending_status, get_recent_messages,
     )
@@ -1174,7 +1174,7 @@ async def test_delivery_loop_batch_review_prompt(test_db, paired_users):
     """delivery_loop sends review prompt with buttons when review_before_send=True."""
     import asyncio
 
-    from pairtner.approval import delivery_loop
+    from pairtner.features.approval import delivery_loop
     from pairtner.db import add_item_to_batch, create_or_get_active_batch
 
     a_id, b_id = paired_users
@@ -1222,7 +1222,7 @@ async def test_delivery_loop_direct_delivery_no_review(test_db, paired_users):
     """With review_before_send=False, delivery_loop delivers batch directly."""
     import asyncio
 
-    from pairtner.approval import delivery_loop
+    from pairtner.features.approval import delivery_loop
     from pairtner.db import add_item_to_batch, create_or_get_active_batch
 
     a_id, b_id = paired_users

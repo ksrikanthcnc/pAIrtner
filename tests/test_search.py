@@ -16,7 +16,7 @@ from pairtner.db import (
     set_partner,
 )
 from pairtner.handlers import BotService
-from pairtner.prompts import (
+from pairtner.core.prompts import (
     SmartContext,
     UserContext,
     build_blunt_prompt,
@@ -25,13 +25,13 @@ from pairtner.prompts import (
     build_smart_context,
     build_tell_prompt,
 )
-from pairtner.search import (
+from pairtner.core.search import (
     get_fact_count,
     init_fts,
     rebuild_fts_index,
     search_facts,
 )
-from pairtner.summarizer import check_and_summarize, generate_monthly_summary
+from pairtner.core.summarizer import check_and_summarize, generate_monthly_summary
 from tests.helpers import MockLLMClient
 
 

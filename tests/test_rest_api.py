@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from pairtner.approval import delivery_loop
+from pairtner.features.approval import delivery_loop
 from pairtner.config import Config
 from pairtner.db import add_outbox_event, create_user, get_outbox_events, init_db
 from pairtner.handlers import BotService

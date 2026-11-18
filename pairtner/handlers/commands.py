@@ -10,14 +10,14 @@ import os
 from datetime import datetime, timedelta, timezone
 
 from pairtner import db as db_mod
-from pairtner.sanitize import detect_crisis
+from pairtner.core.sanitize import detect_crisis
 from pairtner.config import is_user_allowed
 from pairtner.crypto import decrypt_value, encrypt_value, mask_key
 from pairtner.i18n import t
-from pairtner.mediate import filter_perceptions, parse_window, since_timestamp
-from pairtner.profile_updater import process_llm_extras
-from pairtner.prompts import build_mediate_prompt, build_tell_prompt
-from pairtner.search import search_facts
+from pairtner.core.mediate import filter_perceptions, parse_window, since_timestamp
+from pairtner.core.profile_updater import process_llm_extras
+from pairtner.core.prompts import build_mediate_prompt, build_tell_prompt
+from pairtner.core.search import search_facts
 
 from .models import BotResponse, InlineButton, format_fact_date, format_relative_time, parse_tags
 
@@ -348,7 +348,7 @@ class CommandsMixin:
         if active_mood:
             parts.append(t(lang, "status_mood", mood=active_mood["mood"]))
 
-        from pairtner.dampening import resolve_dampening as _resolve
+        from pairtner.core.dampening import resolve_dampening as _resolve
         damp_level, _ = await _resolve(
             self.db_path, user_id, self.config, has_blunt_tag=False,
         )
@@ -542,7 +542,7 @@ class CommandsMixin:
 
         # /export therapy → structured therapy report
         if arg and arg.strip().lower() == "therapy":
-            from pairtner.therapy_export import generate_therapy_report
+            from pairtner.features.therapy_export import generate_therapy_report
 
             user = await db_mod.get_user(self.db_path, user_id)
             if not user or not user.get("partner_id"):

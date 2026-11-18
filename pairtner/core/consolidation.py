@@ -15,7 +15,7 @@ import aiosqlite
 
 from pairtner import db as db_mod
 from pairtner.llm import LLMClient
-from pairtner.prompts import build_consolidation_prompt
+from pairtner.core.prompts import build_consolidation_prompt
 
 log = logging.getLogger(__name__)
 

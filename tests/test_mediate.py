@@ -14,7 +14,7 @@ from pairtner.db import (
     log_message,
 )
 from pairtner.handlers import BotService
-from pairtner.mediate import filter_perceptions, is_first_person, parse_window
+from pairtner.core.mediate import filter_perceptions, is_first_person, parse_window
 from tests.helpers import MockLLMClient
 
 RAW_A = "RAWSENTINEL-ALICE-MESSAGE-7731"

@@ -21,7 +21,7 @@ from pairtner.db import (
 )
 from pairtner.handlers import BotService
 from pairtner.llm import parse_llm_response
-from pairtner.profile_updater import process_llm_extras
+from pairtner.core.profile_updater import process_llm_extras
 
 from tests.helpers import MockLLMClient
 

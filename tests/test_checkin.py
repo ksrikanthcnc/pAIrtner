@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 import pytest_asyncio
 
-from pairtner.checkin import _check_and_send, process_checkin_answer
+from pairtner.features.checkin import _check_and_send, process_checkin_answer
 from pairtner.db import (
     create_checkin,
     create_user,
@@ -100,7 +100,7 @@ async def test_checkin_sends_questions(checkin_db, checkin_couple):
 
     # 2025-07-13 is a Sunday
     fake_now = datetime(2025, 7, 13, 18, 0, tzinfo=timezone.utc)
-    with patch("pairtner.checkin.datetime") as mock_dt:
+    with patch("pairtner.features.checkin.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
@@ -139,7 +139,7 @@ async def test_checkin_skips_wrong_day(checkin_db, checkin_couple):
 
     # 2025-07-14 is Monday, not Sunday
     fake_now = datetime(2025, 7, 14, 18, 0, tzinfo=timezone.utc)
-    with patch("pairtner.checkin.datetime") as mock_dt:
+    with patch("pairtner.features.checkin.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
@@ -168,7 +168,7 @@ async def test_checkin_skips_active_existing(checkin_db, checkin_couple):
         sent.append((uid, text))
 
     fake_now = datetime(2025, 7, 13, 18, 0, tzinfo=timezone.utc)
-    with patch("pairtner.checkin.datetime") as mock_dt:
+    with patch("pairtner.features.checkin.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 

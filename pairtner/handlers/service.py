@@ -13,23 +13,23 @@ from dataclasses import dataclass
 from typing import Any
 
 from pairtner import db as db_mod
-from pairtner.checkin import process_checkin_answer
+from pairtner.features.checkin import process_checkin_answer
 from pairtner.config import Config, is_user_allowed
 from pairtner.crypto import decrypt_value
 from pairtner.i18n import t
 from pairtner.llm import LLMClient
-from pairtner.onboarding import (
+from pairtner.core.onboarding import (
     get_onboarding_question,
     process_onboarding_answer,
     should_start_onboarding,
 )
-from pairtner.memory import (
+from pairtner.core.memory import (
     OpsResult,
     apply_memory_ops,
     parse_memory_ops,
 )
-from pairtner.prompts import UserContext
-from pairtner.sanitize import detect_crisis, sanitize_input
+from pairtner.core.prompts import UserContext
+from pairtner.core.sanitize import detect_crisis, sanitize_input
 
 from .callbacks import CallbacksMixin
 from .commands import CommandsMixin

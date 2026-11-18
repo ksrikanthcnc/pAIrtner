@@ -16,7 +16,7 @@ from pairtner.db import (
     log_message,
     set_partner,
 )
-from pairtner.prompts import (
+from pairtner.core.prompts import (
     UserContext,
     build_chat_prompt,
     build_mediate_prompt,
@@ -192,7 +192,7 @@ async def test_bob_prompt_excludes_alice_private(test_db, paired_users):
 async def test_partner_perceptions_only_themes_in_prompt(test_db, paired_users):
     """Partner perception themes (not raw text) appear in prompt."""
     from pairtner.db import add_partner_perception
-    from pairtner.prompts import build_partner_summary_block
+    from pairtner.core.prompts import build_partner_summary_block
 
     a_id, b_id = paired_users
 

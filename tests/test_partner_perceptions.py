@@ -11,7 +11,7 @@ from pairtner.db import (
     log_message,
     update_perception_confidence,
 )
-from pairtner.prompts import (
+from pairtner.core.prompts import (
     UserContext,
     build_chat_prompt,
     build_partner_summary_block,

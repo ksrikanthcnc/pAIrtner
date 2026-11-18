@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 from pairtner import db as db_mod
-from pairtner.analysis import (
+from pairtner.core.analysis import (
     should_run_analysis,
     run_analysis,
     _parse_analysis,

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from pairtner import db as db_mod
 from pairtner import pack
-from pairtner.prompts import load_task_prompt
+from pairtner.core.prompts import load_task_prompt
 
 
 async def generate_monthly_summary(

@@ -7,7 +7,8 @@ import logging
 import aiosqlite
 import pytest
 
-from pairtner import pack, prompts
+from pairtner import pack
+from pairtner.core import prompts
 from pairtner.llm import FALLBACK_REPLY, TracingLLM
 from tests.helpers import MockLLMClient, copy_default_pack
 

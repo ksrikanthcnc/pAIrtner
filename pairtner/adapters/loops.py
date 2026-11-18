@@ -8,12 +8,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Awaitable, Callable
 
-from pairtner.approval import delivery_loop
-from pairtner.backup import backup_loop
-from pairtner.checkin import checkin_loop
+from pairtner.features.approval import delivery_loop
+from pairtner.features.backup import backup_loop
+from pairtner.features.checkin import checkin_loop
 from pairtner.config import Config
-from pairtner.digest import digest_loop
-from pairtner.nudges import nudge_loop
+from pairtner.features.digest import digest_loop
+from pairtner.features.nudges import nudge_loop
 
 logger = logging.getLogger(__name__)
 

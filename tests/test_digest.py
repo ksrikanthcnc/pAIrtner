@@ -20,7 +20,7 @@ from pairtner.db import (
     set_partner,
     update_pending_status,
 )
-from pairtner.digest import _check_and_send
+from pairtner.features.digest import _check_and_send
 
 from tests.helpers import MockLLMClient
 
@@ -63,7 +63,7 @@ async def test_digest_sends_to_both(digest_db, digest_couple, digest_llm):
 
     # Patch datetime to match the digest time
     fake_now = datetime(2025, 7, 15, 20, 0, tzinfo=timezone.utc)
-    with patch("pairtner.digest.datetime") as mock_dt:
+    with patch("pairtner.features.digest.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
@@ -100,7 +100,7 @@ async def test_digest_skips_no_activity(digest_db, digest_couple):
         sent.append((uid, text))
 
     fake_now = datetime(2025, 7, 15, 20, 0, tzinfo=timezone.utc)
-    with patch("pairtner.digest.datetime") as mock_dt:
+    with patch("pairtner.features.digest.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
@@ -128,7 +128,7 @@ async def test_digest_skips_wrong_time(digest_db, digest_couple):
 
     # Set time to 15:00, but digest time is 20:00
     fake_now = datetime(2025, 7, 15, 15, 0, tzinfo=timezone.utc)
-    with patch("pairtner.digest.datetime") as mock_dt:
+    with patch("pairtner.features.digest.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
@@ -156,7 +156,7 @@ async def test_digest_skips_already_sent_today(digest_db, digest_couple, digest_
         sent.append((uid, text))
 
     fake_now = datetime(2025, 7, 15, 20, 0, tzinfo=timezone.utc)
-    with patch("pairtner.digest.datetime") as mock_dt:
+    with patch("pairtner.features.digest.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
@@ -187,7 +187,7 @@ async def test_digest_includes_relays(digest_db, digest_couple):
         sent.append((uid, text))
 
     fake_now = datetime(2025, 7, 15, 20, 0, tzinfo=timezone.utc)
-    with patch("pairtner.digest.datetime") as mock_dt:
+    with patch("pairtner.features.digest.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 

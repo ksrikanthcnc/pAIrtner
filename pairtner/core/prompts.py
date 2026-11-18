@@ -205,7 +205,7 @@ async def build_smart_context(
     from datetime import datetime, timedelta, timezone
 
     from pairtner.db import get_fact_summaries, get_facts_since
-    from pairtner.search import get_fact_count, search_facts
+    from pairtner.core.search import get_fact_count, search_facts
 
     total = await get_fact_count(db_path, user_id)
 
@@ -241,7 +241,7 @@ async def build_smart_context(
 
     # Optionally trigger on-demand summary generation for missing months
     if llm:
-        from pairtner.summarizer import check_and_summarize
+        from pairtner.core.summarizer import check_and_summarize
 
         await check_and_summarize(db_path, llm, user_id)
         # Re-fetch after generation

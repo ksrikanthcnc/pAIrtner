@@ -12,7 +12,7 @@ from pairtner.db import (
     set_partner,
     update_user_profile,
 )
-from pairtner.onboarding import (
+from pairtner.core.onboarding import (
     get_onboarding_question,
     process_onboarding_answer,
     should_start_onboarding,

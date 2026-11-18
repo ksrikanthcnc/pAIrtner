@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pairtner.backup import _list_backup_files, _rotate, _run_backup
+from pairtner.features.backup import _list_backup_files, _rotate, _run_backup
 
 
 @pytest.mark.asyncio

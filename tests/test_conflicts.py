@@ -10,7 +10,7 @@ import pytest_asyncio
 
 from pairtner import db as db_mod
 from pairtner.config import Config
-from pairtner.conflict_detector import (
+from pairtner.features.conflict_detector import (
     check_conflict_resolutions,
     detect_conflict_opening,
     detect_conflict_resolution,

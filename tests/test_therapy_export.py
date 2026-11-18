@@ -18,7 +18,7 @@ from pairtner.db import (
     set_partner,
 )
 from pairtner.handlers import BotService
-from pairtner.therapy_export import generate_therapy_report
+from pairtner.features.therapy_export import generate_therapy_report
 
 from tests.helpers import MockLLMClient
 

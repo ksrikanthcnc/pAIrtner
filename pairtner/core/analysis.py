@@ -12,7 +12,7 @@ from typing import Any
 
 from pairtner import db as db_mod
 from pairtner.llm import LLMClient
-from pairtner.prompts import build_analysis_prompt
+from pairtner.core.prompts import build_analysis_prompt
 
 log = logging.getLogger(__name__)
 

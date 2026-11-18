@@ -13,7 +13,7 @@ from pairtner import db as db_mod
 from pairtner import pack
 from pairtner.i18n import t
 from pairtner.llm import LLMClient
-from pairtner.prompts import build_checkin_summary_prompt
+from pairtner.core.prompts import build_checkin_summary_prompt
 
 logger = logging.getLogger(__name__)
 

@@ -98,6 +98,12 @@
 
   function addBubble(cls, msg) {
     var div = document.createElement("div");
+    // Classify bot messages for visual styling
+    var text = typeof msg === "string" ? msg : (msg.text || "");
+    if (cls === "bot" || cls === "relay") {
+      var subtype = classifyMessage(text);
+      if (subtype) { cls += " " + subtype; }
+    }
     div.className = "msg " + cls;
     if (typeof msg === "string") {
       div.textContent = msg;

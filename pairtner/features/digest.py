@@ -9,10 +9,10 @@ from typing import Awaitable, Callable
 from zoneinfo import ZoneInfo
 
 from pairtner import db as db_mod
-from pairtner.conflict_detector import check_conflict_resolutions
+from pairtner.features.conflict_detector import check_conflict_resolutions
 from pairtner.i18n import t
 from pairtner.llm import LLMClient
-from pairtner.prompts import build_digest_prompt
+from pairtner.core.prompts import build_digest_prompt
 
 logger = logging.getLogger(__name__)
 

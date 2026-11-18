@@ -48,7 +48,7 @@ class TestBackup:
         assert backups(bdir) == [os.path.basename(res.backup_path)]
 
     def test_admin_backups_not_rotated_by_bot(self, env):
-        from pairtner.backup import _list_backup_files
+        from pairtner.features.backup import _list_backup_files
         db, bdir = env
         aa.backup_now(db, bdir)
         assert _list_backup_files(bdir) == []

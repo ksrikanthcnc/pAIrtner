@@ -17,7 +17,7 @@ from pairtner import db as db_mod
 from pairtner import pack
 from pairtner.i18n import t
 from pairtner.llm import LLMClient
-from pairtner.prompts import load_task_prompt
+from pairtner.core.prompts import load_task_prompt
 
 logger = logging.getLogger(__name__)
 
