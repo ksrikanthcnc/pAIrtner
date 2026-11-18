@@ -290,6 +290,7 @@
     if (!text) { return ""; }
     if (/^✅\s*Noted!|^✅\s*Saved\s+\d+|^✅\s*గమనించాను/i.test(text)) { return "note"; }
     if (/^💡\s*Tip:|^💡\s*చిట్కా:/i.test(text)) { return "tip"; }
+    if (/^💌\s|^💌\s*A message from|^💌\s*మీ భాగస్వామి/i.test(text)) { return "relay"; }
     return "";
   }
 
