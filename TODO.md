@@ -1,6 +1,6 @@
 # pAIrtner — Feature Tracker
 
-Project: 17k source lines, 1181 tests, 74 Python files, 81 commits.
+Project: 18k source lines, 1229 tests, 76 Python files, 87 commits.
 
 ## ✅ Done
 
@@ -98,7 +98,7 @@ Project: 17k source lines, 1181 tests, 74 Python files, 81 commits.
 - [x] **Crisis detection** — safety-first, resources shown
 
 ### Dev Tooling
-- [x] **1181 tests** — 73 test files, 17k lines
+- [x] **1229 tests** — 75 test files, 18k lines
 - [x] **Fake LLM** — deterministic, no API key needed
 - [x] **Local rig** — `run_local.py --llm ollama|fake|gemini --keep`
 - [x] **Scenarios** — scripted two-user test flows
@@ -115,22 +115,22 @@ Project: 17k source lines, 1181 tests, 74 Python files, 81 commits.
 ## 🔲 Pending
 
 ### P0 — Memory Engine v1 (the core)
-- [ ] **Recency scoring** — exponential decay: score = relevance × e^(-age/halflife). Core exempt, working facts fade.
-- [ ] **Source tracking** — add source_message_id to facts. Enables "why do you think that?"
+- [x] **Recency scoring** — exponential decay: score = relevance × e^(-age/halflife). Core exempt, working facts fade.
+- [x] **Source tracking** — add source_message_id to facts. Enables "why do you think that?"
 - [ ] **Semantic dedup** — on save, FTS5 near-duplicate check. LLM decides merge/keep/supersede.
 - [ ] **Contradiction detection** — "likes pizza" then "hates pizza" → flag, ask user.
 - [ ] **Lifecycle pipeline** — new → working → (auto-promote if cited 3x) → core. Auto-archive uncited 30d.
 - [ ] **Consolidation v2** — group related working facts → episode summary. Originals archived, episode kept.
-- [ ] **Smart context window** — ranked retrieval: core (always) + top-N working by recency×relevance + episodes.
-- [ ] **Aging scheduler** — wire aging/consolidation to background loop (currently manual only).
-- [ ] **Memory API** — structured JSON endpoints for CRUD: list, get, update, delete, search, recency-check. LLM and PWA both use it.
+- [x] **Smart context window** — ranked retrieval: core (always) + top-N working by recency×relevance + episodes.
+- [x] **Aging scheduler** — wire aging/consolidation to background loop (hourly aging, weekly consolidation).
+- [x] **Memory API** — structured JSON endpoints for CRUD: list, get, update, delete, search, recency-check. LLM and PWA both use it.
 
 ### P1 — Memory UX
 - [ ] **PWA memory panel** — view facts, edit, delete, promote to core, see recency
-- [ ] **"Why do you think that?"** — trace fact back to source message
+- [x] **"Why do you think that?"** — trace fact back to source message (provenance API)
 - [ ] **Fact rewrite** — `/review rewrite` sends facts to heavy model for cleanup
 - [ ] **Inline fact editing** — tap a fact in PWA to edit its text
-- [ ] **Memory health indicator** — "pAIrtner knows 47 things about you (12 core, 35 working)"
+- [x] **Memory health indicator** — recency report API: healthy/aging/stale/contradictions
 
 ### P2 — Pack System v1
 - [ ] **Move remaining hardcoded prompts** — chat, mediate, tell prompts still in prompts.py
