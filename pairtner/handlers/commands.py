@@ -923,6 +923,41 @@ class CommandsMixin:
                 "I'll speak as a neutral third party when drafting relays."
             )]
 
+    # ── /yolo ──────────────────────────────────────────────────────────
+
+    async def handle_yolo(self, user_id: int, arg: str | None) -> list[BotResponse]:
+        """Toggle yolo mode — auto-send relays without review prompts."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        lang = await self._get_lang(user_id)
+        current = await db_mod.get_user_preference(
+            self.db_path, user_id, "relay_mode", default="review",
+        )
+
+        if not arg or arg.strip().lower() not in ("on", "off"):
+            status = "🟢 ON" if current == "yolo" else "🔴 OFF"
+            return [BotResponse(
+                f"🚀 Yolo mode: {status}\n\n"
+                "When ON: relay drafts auto-send after cooldown (no review).\n"
+                "The AI still blocks unsafe messages (crisis, escalation).\n\n"
+                "Toggle: /yolo on  or  /yolo off"
+            )]
+
+        if arg.strip().lower() == "on":
+            await db_mod.set_user_preference(self.db_path, user_id, "relay_mode", "yolo")
+            return [BotResponse(
+                "🚀 Yolo mode <b>ON</b>.\n"
+                "Relay drafts will auto-send after cooldown — no more review prompts.\n"
+                "I'll still block anything that looks unsafe. /yolo off to go back."
+            )]
+        else:
+            await db_mod.set_user_preference(self.db_path, user_id, "relay_mode", "review")
+            return [BotResponse(
+                "🔒 Yolo mode <b>OFF</b>.\n"
+                "Back to review-before-send. You'll approve each relay."
+            )]
+
     # ── /review ────────────────────────────────────────────────────────
 
     async def handle_review(self, user_id: int) -> list[BotResponse]:

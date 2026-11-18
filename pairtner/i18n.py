@@ -170,6 +170,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "<b>Personalization</b>\n"
             "/settings — Open settings menu\n"
             "/mode — Switch between mediator and voice mode\n"
+            "/yolo — Toggle auto-send relay mode (skip review)\n"
             "/vibe — View your learned voice profile\n"
             "/style — Alias for /vibe\n"
             "/mood &lt;mood&gt; — Set your mood (stressed|happy|angry|reflective)\n"
@@ -204,6 +205,7 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # Delivery
         "relay_delivered": "✅ Your message was delivered to your partner.",
+        "yolo_auto_sent": "Auto-sending in ~{minutes} min (yolo mode). /yolo off to review first.",
 
         # Ask user (no tag)
         "ask_action": "What would you like to do with this?",
@@ -648,6 +650,7 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # Delivery
         "relay_delivered": "✅ మీ సందేశం డెలివరీ అయింది.",
+        "yolo_auto_sent": "~{minutes} నిమిషాల్లో ఆటో-సెండ్ (యోలో మోడ్). /yolo off రివ్యూ కోసం.",
 
         # Ask user (no tag)
         "ask_action": "దీనితో ఏమి చేయాలి?",

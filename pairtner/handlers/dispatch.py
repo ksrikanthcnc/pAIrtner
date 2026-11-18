@@ -46,6 +46,7 @@ class DispatchMixin:
             "remember": lambda: self.handle_remember(uid),
             "review": lambda: self.handle_review(uid),
             "mode": lambda: self.handle_mode(uid, arg),
+            "yolo": lambda: self.handle_yolo(uid, arg),
             "search": lambda: self.handle_search(uid, arg),
             "conflicts": lambda: self.handle_conflicts(uid),
             "timeline": lambda: self.handle_timeline(uid, arg),

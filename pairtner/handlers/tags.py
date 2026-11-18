@@ -7,6 +7,7 @@ via the :class:`TagsMixin` base class.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from pairtner import db as db_mod
 from pairtner import pack
@@ -14,6 +15,7 @@ from pairtner.features.conflict_detector import detect_conflict_opening
 from pairtner.core.dampening import get_dampening_instruction, resolve_dampening
 from pairtner.i18n import t
 from pairtner.core.profile_updater import process_llm_extras
+from pairtner.storage.helpers import _to_iso
 from pairtner.core.prompts import (
     build_blunt_prompt,
     build_chat_prompt,
@@ -398,6 +400,34 @@ class TagsMixin:
         # If user is paired and LLM suggested a relay, offer save/relay choice
         user = await db_mod.get_user(self.db_path, user_id)
         if user and user.get("partner_id") and result.get("relay_draft"):
+            # Check if user is in yolo mode (auto-send)
+            relay_mode = await db_mod.get_user_preference(
+                self.db_path, user_id, "relay_mode", default="review",
+            )
+            if relay_mode == "yolo":
+                # Auto-approve: create pending, approve immediately
+                partner_id = user["partner_id"]
+                draft = result["relay_draft"]
+                pid = await db_mod.create_pending(
+                    self.db_path, user_id, partner_id, draft,
+                )
+                send_after = _to_iso(
+                    datetime.now(timezone.utc)
+                    + timedelta(minutes=self.config.cooldown_minutes)
+                )
+                await db_mod.update_pending_status(
+                    self.db_path, pid, "approved", send_after,
+                )
+                responses = [BotResponse(
+                    reply_text + "\n\n🚀 " + t(
+                        lang, "yolo_auto_sent",
+                        minutes=self.config.cooldown_minutes,
+                    ),
+                )]
+                responses.extend(self._drain_contradictions())
+                await self._maybe_run_analysis(user_id)
+                return responses
+
             choice_id = uuid.uuid4().hex[:8]
             self._relay_choices[choice_id] = {
                 "user_id": user_id,
