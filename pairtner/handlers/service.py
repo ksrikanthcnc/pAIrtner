@@ -76,6 +76,7 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         self._forget_confirm: set[int] = set()
         self._batch_item_edit_state: dict[int, int] = {}
         self._pending_contradictions: list[BotResponse] = []
+        self._last_saved_facts: list[str] = []
         self._profile_edit_state: dict[int, str] = {}
         self._ab_choices: dict[str, dict[str, Any]] = {}
 
@@ -210,6 +211,16 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         self._pending_contradictions = []
         return result
 
+    def _format_fact_saved(self, lang: str, count: int) -> str:
+        """Format the 'saved N facts' notice with inline details."""
+        facts = self._last_saved_facts
+        self._last_saved_facts = []
+        if facts:
+            details = "\n".join(f"  💾 {f}" for f in facts[:5])
+        else:
+            details = ""
+        return t(lang, "fact_saved", count=count, details=details).rstrip()
+
     async def _apply_memory_ops_from_result(
         self,
         user_id: int,
@@ -272,6 +283,11 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
             applied = sum(
                 1 for o in ops_result.outcomes if o.outcome == "applied"
             )
+            # Collect the texts of applied save_fact operations for display
+            self._last_saved_facts = [
+                o.op.text for o in ops_result.outcomes
+                if o.outcome == "applied" and o.op.op == "save_fact"
+            ]
             return applied
 
         # Fallback: old new_facts path

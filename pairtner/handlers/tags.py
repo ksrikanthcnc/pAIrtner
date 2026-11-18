@@ -134,7 +134,7 @@ class TagsMixin:
 
         reply = result["reply"]
         if count:
-            reply += "\n\n" + t(lang, "fact_saved", count=count)
+            reply += "\n\n" + self._format_fact_saved(lang, count)
         responses = [BotResponse(reply)]
         responses.extend(self._drain_contradictions())
         return responses
@@ -304,7 +304,7 @@ class TagsMixin:
 
         replies: list[BotResponse] = [BotResponse(result["reply"])]
         if count:
-            replies[0].text += "\n\n" + t(lang, "fact_saved", count=count)
+            replies[0].text += "\n\n" + self._format_fact_saved(lang, count)
         replies.extend(self._drain_contradictions())
         return replies
 
@@ -337,7 +337,7 @@ class TagsMixin:
 
         reply_text = t(lang, "blunt_disclaimer") + "\n\n" + result["reply"]
         if count:
-            reply_text += "\n\n" + t(lang, "fact_saved", count=count)
+            reply_text += "\n\n" + self._format_fact_saved(lang, count)
         responses = [BotResponse(reply_text)]
         responses.extend(self._drain_contradictions())
         return responses
@@ -390,7 +390,7 @@ class TagsMixin:
 
         reply_text = result["reply"]
         if count:
-            reply_text += "\n\n" + t(lang, "fact_saved", count=count)
+            reply_text += "\n\n" + self._format_fact_saved(lang, count)
 
         # Articulation tip (if enabled and relay_draft present)
         art_note = result.get("articulation_note")

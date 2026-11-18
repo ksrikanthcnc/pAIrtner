@@ -121,7 +121,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "\n\n<i>Reply with corrections like 'actually I have 2 kids, not 1' "
             "or 'the kitchen remodel is done now'.</i>"
         ),
-        "fact_saved": "✅ Noted! Saved {count} new fact(s).",
+        "fact_saved": "✅ Noted! Saved {count} new fact(s).\n{details}",
         "keep_saved": "✅ Saved! I'll remember that.",
 
         # Forget
@@ -579,7 +579,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "review_footer": (
             "\n\n<i>సరిదిద్దడానికి రిప్లై చేయండి.</i>"
         ),
-        "fact_saved": "✅ {count} కొత్త విషయాలు సేవ్ అయ్యాయి.",
+        "fact_saved": "✅ {count} కొత్త విషయాలు సేవ్ అయ్యాయి.\n{details}",
         "keep_saved": "✅ సేవ్ అయింది!",
 
         # Forget
