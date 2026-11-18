@@ -216,8 +216,33 @@ class CommandsMixin:
         private_facts = await db_mod.get_active_facts(self.db_path, user_id, "private")
         shared_facts = await db_mod.get_active_facts(self.db_path, user_id, "shared")
 
-        if not private_facts and not shared_facts:
+        # Also include profile data as context
+        profile = await db_mod.get_user_profile(self.db_path, user_id)
+
+        if not private_facts and not shared_facts and not profile:
             return [BotResponse(t(lang, "whatdoyouknow_empty"))]
+
+        parts = [t(lang, "whatdoyouknow_header")]
+
+        # Show profile summary if available
+        if profile:
+            profile_items = []
+            if profile.get("relationship_type"):
+                profile_items.append(f"Relationship: {profile['relationship_type']}")
+            if profile.get("duration_years"):
+                profile_items.append(f"Together: {profile['duration_years']} years")
+            if profile.get("has_kids") is not None:
+                profile_items.append(f"Kids: {'yes' if profile['has_kids'] else 'no'}")
+            if profile.get("message_count"):
+                profile_items.append(f"Messages: {profile['message_count']}")
+            if profile_items:
+                parts.append("\n📋 <b>Profile</b>\n")
+                for item in profile_items:
+                    parts.append(f"  {item}\n")
+
+        if not private_facts and not shared_facts:
+            parts.append(f"\n{t(lang, 'whatdoyouknow_empty')}")
+            return [BotResponse("".join(parts))]
 
         all_facts = private_facts + shared_facts
 
@@ -354,6 +379,13 @@ class CommandsMixin:
             self.db_path, user_id, self.config, has_blunt_tag=False,
         )
         parts.append(t(lang, "status_dampening", level=damp_level))
+
+        # Mode and yolo status
+        mode = await db_mod.get_user_preference(self.db_path, user_id, "mode", default="mediator") or "mediator"
+        relay_mode = await db_mod.get_user_preference(self.db_path, user_id, "relay_mode", default="review") or "review"
+        mode_icon = "🗣️" if mode == "voice" else "🧑‍⚖️"
+        yolo_icon = "🟢" if relay_mode == "yolo" else "🔴"
+        parts.append(f"\n{mode_icon} Mode: {mode}  |  🚀 Yolo: {yolo_icon}\n")
 
         if user.get("paused"):
             parts.append(t(lang, "status_paused_note"))
