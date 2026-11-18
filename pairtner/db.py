@@ -33,58 +33,13 @@ from pairtner.storage.helpers import (  # noqa: F401
 # Users
 # ---------------------------------------------------------------------------
 
-async def get_user(db_path: str, tg_id: int) -> dict[str, Any] | None:
-    """Return the user row for *tg_id*, or ``None`` if not found."""
-    return await _fetch_one(
-        db_path, "SELECT * FROM users WHERE tg_id = ?", (tg_id,)
-    )
-
-
-async def create_user(
-    db_path: str, tg_id: int, name: str | None = None, lang: str = "en"
-) -> None:
-    """Insert a new user row, ignoring if one already exists."""
-    await _execute(
-        db_path,
-        "INSERT OR IGNORE INTO users (tg_id, name, lang) VALUES (?, ?, ?)",
-        (tg_id, name, lang),
-    )
-
-
-async def ensure_user(
-    db_path: str, tg_id: int, name: str | None = None
-) -> dict[str, Any]:
-    """Get or create a user, returning the user row."""
-    user = await get_user(db_path, tg_id)
-    if user is None:
-        await create_user(db_path, tg_id, name)
-        user = await get_user(db_path, tg_id)
-    return user  # type: ignore[return-value]
-
-
-async def update_user_lang(db_path: str, user_id: int, lang: str) -> None:
-    """Update a user's language preference."""
-    await _execute(
-        db_path,
-        "UPDATE users SET lang = ? WHERE tg_id = ?",
-        (lang, user_id),
-    )
-
-
-async def set_partner(
-    db_path: str, user_id: int, partner_id: int
-) -> None:
-    """Pair two users (sets partner_id on both)."""
-    async with aiosqlite.connect(db_path) as db:
-        await db.execute(
-            "UPDATE users SET partner_id = ? WHERE tg_id = ?",
-            (partner_id, user_id),
-        )
-        await db.execute(
-            "UPDATE users SET partner_id = ? WHERE tg_id = ?",
-            (user_id, partner_id),
-        )
-        await db.commit()
+# ---------------------------------------------------------------------------
+# Users (canonical: storage.users)
+# ---------------------------------------------------------------------------
+from pairtner.storage.users import (  # noqa: F401, E402
+    get_user, create_user, ensure_user, update_user_lang, set_partner,
+    set_user_paused, get_partner_last_active,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -372,69 +327,13 @@ async def mark_as_sent(db_path: str, pending_id: int) -> None:
 # Messages (conversation history)
 # ---------------------------------------------------------------------------
 
-async def log_message(
-    db_path: str, user_id: int, role: str, content: str
-) -> int:
-    """Append a message to the conversation log and return its ID."""
-    return await _execute(
-        db_path,
-        "INSERT INTO messages (user_id, role, content) VALUES (?, ?, ?)",
-        (user_id, role, content),
-    )
-
-
-async def get_recent_messages(
-    db_path: str, user_id: int, limit: int = 10
-) -> list[dict[str, Any]]:
-    """Return the last *limit* messages for a user (most recent first)."""
-    return await _fetch_all(
-        db_path,
-        "SELECT role, content FROM messages WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-        (user_id, limit),
-    )
-
-
-async def get_full_history(
-    db_path: str, user_id: int, limit: int = 500, offset: int = 0,
-) -> list[dict[str, Any]]:
-    """Return the full message history for a user (oldest first), with timestamps.
-
-    Used by the PWA to reconstruct the full conversation on auth.
-    Excludes soft-deleted messages.
-    """
-    return await _fetch_all(
-        db_path,
-        "SELECT id, role, content, created_at FROM messages "
-        "WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ? OFFSET ?",
-        (user_id, limit, offset),
-    )
-
-
-async def get_history_after_id(
-    db_path: str, user_id: int, after_id: int, limit: int = 500,
-) -> list[dict[str, Any]]:
-    """Return messages after a given ID (for delta fetching by the PWA)."""
-    return await _fetch_all(
-        db_path,
-        "SELECT id, role, content, created_at FROM messages "
-        "WHERE user_id = ? AND id > ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?",
-        (user_id, after_id, limit),
-    )
-
-
-async def soft_delete_message(
-    db_path: str, user_id: int, message_id: int,
-) -> bool:
-    """Soft-delete a message (set deleted_at). Returns True if found and owned."""
-    import aiosqlite
-    async with aiosqlite.connect(db_path) as db:
-        cursor = await db.execute(
-            "UPDATE messages SET deleted_at = CURRENT_TIMESTAMP "
-            "WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
-            (message_id, user_id),
-        )
-        await db.commit()
-        return cursor.rowcount > 0
+# ---------------------------------------------------------------------------
+# Messages (canonical: storage.messages)
+# ---------------------------------------------------------------------------
+from pairtner.storage.messages import (  # noqa: F401, E402
+    log_message, get_recent_messages, get_full_history,
+    get_history_after_id, soft_delete_message,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -514,15 +413,7 @@ async def get_usage_detailed(db_path: str, days: int = 7) -> list[dict]:
 # Pause / status helpers
 # ---------------------------------------------------------------------------
 
-async def set_user_paused(
-    db_path: str, user_id: int, paused: bool
-) -> None:
-    """Set or clear the paused flag on a user."""
-    await _execute(
-        db_path,
-        "UPDATE users SET paused = ? WHERE tg_id = ?",
-        (1 if paused else 0, user_id),
-    )
+# set_user_paused and get_partner_last_active: canonical in storage.users (imported above)
 
 
 async def get_pending_count(db_path: str, user_id: int) -> int:
@@ -536,16 +427,7 @@ async def get_pending_count(db_path: str, user_id: int) -> int:
     return row["cnt"] if row else 0
 
 
-async def get_partner_last_active(
-    db_path: str, partner_id: int
-) -> str | None:
-    """Return the most recent message timestamp for *partner_id*, or None."""
-    row = await _fetch_one(
-        db_path,
-        "SELECT MAX(created_at) AS last_active FROM messages WHERE user_id = ?",
-        (partner_id,),
-    )
-    return row["last_active"] if row and row["last_active"] else None
+# get_partner_last_active: canonical in storage.users (imported above)
 
 
 # ---------------------------------------------------------------------------
