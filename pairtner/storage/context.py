@@ -22,6 +22,7 @@ async def get_user_context_data(
     from pairtner.storage.users import get_user
     from pairtner.storage.facts import get_active_facts
     from pairtner.storage.messages import get_recent_messages
+    from pairtner.storage.profiles import get_user_profile
 
     user = await get_user(db_path, user_id)
     if not user:
@@ -32,7 +33,21 @@ async def get_user_context_data(
             "shared_facts": [],
             "recent_messages": [],
             "lang": "en",
+            "profile_summary": "",
         }
+
+    # Build profile summary for prompt (always available, even with no facts)
+    profile = await get_user_profile(db_path, user_id)
+    profile_lines: list[str] = []
+    if profile:
+        if profile.get("relationship_type"):
+            profile_lines.append(f"Relationship: {profile['relationship_type']}")
+        if profile.get("duration_years"):
+            profile_lines.append(f"Together: {profile['duration_years']} years")
+        if profile.get("has_kids") is not None:
+            kids = "yes" if profile["has_kids"] else "no"
+            profile_lines.append(f"Has kids: {kids}")
+    profile_summary = "; ".join(profile_lines) if profile_lines else ""
 
     all_private = await get_active_facts(db_path, user_id, "private")
 
@@ -117,6 +132,7 @@ async def get_user_context_data(
         "shared_facts": shared_facts,
         "recent_messages": recent_messages,
         "lang": user.get("lang") or "en",
+        "profile_summary": profile_summary,
     }
 
 

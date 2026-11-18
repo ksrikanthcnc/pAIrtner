@@ -27,6 +27,7 @@ class UserContext:
     shared_facts: list[str] = field(default_factory=list)
     recent_messages: list[tuple[str, str]] = field(default_factory=list)
     lang: str = "en"
+    profile_summary: str = ""
 
 
 @dataclass
@@ -301,6 +302,8 @@ def build_chat_prompt(
         system += "\n" + goals_text
 
     parts: list[str] = []
+    if ctx.profile_summary:
+        parts.append(f"\n## Relationship Profile\n{ctx.profile_summary}\n")
     if smart_ctx:
         parts.append(_format_smart_context(smart_ctx))
     else:
