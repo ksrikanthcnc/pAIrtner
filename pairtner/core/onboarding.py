@@ -1,101 +1,94 @@
-"""Onboarding interview flow — collects user profile data after pairing."""
+"""Onboarding flow — single free-text prompt, LLM extracts structured data.
+
+After pairing, the user gets ONE open-ended prompt. Their response (any length)
+is sent to the LLM with a JSON extraction schema. The LLM returns structured
+profile data which we save to the profile + as core facts. No rigid questionnaire.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
+from typing import Any
 
 from pairtner import db as db_mod
 from pairtner.i18n import t
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Question definitions: (step_num, i18n_key, field_name, validator)
-# ---------------------------------------------------------------------------
+# The system prompt for profile extraction
+_EXTRACT_SYSTEM = """\
+You are a data extraction assistant. The user just described themselves and their \
+relationship. Extract structured data from their text and respond with ONLY a JSON \
+object (no markdown, no explanation). Use null for anything not mentioned.
 
+Required JSON shape:
+{
+  "relationship_type": "married" | "dating" | "other" | null,
+  "duration_years": <integer or null>,
+  "has_kids": true | false | null,
+  "age_range": "<string like '30s' or '25-30' or null>",
+  "appreciates": "<what they appreciate about partner, or null>",
+  "wish": "<what they wish for the relationship, or null>",
+  "summary": "<1-2 sentence summary of what they shared>"
+}
 
-def _validate_relationship_type(text: str) -> str | None:
-    lowered = text.strip().lower()
-    if lowered in ("married", "dating", "other"):
-        return lowered
-    # Accept close variants
-    if lowered in ("marriage", "marry"):
-        return "married"
-    if lowered in ("date", "relationship"):
-        return "dating"
-    return text.strip()
-
-
-def _validate_duration(text: str) -> int | None:
-    text = text.strip().split()[0] if text.strip() else ""
-    try:
-        return max(0, int(text))
-    except ValueError:
-        return None
-
-
-def _validate_has_kids(text: str) -> int | None:
-    lowered = text.strip().lower()
-    if lowered in ("yes", "y", "1", "true", "haa", "avunu"):
-        return 1
-    if lowered in ("no", "n", "0", "false", "ledu", "nahi"):
-        return 0
-    return None
-
-
-def _validate_age_range(text: str) -> str | None:
-    return text.strip() or None
-
-
-def _validate_free_text(text: str) -> str | None:
-    return text.strip() or None
-
-
-ONBOARDING_QUESTIONS: list[tuple[int, str, str, object]] = [
-    # Step 0 is free-text (handled specially in process_onboarding_answer)
-    (1, "onboard_q_relationship_type", "relationship_type", _validate_relationship_type),
-    (2, "onboard_q_duration", "duration_years", _validate_duration),
-    (3, "onboard_q_kids", "has_kids", _validate_has_kids),
-    (4, "onboard_q_age_range", "age_range", _validate_age_range),
-    (5, "onboard_q_appreciate", "_appreciate", _validate_free_text),
-    (6, "onboard_q_wish", "_wish", _validate_free_text),
-]
+Rules:
+- Extract ONLY what's explicitly stated or clearly implied.
+- For duration_years, convert phrases like "a decade" to 10, "few years" to 3.
+- For has_kids, infer from mentions of "son", "daughter", "children", "toddler" etc.
+- The summary should capture the essence in the user's own tone.
+- If the text is very short or uninformative, still return the JSON with mostly nulls.
+"""
 
 
 def _extract_from_free_text(text: str) -> dict:
-    """Best-effort extraction of structured data from free-text onboarding.
+    """Regex fallback for when LLM extraction is unavailable.
 
-    Returns a dict of profile fields found. The LLM does the real extraction
-    later via memory_ops; this catches the obvious structured bits.
+    Returns a dict of profile fields found. Used as a safety net.
     """
+    import re
+
     result: dict = {}
     low = text.lower()
 
-    # Relationship type
     for word in ("married", "dating"):
         if word in low:
             result["relationship_type"] = word
             break
 
-    # Duration (look for "N years" or just a number in context)
-    import re
     dur_match = re.search(r'(\d+)\s*(?:years?|yrs?|yr)', low)
     if dur_match:
         result["duration_years"] = int(dur_match.group(1))
 
-    # Kids
     if any(w in low for w in ("kids", "children", "son", "daughter", "child")):
         if any(w in low for w in ("no kids", "no children", "don't have kids", "dont have kids")):
             result["has_kids"] = 0
         else:
             result["has_kids"] = 1
 
-    # Age
     age_match = re.search(r'\b(\d{2})\s*(?:years?\s*old|yo|age)\b', low)
     if age_match:
         result["age_range"] = age_match.group(1)
 
     return result
+
+
+def _parse_llm_extraction(raw: str) -> dict[str, Any] | None:
+    """Parse LLM JSON output, tolerating markdown fences."""
+    text = raw.strip()
+    # Strip ```json ... ``` wrapper if present
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -110,143 +103,114 @@ async def should_start_onboarding(db_path: str, user_id: int) -> bool:
         return False
     profile = await db_mod.get_user_profile(db_path, user_id)
     if profile is None:
-        return True  # No profile yet → needs onboarding
+        return True
     return profile["onboarding_done"] == 0 and profile["onboarding_step"] == 0
 
 
 async def get_onboarding_question(
     db_path: str, user_id: int, lang: str = "en"
 ) -> tuple[str, int] | None:
-    """Return ``(question_text, step_number)`` for the next question, or None."""
+    """Return the onboarding prompt (always step 0 — single free-text prompt)."""
     profile = await db_mod.ensure_user_profile(db_path, user_id)
     if profile["onboarding_done"]:
         return None
-    step = profile["onboarding_step"]
-    for q_step, i18n_key, _field, _validator in ONBOARDING_QUESTIONS:
-        if q_step > step:
-            return t(lang, i18n_key), q_step
+    if profile["onboarding_step"] == 0:
+        return t(lang, "onboard_welcome"), 0
     return None
 
 
 async def process_onboarding_answer(
-    db_path: str, user_id: int, text: str, lang: str = "en"
+    db_path: str, user_id: int, text: str, lang: str = "en",
+    llm: Any = None,
 ) -> tuple[bool, str | None]:
-    """Validate and store the answer, advance the step.
+    """Process the user's free-text onboarding response.
 
-    Returns ``(consumed, next_question_text_or_none)``.
-    If the user sends ``/skip``, onboarding is marked done immediately.
+    If *llm* is provided, uses LLM to extract structured JSON.
+    Falls back to regex extraction if LLM is unavailable or fails.
+
+    Returns ``(consumed, response_text_or_none)``.
     """
     profile = await db_mod.ensure_user_profile(db_path, user_id)
     if profile["onboarding_done"]:
         return False, None
 
-    # /skip ends onboarding early
+    # /skip ends onboarding immediately
     if text.strip().lower() == "/skip":
         await db_mod.update_user_profile(db_path, user_id, onboarding_done=1)
         await save_onboarding_as_facts(db_path, user_id)
         return True, t(lang, "onboard_skip")
 
-    current_step = profile["onboarding_step"]
+    clean = text.strip()
+    if not clean:
+        return True, t(lang, "onboard_welcome")
 
-    # Step 0: first response after pairing — try free-text extraction
-    if current_step == 0:
-        extracted = _extract_from_free_text(text)
-        if extracted:
-            # Save whatever we extracted
-            await db_mod.update_user_profile(db_path, user_id, **extracted)
+    # Try LLM extraction first
+    extracted: dict[str, Any] = {}
+    if llm is not None:
+        try:
+            result = await llm.generate(clean, _EXTRACT_SYSTEM)
+            reply = result.get("reply", "")
+            parsed = _parse_llm_extraction(reply)
+            if parsed:
+                extracted = parsed
+                logger.info("LLM extraction: %s", extracted)
+        except Exception:
+            logger.warning("LLM extraction failed, falling back to regex", exc_info=True)
 
-        # If the text is substantial (30+ chars), save as love_story_brief and complete
-        if len(text.strip()) >= 30:
-            await db_mod.update_user_profile(
-                db_path, user_id,
-                onboarding_step=6,
-                onboarding_done=1,
-                love_story_brief=text.strip()[:500],
-            )
-            # Also save the free text as a core fact
-            fid = await db_mod.add_fact(db_path, user_id, text.strip()[:500], "private", fact_type="stable")
-            await db_mod.promote_to_core(db_path, fid)
-            await save_onboarding_as_facts(db_path, user_id)
-            return True, t(lang, "onboard_complete")
+    # Regex fallback if LLM didn't produce results
+    if not extracted:
+        extracted = _extract_from_free_text(clean)
 
-        # Short answer — try to validate as relationship_type, then advance to structured Qs
-        rel = _validate_relationship_type(text)
-        if rel:
-            await db_mod.update_user_profile(db_path, user_id, onboarding_step=1, relationship_type=rel)
-            nxt = await get_onboarding_question(db_path, user_id, lang)
-            return True, nxt[0] if nxt else t(lang, "onboard_complete")
+    # Map LLM output to profile fields
+    profile_updates: dict[str, Any] = {}
 
-        # Can't parse — just save as brief and ask first structured question
-        if text.strip():
-            await db_mod.update_user_profile(db_path, user_id, onboarding_step=0, love_story_brief=text.strip()[:500])
-        nxt = await get_onboarding_question(db_path, user_id, lang)
-        return True, nxt[0] if nxt else t(lang, "onboard_complete")
+    rel = extracted.get("relationship_type")
+    if rel and isinstance(rel, str):
+        profile_updates["relationship_type"] = rel.lower()
 
-    # Find the question for current_step + 1 (next unanswered)
-    target_q = None
-    for q_step, _key, field, validator in ONBOARDING_QUESTIONS:
-        if q_step > current_step:
-            target_q = (q_step, field, validator)
-            break
+    dur = extracted.get("duration_years")
+    if dur is not None:
+        try:
+            profile_updates["duration_years"] = int(dur)
+        except (ValueError, TypeError):
+            pass
 
-    if target_q is None:
-        # All questions answered — mark done
-        await db_mod.update_user_profile(db_path, user_id, onboarding_done=1)
-        await save_onboarding_as_facts(db_path, user_id)
-        return False, None
+    kids = extracted.get("has_kids")
+    if kids is not None:
+        profile_updates["has_kids"] = 1 if kids else 0
 
-    q_step, field_name, validator = target_q
-    validated = validator(text)
+    age = extracted.get("age_range")
+    if age and isinstance(age, str):
+        profile_updates["age_range"] = age
 
-    # Store the answer
-    if field_name == "_appreciate":
-        # Stash temporarily — we'll combine with _wish later
-        await db_mod.update_user_profile(
-            db_path, user_id,
-            onboarding_step=q_step,
-            love_story_brief=f"Appreciates: {validated or text.strip()}",
-        )
-    elif field_name == "_wish":
-        # Combine with existing appreciate text
-        existing = (await db_mod.get_user_profile(db_path, user_id)) or {}
-        brief = existing.get("love_story_brief") or ""
-        combined = f"{brief}. Wishes: {validated or text.strip()}"
-        await db_mod.update_user_profile(
-            db_path, user_id,
-            onboarding_step=q_step,
-            onboarding_done=1,
-            love_story_brief=combined,
-        )
-        await save_onboarding_as_facts(db_path, user_id)
-        return True, t(lang, "onboard_complete")
-    elif field_name == "duration_years":
-        if validated is None:
-            # Re-ask same question on invalid input
-            return True, t(lang, "onboard_q_duration")
-        await db_mod.update_user_profile(
-            db_path, user_id,
-            onboarding_step=q_step,
-            **{field_name: validated},
-        )
-    elif field_name == "has_kids":
-        if validated is None:
-            return True, t(lang, "onboard_q_kids")
-        await db_mod.update_user_profile(
-            db_path, user_id,
-            onboarding_step=q_step,
-            **{field_name: validated},
-        )
-    else:
-        await db_mod.update_user_profile(
-            db_path, user_id,
-            onboarding_step=q_step,
-            **{field_name: validated or text.strip()},
-        )
+    # Build a love_story_brief from the summary or raw text
+    summary = extracted.get("summary") or clean[:500]
+    profile_updates["love_story_brief"] = summary[:500]
 
-    # Return next question
-    nxt = await get_onboarding_question(db_path, user_id, lang)
-    if nxt:
-        return True, nxt[0]
+    # Mark onboarding as done
+    profile_updates["onboarding_step"] = 6
+    profile_updates["onboarding_done"] = 1
+
+    await db_mod.update_user_profile(db_path, user_id, **profile_updates)
+
+    # Save the raw text as a core fact
+    fid = await db_mod.add_fact(db_path, user_id, clean[:500], "private", fact_type="stable")
+    await db_mod.promote_to_core(db_path, fid)
+
+    # Save extracted specifics as core facts
+    await save_onboarding_as_facts(db_path, user_id)
+
+    # Build a personalized response
+    appreciates = extracted.get("appreciates")
+    wish = extracted.get("wish")
+    if appreciates or wish:
+        parts = [t(lang, "onboard_complete")]
+        if appreciates:
+            parts.append(f"\n\n💕 I'll remember what you appreciate: {appreciates}")
+        if wish:
+            parts.append(f"\n🌟 And your wish: {wish}")
+        return True, "".join(parts)
+
     return True, t(lang, "onboard_complete")
 
 
@@ -281,10 +245,6 @@ async def save_onboarding_as_facts(db_path: str, user_id: int) -> int:
     age = profile.get("age_range")
     if age:
         facts.append(f"Age: {age}")
-
-    brief = profile.get("love_story_brief")
-    if brief:
-        facts.append(brief)
 
     count = 0
     for text in facts:

@@ -710,12 +710,44 @@ class CommandsMixin:
     async def handle_style(
         self, user_id: int, arg: str | None
     ) -> list[BotResponse]:
-        """Backward-compatible alias for /vibe."""
+        """Unified style command: /style [voice|mood|set|<mood_name>].
+
+        - /style          → show voice profile + current mood
+        - /style voice     → same as old /vibe (voice settings)
+        - /style mood      → show current mood
+        - /style mood <x>  → set mood (e.g. /style mood gentle)
+        - /style set <trait> <value> → manual voice trait override
+        """
+        if not is_user_allowed(self.config, user_id):
+            return []
+
+        sub = (arg or "").strip().lower()
+
+        # /style mood ... → delegate to mood handler
+        if sub.startswith("mood"):
+            mood_arg = sub[4:].strip() or None
+            return await self._handle_mood_inner(user_id, mood_arg)
+
+        # /style set ... → delegate to vibe set
+        if sub.startswith("set "):
+            return await self.handle_vibe(user_id, arg)
+
+        # Check if arg is a known mood name (shortcut: /style gentle)
+        if sub and sub in self.config.mood_styles:
+            return await self._handle_mood_inner(user_id, sub)
+
+        # Default: show voice profile (same as old /vibe)
         return await self.handle_vibe(user_id, arg)
 
     # ── /mood ────────────────────────────────────────────────────────────
 
     async def handle_mood(
+        self, user_id: int, arg: str | None
+    ) -> list[BotResponse]:
+        """Alias for /style mood <arg>."""
+        return await self._handle_mood_inner(user_id, arg)
+
+    async def _handle_mood_inner(
         self, user_id: int, arg: str | None
     ) -> list[BotResponse]:
         """Show or set the user's current mood."""
@@ -759,19 +791,49 @@ class CommandsMixin:
     async def handle_goal(
         self, user_id: int, text: str | None
     ) -> list[BotResponse]:
-        """Create a personal goal."""
+        """Unified goal command: /goal [add|shared|list|<text>].
+
+        - /goal                → list all goals (personal + shared)
+        - /goal list           → same as above
+        - /goal <text>         → create a personal goal
+        - /goal add <text>     → create a personal goal
+        - /goal shared <text>  → create a shared goal (old /together)
+        """
         if not is_user_allowed(self.config, user_id):
             return []
 
-        lang = await self._get_lang(user_id)
+        sub = (text or "").strip()
+        low = sub.lower()
 
-        if not text or not text.strip():
+        # /goal or /goal list → list goals
+        if not sub or low == "list":
+            return await self.handle_goals(user_id)
+
+        # /goal shared <text> → shared goal
+        if low.startswith("shared "):
+            shared_text = sub[7:].strip()
+            if shared_text:
+                return await self._create_shared_goal(user_id, shared_text)
+            lang = await self._get_lang(user_id)
+            return [BotResponse(t(lang, "together_usage"))]
+
+        # /goal add <text> → personal goal (strip "add" prefix)
+        if low.startswith("add "):
+            sub = sub[4:].strip()
+
+        # Create personal goal
+        return await self._create_personal_goal(user_id, sub)
+
+    async def _create_personal_goal(
+        self, user_id: int, text: str
+    ) -> list[BotResponse]:
+        """Create a personal goal."""
+        lang = await self._get_lang(user_id)
+        if not text:
             return [BotResponse(t(lang, "goal_usage"))]
 
-        text = text.strip()
         await db_mod.add_user_goal(self.db_path, user_id, text)
 
-        # Record 'goal' event on the timeline (FEAT-004)
         user = await db_mod.get_user(self.db_path, user_id)
         if user and user.get("partner_id"):
             couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
@@ -781,34 +843,23 @@ class CommandsMixin:
 
         return [BotResponse(t(lang, "goal_created", text=text))]
 
-    # ── /together ────────────────────────────────────────────────────────
-
-    async def handle_together(
-        self, user_id: int, text: str | None
+    async def _create_shared_goal(
+        self, user_id: int, text: str
     ) -> list[BotResponse]:
         """Create a shared goal (both partners see it)."""
-        if not is_user_allowed(self.config, user_id):
-            return []
-
         lang = await self._get_lang(user_id)
         user = await db_mod.get_user(self.db_path, user_id)
         if not user or not user.get("partner_id"):
             return [BotResponse(t(lang, "together_no_partner"))]
 
-        if not text or not text.strip():
-            return [BotResponse(t(lang, "together_usage"))]
-
-        text = text.strip()
         partner_id = user["partner_id"]
         couple_id = db_mod.make_couple_id(user_id, partner_id)
         await db_mod.add_shared_goal(self.db_path, couple_id, user_id, text)
 
-        # Record 'goal' event on the timeline (FEAT-004)
         await db_mod.add_timeline_event(
             self.db_path, couple_id, "goal", f"Shared goal: {text}",
         )
 
-        # Notify partner
         user_name = user.get("name") or "Your partner"
         partner = await db_mod.get_user(self.db_path, partner_id)
         plang = (partner or {}).get("lang") or "en"
@@ -820,6 +871,18 @@ class CommandsMixin:
                 target_user_id=partner_id,
             ),
         ]
+
+    # ── /together ────────────────────────────────────────────────────────
+
+    async def handle_together(
+        self, user_id: int, text: str | None
+    ) -> list[BotResponse]:
+        """Alias for /goal shared <text>."""
+        if text and text.strip():
+            return await self.handle_goal(user_id, f"shared {text.strip()}")
+        # No text — show usage
+        lang = await self._get_lang(user_id)
+        return [BotResponse(t(lang, "together_usage"))]
 
     # ── /goals ───────────────────────────────────────────────────────────
 

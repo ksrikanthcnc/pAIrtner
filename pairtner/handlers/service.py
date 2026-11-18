@@ -560,7 +560,7 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         if profile and not profile["onboarding_done"]:
             lang = await self._get_lang(user_id)
             consumed, next_q = await process_onboarding_answer(
-                self.db_path, user_id, text, lang,
+                self.db_path, user_id, text, lang, llm=self.llm,
             )
             if consumed:
                 return [BotResponse(next_q)] if next_q else []
