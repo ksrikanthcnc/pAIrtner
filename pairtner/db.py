@@ -122,6 +122,14 @@ from pairtner.storage.context import (  # noqa: F401
 )
 
 # ---------------------------------------------------------------------------
+# Memory API (v1 unified interface)
+# ---------------------------------------------------------------------------
+from pairtner.core.memory_api import (  # noqa: F401
+    MemoryAPI, Fact, FactList, MemoryStats, RecencyReport, Provenance,
+    ContextResult, AgingResult, compute_relevance_score,
+)
+
+# ---------------------------------------------------------------------------
 # Settings & preferences
 # ---------------------------------------------------------------------------
 from pairtner.storage.settings import (  # noqa: F401

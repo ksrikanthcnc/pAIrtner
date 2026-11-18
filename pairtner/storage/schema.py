@@ -35,7 +35,11 @@ CREATE TABLE IF NOT EXISTS facts (
     expires_at  TIMESTAMP,
     archived_at TIMESTAMP,
     supersedes_id INTEGER REFERENCES facts(id),
+    contradicts_id INTEGER REFERENCES facts(id),
     shared_at   TIMESTAMP,
+    citation_count INTEGER DEFAULT 0,
+    last_cited_at TIMESTAMP,
+    source_message_id INTEGER REFERENCES messages(id),
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -398,6 +402,24 @@ async def init_db(db_path: str) -> None:
         if "status" not in fact_columns:
             await db.execute(
                 "ALTER TABLE facts ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"
+            )
+
+        # Migration: memory v1 columns
+        if "citation_count" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN citation_count INTEGER DEFAULT 0"
+            )
+        if "last_cited_at" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN last_cited_at TIMESTAMP"
+            )
+        if "source_message_id" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN source_message_id INTEGER REFERENCES messages(id)"
+            )
+        if "contradicts_id" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN contradicts_id INTEGER REFERENCES facts(id)"
             )
 
         # Create memory indexes (after migration)
