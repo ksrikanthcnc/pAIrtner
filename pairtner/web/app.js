@@ -105,6 +105,14 @@
       if (subtype) { cls += " " + subtype; }
     }
     div.className = "msg " + cls;
+    // Add timestamp to all live messages
+    if (cls.indexOf("typing") === -1) {
+      maybeAddDateDivider(new Date().toISOString());
+      var ts = document.createElement("span");
+      ts.className = "ts";
+      ts.textContent = formatTime(new Date().toISOString());
+      div.appendChild(ts);
+    }
     if (typeof msg === "string") {
       div.textContent = msg;
     } else {
