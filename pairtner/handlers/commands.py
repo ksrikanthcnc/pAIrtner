@@ -612,9 +612,9 @@ class CommandsMixin:
             document=("my_facts.txt", content),
         )]
 
-    # ── /vibe (was /style) ───────────────────────────────────────────────
+    # ── /style (voice + mood) ─────────────────────────────────────────────
 
-    async def handle_vibe(
+    async def _handle_vibe_inner(
         self, user_id: int, arg: str | None
     ) -> list[BotResponse]:
         """Show learned voice profile, maturity status, and allow manual trait overrides."""
@@ -730,22 +730,16 @@ class CommandsMixin:
 
         # /style set ... → delegate to vibe set
         if sub.startswith("set "):
-            return await self.handle_vibe(user_id, arg)
+            return await self._handle_vibe_inner(user_id, arg)
 
         # Check if arg is a known mood name (shortcut: /style gentle)
         if sub and sub in self.config.mood_styles:
             return await self._handle_mood_inner(user_id, sub)
 
-        # Default: show voice profile (same as old /vibe)
-        return await self.handle_vibe(user_id, arg)
+        # Default: show voice profile
+        return await self._handle_vibe_inner(user_id, arg)
 
-    # ── /mood ────────────────────────────────────────────────────────────
-
-    async def handle_mood(
-        self, user_id: int, arg: str | None
-    ) -> list[BotResponse]:
-        """Alias for /style mood <arg>."""
-        return await self._handle_mood_inner(user_id, arg)
+    # ── mood (internal, called by /style mood) ────────────────────────────
 
     async def _handle_mood_inner(
         self, user_id: int, arg: str | None
@@ -807,7 +801,7 @@ class CommandsMixin:
 
         # /goal or /goal list → list goals
         if not sub or low == "list":
-            return await self.handle_goals(user_id)
+            return await self._list_goals(user_id)
 
         # /goal shared <text> → shared goal
         if low.startswith("shared "):
@@ -872,21 +866,9 @@ class CommandsMixin:
             ),
         ]
 
-    # ── /together ────────────────────────────────────────────────────────
+    # ── /goal list (internal) ────────────────────────────────────────────
 
-    async def handle_together(
-        self, user_id: int, text: str | None
-    ) -> list[BotResponse]:
-        """Alias for /goal shared <text>."""
-        if text and text.strip():
-            return await self.handle_goal(user_id, f"shared {text.strip()}")
-        # No text — show usage
-        lang = await self._get_lang(user_id)
-        return [BotResponse(t(lang, "together_usage"))]
-
-    # ── /goals ───────────────────────────────────────────────────────────
-
-    async def handle_goals(self, user_id: int) -> list[BotResponse]:
+    async def _list_goals(self, user_id: int) -> list[BotResponse]:
         """Show all active goals with achieve/drop inline buttons."""
         if not is_user_allowed(self.config, user_id):
             return []

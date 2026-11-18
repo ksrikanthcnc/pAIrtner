@@ -603,8 +603,8 @@ class CallbacksMixin:
     async def _cb_settings_goals(
         self, user_id: int, data: str, lang: str
     ) -> list[BotResponse]:
-        """Show the goals view (reuse /goals)."""
-        return await self.handle_goals(user_id)
+        """Show the goals view."""
+        return await self.handle_goal(user_id, None)
 
     async def _cb_settings_profile(
         self, user_id: int, data: str, lang: str
@@ -718,7 +718,7 @@ class CallbacksMixin:
     ) -> list[BotResponse]:
         """Set a mood preset from settings menu."""
         mood = data.split(":")[1]
-        return await self.handle_mood(user_id, mood)
+        return await self.handle_style(user_id, f"mood {mood}")
 
     async def _cb_mood_clear(
         self, user_id: int, data: str, lang: str

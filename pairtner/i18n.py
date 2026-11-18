@@ -165,15 +165,15 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/remember — Revisit a positive shared memory\n"
             "/search &lt;query&gt; — Search your facts\n"
             "/goal &lt;text&gt; — Set a personal goal\n"
-            "/together &lt;text&gt; — Set a shared goal with your partner\n"
-            "/goals — View your active goals\n\n"
+            "/goal shared &lt;text&gt; — Set a shared goal with your partner\n"
+            "/goal — View your active goals\n\n"
             "<b>Personalization</b>\n"
             "/settings — Open settings menu\n"
             "/mode — Switch between mediator and voice mode\n"
             "/yolo — Toggle auto-send relay mode (skip review)\n"
-            "/vibe — View your learned voice profile\n"
-            "/style — Alias for /vibe\n"
-            "/mood &lt;mood&gt; — Set your mood (stressed|happy|angry|reflective)\n"
+            "/style — View voice profile, set mood, adjust traits\n"
+            "/style mood &lt;mood&gt; — Set mood (stressed|happy|angry|reflective)\n"
+            "/style set &lt;trait&gt; &lt;value&gt; — Override a voice trait\n"
             "/setup — Configure Gemini API keys\n"
             "/skip — Skip onboarding questions\n\n"
             "<b>Tags (in regular messages):</b>\n"
@@ -341,7 +341,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "vibe_not_mature": "📊 Messages analyzed: {count}/{threshold} — still learning your style.\n",
         "vibe_mature": "✅ Profile active ({count} messages analyzed)\n",
         "vibe_trait_line": "  • {trait}: <b>{value}</b>\n",
-        "vibe_set_usage": "Usage: /vibe set <trait> <value>\nTraits: register, sentence_length, emoji_use, humor, directness",
+        "vibe_set_usage": "Usage: /style set <trait> <value>\nTraits: register, sentence_length, emoji_use, humor, directness",
         "vibe_set_success": "✅ Trait updated: {trait} = <b>{value}</b>",
         "vibe_set_invalid_trait": "❌ Unknown trait. Valid: register, sentence_length, emoji_use, humor, directness.",
         "vibe_set_invalid_value": "❌ Invalid value for {trait}. Valid: {values}.",
@@ -619,13 +619,10 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/remember — మంచి జ్ఞాపకాన్ని చూడండి\n"
             "/search — మీ విషయాల్లో శోధించండి\n"
             "/goal — వ్యక్తిగత లక్ష్యం సెట్ చేయండి\n"
-            "/together — భాగస్వామ్య లక్ష్యం సెట్ చేయండి\n"
-            "/goals — మీ లక్ష్యాలు చూడండి\n\n"
+            "/goal shared — భాగస్వామ్య లక్ష్యం సెట్ చేయండి\n\n"
             "<b>వ్యక్తిగతీకరణ</b>\n"
             "/settings — సెట్టింగ్స్ మెనూ\n"
-            "/vibe — మీ నేర్చుకున్న వాయిస్ ప్రొఫైల్ చూడండి\n"
-            "/style — /vibe కి అలియాస్\n"
-            "/mood — మీ మూడ్ సెట్ చేయండి\n"
+            "/style — వాయిస్ ప్రొఫైల్, మూడ్, సెట్టింగ్స్\n"
             "/setup — Gemini API కీలు సెట్ చేయండి\n"
             "/skip — ఆన్‌బోర్డింగ్ ప్రశ్నలు దాటండి"
         ),

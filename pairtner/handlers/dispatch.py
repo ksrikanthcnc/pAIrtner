@@ -21,36 +21,41 @@ class DispatchMixin:
     ) -> dict[str, Callable[[], Awaitable[list[BotResponse]]]]:
         """Return ``{command: zero-arg coroutine factory}`` for one invocation."""
         return {
+            # Pairing
             "start": lambda: self.handle_start(uid, name),
             "join": lambda: self.handle_join(uid, name, arg),
+            # Core features
             "tell": lambda: self.handle_tell(uid, arg),
             "mediate": lambda: self.handle_mediate(uid, arg),
+            # Memory
             "whatdoyouknow": lambda: self.handle_whatdoyouknow(uid),
             "forget": lambda: self.handle_forget(uid, arg),
-            "export": lambda: self.handle_export(uid, arg),
-            "help": lambda: self.handle_help(uid),
-            "lang": lambda: self.handle_lang(uid, arg),
-            "setup": lambda: self.handle_setup(uid, arg),
-            "status": lambda: self.handle_status(uid),
-            "usage": lambda: self.handle_usage(uid, arg),
-            "history": lambda: self.handle_history(uid, arg),
-            "pause": lambda: self.handle_pause(uid),
-            "resume": lambda: self.handle_resume(uid),
-            "style": lambda: self.handle_style(uid, arg),
-            "vibe": lambda: self.handle_vibe(uid, arg),
-            "mood": lambda: self.handle_mood(uid, arg),
-            "goal": lambda: self.handle_goal(uid, arg),
-            "together": lambda: self.handle_together(uid, arg),
-            "goals": lambda: self.handle_goals(uid),
-            "settings": lambda: self.handle_settings(uid, arg),
-            "remember": lambda: self.handle_remember(uid),
             "review": lambda: self.handle_review(uid),
+            "search": lambda: self.handle_search(uid, arg),
+            "remember": lambda: self.handle_remember(uid),
+            # Style: voice + mood unified
+            "style": lambda: self.handle_style(uid, arg),
+            # Goals: personal + shared unified
+            "goal": lambda: self.handle_goal(uid, arg),
+            # Settings & config
+            "settings": lambda: self.handle_settings(uid, arg),
             "mode": lambda: self.handle_mode(uid, arg),
             "yolo": lambda: self.handle_yolo(uid, arg),
-            "search": lambda: self.handle_search(uid, arg),
+            "lang": lambda: self.handle_lang(uid, arg),
+            "setup": lambda: self.handle_setup(uid, arg),
+            # Status & info
+            "status": lambda: self.handle_status(uid),
+            "usage": lambda: self.handle_usage(uid, arg),
+            "help": lambda: self.handle_help(uid),
+            "export": lambda: self.handle_export(uid, arg),
+            "history": lambda: self.handle_history(uid, arg),
+            # Relay control
+            "pause": lambda: self.handle_pause(uid),
+            "resume": lambda: self.handle_resume(uid),
+            # Advanced
             "conflicts": lambda: self.handle_conflicts(uid),
             "timeline": lambda: self.handle_timeline(uid, arg),
-            # /skip is consumed by the onboarding intercept inside handle_message.
+            # Onboarding skip
             "skip": lambda: self.handle_message(uid, name, "/skip"),
         }
 

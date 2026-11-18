@@ -240,7 +240,7 @@ async def test_vibe_command_immature(db, cfg):
 
     mock_llm = MockLLMClient()
     svc = BotService(config=cfg, db_path=db, llm=mock_llm)
-    responses = await svc.handle_vibe(uid, None)
+    responses = await svc.handle_style(uid, None)
 
     assert len(responses) == 1
     text = responses[0].text
@@ -258,7 +258,7 @@ async def test_vibe_command_mature_with_traits(db, cfg):
 
     mock_llm = MockLLMClient()
     svc = BotService(config=cfg, db_path=db, llm=mock_llm)
-    responses = await svc.handle_vibe(uid, None)
+    responses = await svc.handle_style(uid, None)
 
     text = responses[0].text
     assert "active" in text.lower() or "యాక్టివ్" in text.lower()
@@ -278,7 +278,7 @@ async def test_vibe_set_creates_trait(db, cfg):
 
     mock_llm = MockLLMClient()
     svc = BotService(config=cfg, db_path=db, llm=mock_llm)
-    responses = await svc.handle_vibe(uid, "set register formal")
+    responses = await svc.handle_style(uid, "set register formal")
 
     assert len(responses) == 1
     assert "register" in responses[0].text
@@ -296,7 +296,7 @@ async def test_vibe_set_invalid_trait(db, cfg):
 
     mock_llm = MockLLMClient()
     svc = BotService(config=cfg, db_path=db, llm=mock_llm)
-    responses = await svc.handle_vibe(uid, "set bogus_trait value")
+    responses = await svc.handle_style(uid, "set bogus_trait value")
 
     assert "Unknown" in responses[0].text or "తెలియని" in responses[0].text
 
@@ -308,7 +308,7 @@ async def test_vibe_set_usage_missing_value(db, cfg):
 
     mock_llm = MockLLMClient()
     svc = BotService(config=cfg, db_path=db, llm=mock_llm)
-    responses = await svc.handle_vibe(uid, "set register")
+    responses = await svc.handle_style(uid, "set register")
 
     text = responses[0].text
     assert "Usage" in text or "వాడకం" in text
@@ -329,7 +329,7 @@ async def test_style_alias_routes_to_vibe(db, cfg):
     svc = BotService(config=cfg, db_path=db, llm=mock_llm)
 
     style_resp = await svc.handle_style(uid, None)
-    vibe_resp = await svc.handle_vibe(uid, None)
+    vibe_resp = await svc.handle_style(uid, None)
 
     # Both should return the same content
     assert style_resp[0].text == vibe_resp[0].text

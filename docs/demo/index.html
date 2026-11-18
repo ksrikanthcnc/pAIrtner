@@ -3,374 +3,318 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pAIrtner — Try It</title>
+<title>pAIrtner — Try the Duo Demo</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
 <style>
 :root {
   --bg: #0f0f0f; --surface: #1a1a2e; --card: #16213e; --accent: #e94560;
   --text: #eee; --dim: #888; --green: #4ecca3; --border: #2a2a4a;
+  --blue: #3a86ff; --purple: #9d4edd;
   --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
-header { background: var(--surface); padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
-header h1 { font-size: 1.2em; font-weight: 600; }
-header .badge { font-size: 0.7em; background: var(--accent); padding: 2px 8px; border-radius: 10px; }
-header .model { margin-left: auto; font-size: 0.8em; color: var(--dim); }
+body { font-family: var(--font); background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+header { background: var(--surface); padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+header h1 { font-size: 1.1em; font-weight: 600; }
+header .badge { font-size: 0.65em; background: var(--accent); padding: 2px 8px; border-radius: 10px; }
+header .info { margin-left: auto; font-size: 0.75em; color: var(--dim); }
 
-/* Setup screen */
-#setup { max-width: 480px; margin: 60px auto; padding: 20px; }
+/* Setup */
+#setup { max-width: 480px; margin: 40px auto; padding: 20px; }
 #setup h2 { margin-bottom: 8px; }
-#setup p { color: var(--dim); font-size: 0.9em; margin-bottom: 16px; line-height: 1.5; }
-#setup input { width: 100%; padding: 10px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 1em; margin-bottom: 12px; }
+#setup p { color: var(--dim); font-size: 0.9em; margin-bottom: 14px; line-height: 1.5; }
+#setup input { width: 100%; padding: 10px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 1em; margin-bottom: 10px; }
 #setup button { width: 100%; padding: 12px; background: var(--accent); border: none; border-radius: 8px; color: #fff; font-size: 1em; cursor: pointer; font-weight: 600; }
 #setup button:hover { opacity: 0.9; }
 #setup .help { font-size: 0.8em; color: var(--dim); margin-top: 8px; }
 #setup .help a { color: var(--green); }
-#setup .existing { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
-#setup .existing p { font-size: 0.85em; }
-#setup .stats { display: flex; gap: 16px; margin-top: 8px; }
-#setup .stat { background: var(--card); padding: 8px 14px; border-radius: 8px; font-size: 0.85em; }
-#setup .stat b { color: var(--green); }
+.btns { display: flex; gap: 8px; margin-top: 8px; }
+.btns button { flex: 1; padding: 10px; font-size: 0.9em; }
+.btn-ghost { background: transparent !important; border: 1px solid var(--border) !important; color: var(--dim) !important; }
 
-/* Chat screen */
-#chat { flex: 1; display: none; flex-direction: column; max-width: 640px; width: 100%; margin: 0 auto; }
-#log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
-.msg { max-width: 85%; padding: 10px 14px; border-radius: 16px; font-size: 0.95em; line-height: 1.5; word-wrap: break-word; animation: fadeIn 0.2s; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
-.msg.user { align-self: flex-end; background: var(--accent); border-bottom-right-radius: 4px; }
-.msg.bot { align-self: flex-start; background: var(--card); border-bottom-left-radius: 4px; }
-.msg.note { align-self: flex-start; background: #1a3a2a; border-left: 3px solid var(--green); font-size: 0.85em; color: var(--green); }
-.msg .time { font-size: 0.7em; color: var(--dim); margin-top: 4px; }
-.typing { align-self: flex-start; padding: 10px 18px; background: var(--card); border-radius: 16px; }
-.typing span { display: inline-block; width: 8px; height: 8px; background: var(--dim); border-radius: 50%; animation: pulse 1.4s infinite; }
+/* Duo container */
+#duo { flex: 1; display: none; overflow: hidden; }
+.pane-row { display: flex; height: 100%; gap: 1px; background: var(--border); }
+.pane { flex: 1; display: flex; flex-direction: column; background: var(--bg); min-width: 0; }
+.pane-header { padding: 8px 14px; background: var(--surface); font-weight: 600; font-size: 0.9em; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+.pane-header .dot { width: 8px; height: 8px; border-radius: 50%; }
+.pane[data-user="alice"] .dot { background: var(--blue); }
+.pane[data-user="bob"] .dot { background: var(--purple); }
+.pane-header .facts-btn { margin-left: auto; background: none; border: 1px solid var(--border); color: var(--dim); padding: 2px 8px; border-radius: 6px; font-size: 0.75em; cursor: pointer; }
+.pane-header .facts-btn:hover { color: var(--green); border-color: var(--green); }
+
+.log { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.msg { max-width: 88%; padding: 8px 12px; border-radius: 14px; font-size: 0.85em; line-height: 1.45; word-wrap: break-word; animation: fadeIn 0.15s; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
+.msg.user { align-self: flex-end; background: var(--accent); border-bottom-right-radius: 3px; }
+.msg.bot { align-self: flex-start; background: var(--card); border-bottom-left-radius: 3px; }
+.msg.note { align-self: flex-start; background: #1a3a2a; border-left: 2px solid var(--green); font-size: 0.78em; color: var(--green); }
+.msg.relay { align-self: flex-start; background: #2a1a3a; border-left: 2px solid var(--purple); }
+.msg .time { font-size: 0.65em; color: var(--dim); margin-top: 3px; }
+.typing { align-self: flex-start; padding: 8px 16px; background: var(--card); border-radius: 14px; }
+.typing span { display: inline-block; width: 6px; height: 6px; background: var(--dim); border-radius: 50%; animation: pulse 1.4s infinite; }
 .typing span:nth-child(2) { animation-delay: 0.2s; }
 .typing span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes pulse { 0%,80%,100% { opacity: 0.3; } 40% { opacity: 1; } }
 
-/* Date divider */
-.date-div { text-align: center; color: var(--dim); font-size: 0.75em; padding: 8px 0; }
+.bar { padding: 8px 10px; background: var(--surface); border-top: 1px solid var(--border); display: flex; gap: 6px; }
+.bar textarea { flex: 1; padding: 8px 12px; background: var(--card); border: 1px solid var(--border); border-radius: 18px; color: var(--text); font-size: 0.85em; resize: none; min-height: 36px; max-height: 100px; font-family: var(--font); }
+.bar button { padding: 8px 16px; background: var(--accent); border: none; border-radius: 18px; color: #fff; cursor: pointer; font-size: 0.85em; font-weight: 600; }
 
-/* Fact badge */
-.fact-badge { display: inline-block; background: #1a3a2a; color: var(--green); font-size: 0.75em; padding: 2px 8px; border-radius: 10px; margin-top: 4px; }
+/* Facts popup */
+.facts-popup { display: none; position: absolute; top: 36px; right: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-height: 300px; overflow-y: auto; width: 280px; z-index: 10; font-size: 0.8em; }
+.facts-popup .item { padding: 4px 0; border-bottom: 1px solid var(--border); }
+.facts-popup .item:last-child { border: none; }
+.facts-popup .kind { color: var(--green); font-size: 0.7em; text-transform: uppercase; }
 
-/* Input bar */
-#bar { padding: 12px 16px; background: var(--surface); border-top: 1px solid var(--border); display: flex; gap: 8px; }
-#bar textarea { flex: 1; padding: 10px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 20px; color: var(--text); font-size: 0.95em; resize: none; min-height: 42px; max-height: 120px; font-family: var(--font); }
-#bar button { padding: 10px 20px; background: var(--accent); border: none; border-radius: 20px; color: #fff; cursor: pointer; font-weight: 600; }
+#reset-btn { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); background: var(--card); border: 1px solid var(--border); color: var(--dim); padding: 4px 14px; border-radius: 6px; cursor: pointer; font-size: 0.7em; display: none; z-index: 20; }
 
-/* Memory panel */
-#memory-panel { display: none; max-width: 640px; width: 100%; margin: 0 auto; padding: 16px; }
-#memory-panel h3 { margin-bottom: 8px; }
-.memory-item { background: var(--card); padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; font-size: 0.85em; display: flex; justify-content: space-between; align-items: center; }
-.memory-item .kind { font-size: 0.7em; color: var(--green); text-transform: uppercase; }
-.memory-item button { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 0.8em; }
-
-/* Footer nav */
-#nav { background: var(--surface); border-top: 1px solid var(--border); padding: 8px 16px; display: none; justify-content: center; gap: 24px; max-width: 640px; width: 100%; margin: 0 auto; }
-#nav button { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 0.85em; padding: 4px 8px; }
-#nav button.active { color: var(--green); border-bottom: 2px solid var(--green); }
-
-/* Reset button */
-#reset-btn { position: fixed; bottom: 16px; right: 16px; background: var(--card); border: 1px solid var(--border); color: var(--dim); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.75em; display: none; }
+@media (max-width: 600px) { .pane-row { flex-direction: column; } }
 </style>
 </head>
 <body>
 
 <header>
   <h1>💕 pAIrtner</h1>
-  <span class="badge">demo</span>
-  <span class="model" id="model-label"></span>
+  <span class="badge">duo demo</span>
+  <span class="info">Both sides talk to the same AI, with separate memories</span>
 </header>
 
-<!-- Setup Screen -->
 <div id="setup">
-  <h2>Try pAIrtner</h2>
-  <p>Experience how pAIrtner learns about you and your relationship — right in your browser.
-     Your API key stays in your browser (localStorage). Nothing is sent to any server except Google's Gemini API.</p>
-
+  <h2>Try pAIrtner — Duo Mode</h2>
+  <p>See how pAIrtner works with <b>two partners</b>. Alice and Bob each have their own
+     private memory — the AI remembers each person separately and helps them communicate.
+     Everything runs in your browser via the Gemini API.</p>
   <input id="api-key" type="password" placeholder="Paste your Gemini API key" autocomplete="off">
-  <input id="user-name" type="text" placeholder="Your name (e.g. Alice)" value="">
-  <button onclick="startDemo()">Start chatting</button>
-
+  <button onclick="startDemo()">Start duo demo</button>
   <p class="help">
-    Don't have a key? <a href="https://aistudio.google.com/apikey" target="_blank">Get one free from Google AI Studio</a> →
-    Create → Copy. The free tier gives ~1500 requests/day.
+    Get a free key: <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a> →
+    Create API key → Copy. Free tier = ~1500 requests/day.
   </p>
+  <div class="btns" id="resume-btns" style="display:none">
+    <button onclick="startDemo()">Continue previous session</button>
+    <button class="btn-ghost" onclick="resetAll()">Start fresh</button>
+  </div>
+</div>
 
-  <div class="existing" id="existing" style="display:none">
-    <p>📂 Found your previous session:</p>
-    <div class="stats">
-      <div class="stat">💬 <b id="msg-count">0</b> messages</div>
-      <div class="stat">💾 <b id="fact-count">0</b> memories</div>
+<div id="duo">
+  <div class="pane-row">
+    <div class="pane" data-user="alice">
+      <div class="pane-header" style="position:relative">
+        <span class="dot"></span> Alice
+        <button class="facts-btn" onclick="toggleFacts('alice')">🧠 <span id="alice-fc">0</span></button>
+        <div class="facts-popup" id="alice-facts"></div>
+      </div>
+      <div class="log" id="alice-log"></div>
+      <div class="bar">
+        <textarea id="alice-input" placeholder="Alice says..." rows="1"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send('alice')}"
+          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
+        <button onclick="send('alice')">Send</button>
+      </div>
     </div>
-    <button onclick="startDemo()" style="margin-top:12px">Continue session</button>
-    <button onclick="resetAll()" style="margin-top:8px; background:transparent; border:1px solid var(--border); color:var(--dim)">Start fresh</button>
+    <div class="pane" data-user="bob">
+      <div class="pane-header" style="position:relative">
+        <span class="dot"></span> Bob
+        <button class="facts-btn" onclick="toggleFacts('bob')">🧠 <span id="bob-fc">0</span></button>
+        <div class="facts-popup" id="bob-facts"></div>
+      </div>
+      <div class="log" id="bob-log"></div>
+      <div class="bar">
+        <textarea id="bob-input" placeholder="Bob says..." rows="1"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send('bob')}"
+          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
+        <button onclick="send('bob')">Send</button>
+      </div>
+    </div>
   </div>
 </div>
 
-<!-- Chat Screen -->
-<div id="chat">
-  <div id="log"></div>
-  <div id="bar">
-    <textarea id="input" placeholder="Say something..." rows="1"
-      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"
-      oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"></textarea>
-    <button onclick="send()">Send</button>
-  </div>
-</div>
-
-<!-- Memory Panel -->
-<div id="memory-panel">
-  <h3>🧠 What pAIrtner knows about you</h3>
-  <div id="memory-list"></div>
-</div>
-
-<!-- Nav -->
-<div id="nav">
-  <button class="active" onclick="showTab('chat')">💬 Chat</button>
-  <button onclick="showTab('memory')">🧠 Memory</button>
-</div>
-
-<!-- Reset -->
-<button id="reset-btn" onclick="resetAll()">🗑 Reset demo</button>
+<button id="reset-btn" onclick="resetAll()">🗑 Reset</button>
 
 <script>
 "use strict";
 
-// ── Storage layer (localStorage-backed) ──────────────────────────────────
-var KEYS = {
-  apiKey: "pairtner_demo_key",
-  name: "pairtner_demo_name",
-  messages: "pairtner_demo_messages",
-  facts: "pairtner_demo_facts",
-  profile: "pairtner_demo_profile",
-};
-
-function store(key, val) { if (val === undefined) { var v = localStorage.getItem(key); try { return JSON.parse(v); } catch(e) { return v; } } localStorage.setItem(key, JSON.stringify(val)); }
-
-// ── State ────────────────────────────────────────────────────────────────
-var messages = [];  // {role, content, ts}
-var facts = [];     // {id, text, kind, created}
-var profile = {};   // {name, relationship_type, duration_years, ...}
-var apiKey = "";
-var nextFactId = 1;
-
-// ── Gemini API ───────────────────────────────────────────────────────────
-var API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+var API = "https://generativelanguage.googleapis.com/v1beta/models";
 var MODEL = "gemini-2.0-flash";
+var apiKey = "";
 
-async function callGemini(systemPrompt, userContent) {
-  var url = API_BASE + "/" + MODEL + ":generateContent?key=" + apiKey;
-  var body = {
-    system_instruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: "user", parts: [{ text: userContent }] }],
-    generationConfig: { temperature: 0.8, maxOutputTokens: 1024, responseMimeType: "application/json" },
-  };
-  var resp = await fetch(url, { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) });
-  if (!resp.ok) {
-    var err = await resp.text();
-    throw new Error("Gemini API error " + resp.status + ": " + err.substring(0, 200));
-  }
-  var data = await resp.json();
-  var text = ((data.candidates || [])[0] || {}).content?.parts?.[0]?.text || "";
-  return text;
+// Per-user state (separate localStorage namespaces)
+var state = { alice: { messages: [], facts: [], nfid: 1 }, bob: { messages: [], facts: [], nfid: 1 } };
+
+function sk(user, key) { return "pd_" + user + "_" + key; }
+function load(user) {
+  state[user].messages = JSON.parse(localStorage.getItem(sk(user, "msgs")) || "[]");
+  state[user].facts = JSON.parse(localStorage.getItem(sk(user, "facts")) || "[]");
+  var mx = 0; state[user].facts.forEach(function(f){ if(f.id>mx) mx=f.id; }); state[user].nfid = mx+1;
+}
+function save(user) {
+  localStorage.setItem(sk(user, "msgs"), JSON.stringify(state[user].messages));
+  localStorage.setItem(sk(user, "facts"), JSON.stringify(state[user].facts));
+  document.getElementById(user+"-fc").textContent = state[user].facts.length;
 }
 
-// ── System prompt ────────────────────────────────────────────────────────
-function buildSystemPrompt() {
+function $(id) { return document.getElementById(id); }
+
+function addBubble(user, cls, text, ts) {
+  var log = $(user + "-log");
+  var d = document.createElement("div"); d.className = "msg " + cls;
+  d.innerHTML = text.replace(/\n/g, "<br>");
+  if (ts) { var t = document.createElement("div"); t.className="time"; t.textContent = new Date(ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}); d.appendChild(t); }
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+}
+
+function showTyping(user) {
+  var d = document.createElement("div"); d.className="typing"; d.id=user+"-typing";
+  d.innerHTML="<span></span><span></span><span></span>";
+  $(user+"-log").appendChild(d); $(user+"-log").scrollTop = $(user+"-log").scrollHeight;
+}
+function hideTyping(user) { var t=$(user+"-typing"); if(t) t.remove(); }
+
+function buildPrompt(user) {
+  var partner = user === "alice" ? "Bob" : "Alice";
+  var name = user === "alice" ? "Alice" : "Bob";
+  var facts = state[user].facts;
   var p = [
-    "You are pAIrtner, a warm and emotionally intelligent AI relationship companion.",
-    "You help individuals reflect on their relationship, communicate better, and grow closer to their partner.",
-    "You speak casually, like a wise friend — not a therapist. Short, warm responses. Use emoji occasionally.",
+    "You are pAIrtner, a warm AI relationship companion for couples.",
+    "You help " + name + " reflect, communicate better, and grow closer to " + partner + ".",
+    "Speak casually like a wise friend. Short, warm. Use emoji occasionally.",
+    "You only see " + name + "'s side — " + partner + "'s private thoughts are hidden from you.",
     "",
-    "IMPORTANT: You MUST respond with a JSON object with this exact shape:",
-    '{"reply": "your message to the user", "memory_ops": [{"op": "save_fact", "text": "fact text", "kind": "working"}], "detected_mood": null}',
+    "Respond with JSON ONLY: {\"reply\": \"...\", \"memory_ops\": [{\"op\": \"save_fact\", \"text\": \"...\", \"kind\": \"working\"}], \"relay_draft\": null}",
     "",
-    "memory_ops rules:",
-    '- Use op "save_fact" to remember important things the user shares (feelings, events, preferences, patterns).',
-    '- kind can be "core" (fundamental relationship info) or "working" (day-to-day observations).',
-    "- Only save genuinely new information. Don't re-save what's already in the facts list.",
-    "- Save 0-2 facts per message. Most messages need 0.",
-    "",
+    "memory_ops: save genuinely new info (0-2 per message). kind: 'core' or 'working'.",
+    "relay_draft: if " + name + " wants to say something to " + partner + ", write a softened version here. Otherwise null.",
   ];
-
-  if (profile.name) p.push("The user's name is " + profile.name + ".");
-  if (profile.relationship_type) p.push("Relationship: " + profile.relationship_type + (profile.duration_years ? " for " + profile.duration_years + " years" : "") + ".");
-
-  if (facts.length > 0) {
-    p.push("", "## What you know about " + (profile.name || "the user") + ":");
+  if (facts.length) {
+    p.push("", "## What you know about " + name + ":");
     facts.forEach(function(f) { p.push("- [" + f.kind + "] " + f.text); });
   }
-
   return p.join("\n");
 }
 
-function buildUserContent(text) {
-  var history = messages.slice(-10).map(function(m) {
-    return (m.role === "user" ? (profile.name || "User") : "pAIrtner") + ": " + m.content;
+function buildContent(user, text) {
+  var msgs = state[user].messages.slice(-8).map(function(m) {
+    return (m.role === "user" ? (user === "alice" ? "Alice" : "Bob") : "pAIrtner") + ": " + m.content;
   }).join("\n");
-  return (history ? "## Recent conversation:\n" + history + "\n\n" : "") + "## Current message:\n" + text;
+  return (msgs ? "## Recent:\n" + msgs + "\n\n" : "") + "## Now:\n" + text;
 }
 
-// ── UI helpers ───────────────────────────────────────────────────────────
-function $(id) { return document.getElementById(id); }
-function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; }
-
-function addBubble(cls, text, ts) {
-  var log = $("log");
-  var d = el("div", "msg " + cls);
-  d.innerHTML = text.replace(/\n/g, "<br>");
-  if (ts) { var t = el("div", "time", new Date(ts).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})); d.appendChild(t); }
-  log.appendChild(d);
-  log.scrollTop = log.scrollHeight;
-}
-
-function addNote(text) {
-  addBubble("note", "💾 " + text);
-}
-
-function showTyping() {
-  var d = el("div", "typing"); d.id = "typing-indicator";
-  d.innerHTML = "<span></span><span></span><span></span>";
-  $("log").appendChild(d);
-  $("log").scrollTop = $("log").scrollHeight;
-}
-function hideTyping() { var t = $("typing-indicator"); if (t) t.remove(); }
-
-function renderMemoryPanel() {
-  var list = $("memory-list");
-  list.innerHTML = "";
-  if (!facts.length) { list.innerHTML = '<p style="color:var(--dim);font-size:0.9em">No memories yet. Start chatting!</p>'; return; }
-  facts.forEach(function(f) {
-    var d = el("div", "memory-item");
-    d.innerHTML = '<div><span class="kind">' + f.kind + '</span> ' + f.text + '</div>' +
-      '<button onclick="deleteFact(' + f.id + ')">✕</button>';
-    list.appendChild(d);
+async function callGemini(sys, content) {
+  var r = await fetch(API + "/" + MODEL + ":generateContent?key=" + apiKey, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: sys }] },
+      contents: [{ role: "user", parts: [{ text: content }] }],
+      generationConfig: { temperature: 0.8, maxOutputTokens: 1024, responseMimeType: "application/json" },
+    })
   });
+  if (!r.ok) throw new Error("API error " + r.status);
+  var d = await r.json();
+  return ((d.candidates||[])[0]||{}).content?.parts?.[0]?.text || "";
 }
 
-function showTab(tab) {
-  $("chat").style.display = tab === "chat" ? "flex" : "none";
-  $("memory-panel").style.display = tab === "memory" ? "block" : "none";
-  document.querySelectorAll("#nav button").forEach(function(b) { b.classList.remove("active"); });
-  document.querySelectorAll("#nav button")[tab === "chat" ? 0 : 1].classList.add("active");
-  if (tab === "memory") renderMemoryPanel();
-}
-
-// ── Core logic ───────────────────────────────────────────────────────────
-function saveFact(text, kind) {
-  var f = { id: nextFactId++, text: text, kind: kind || "working", created: new Date().toISOString() };
-  facts.push(f);
-  store(KEYS.facts, facts);
-  addNote("Remembered: " + text);
-}
-
-function deleteFact(id) {
-  facts = facts.filter(function(f) { return f.id !== id; });
-  store(KEYS.facts, facts);
-  renderMemoryPanel();
-}
-
-async function send() {
-  var input = $("input");
-  var text = input.value.trim();
+async function send(user) {
+  var inp = $(user + "-input"), text = inp.value.trim();
   if (!text) return;
-  input.value = "";
-  input.style.height = "auto";
+  inp.value = ""; inp.style.height = "auto";
 
   var ts = new Date().toISOString();
-  messages.push({ role: "user", content: text, ts: ts });
-  addBubble("user", text, ts);
-  store(KEYS.messages, messages);
+  state[user].messages.push({ role: "user", content: text, ts: ts });
+  addBubble(user, "user", text, ts);
+  save(user);
 
-  showTyping();
+  showTyping(user);
   try {
-    var raw = await callGemini(buildSystemPrompt(), buildUserContent(text));
-    hideTyping();
-
-    var data;
-    try { data = JSON.parse(raw); } catch(e) { data = { reply: raw }; }
+    var raw = await callGemini(buildPrompt(user), buildContent(user, text));
+    hideTyping(user);
+    var data; try { data = JSON.parse(raw); } catch(e) { data = { reply: raw }; }
 
     var reply = data.reply || raw;
-    var replyTs = new Date().toISOString();
-    messages.push({ role: "assistant", content: reply, ts: replyTs });
-    addBubble("bot", reply, replyTs);
-    store(KEYS.messages, messages);
+    var rts = new Date().toISOString();
+    state[user].messages.push({ role: "assistant", content: reply, ts: rts });
+    addBubble(user, "bot", reply, rts);
 
-    // Process memory ops
-    var ops = data.memory_ops || [];
-    ops.forEach(function(op) {
+    // Memory ops
+    (data.memory_ops || []).forEach(function(op) {
       if (op.op === "save_fact" && op.text) {
-        saveFact(op.text, op.kind || "working");
+        var f = { id: state[user].nfid++, text: op.text, kind: op.kind || "working" };
+        state[user].facts.push(f);
+        addBubble(user, "note", "💾 " + op.text);
       }
     });
 
+    // Relay draft — deliver to partner
+    if (data.relay_draft) {
+      var partner = user === "alice" ? "bob" : "alice";
+      var senderName = user === "alice" ? "Alice" : "Bob";
+      var relayTs = new Date().toISOString();
+      var relayMsg = "💌 A message from " + senderName + ":\n\n" + data.relay_draft;
+      state[partner].messages.push({ role: "assistant", content: relayMsg, ts: relayTs });
+      addBubble(partner, "relay", relayMsg, relayTs);
+      addBubble(user, "note", "✉️ Relay sent to " + (partner === "alice" ? "Alice" : "Bob"));
+      save(partner);
+    }
+
+    save(user);
   } catch(err) {
-    hideTyping();
-    addBubble("bot", "❌ " + err.message);
+    hideTyping(user);
+    addBubble(user, "bot", "❌ " + err.message);
   }
 }
 
-// ── Initialization ───────────────────────────────────────────────────────
-function startDemo() {
-  apiKey = $("api-key").value.trim() || store(KEYS.apiKey);
-  var name = $("user-name").value.trim() || store(KEYS.name) || "";
-  if (!apiKey) { alert("Please enter your Gemini API key"); return; }
+function toggleFacts(user) {
+  var popup = $(user + "-facts");
+  if (popup.style.display === "block") { popup.style.display = "none"; return; }
+  popup.innerHTML = "";
+  var facts = state[user].facts;
+  if (!facts.length) { popup.innerHTML = '<div style="color:var(--dim)">No memories yet</div>'; }
+  else { facts.forEach(function(f) { popup.innerHTML += '<div class="item"><span class="kind">'+f.kind+'</span> '+f.text+'</div>'; }); }
+  popup.style.display = "block";
+  document.addEventListener("click", function close(e) { if (!popup.contains(e.target)) { popup.style.display="none"; document.removeEventListener("click",close); } }, { once: false });
+}
 
-  store(KEYS.apiKey, apiKey);
-  if (name) { store(KEYS.name, name); profile.name = name; }
+function startDemo() {
+  apiKey = $("api-key").value.trim() || localStorage.getItem("pd_key") || "";
+  if (!apiKey) { alert("Please enter your Gemini API key"); return; }
+  localStorage.setItem("pd_key", apiKey);
 
   $("setup").style.display = "none";
-  $("chat").style.display = "flex";
-  $("nav").style.display = "flex";
+  $("duo").style.display = "block";
   $("reset-btn").style.display = "block";
-  $("model-label").textContent = MODEL;
 
-  // Render existing messages
-  messages.forEach(function(m) {
-    addBubble(m.role === "user" ? "user" : "bot", m.content, m.ts);
+  ["alice","bob"].forEach(function(u) {
+    state[u].messages.forEach(function(m) { addBubble(u, m.role==="user"?"user":"bot", m.content, m.ts); });
+    $(u+"-fc").textContent = state[u].facts.length;
+
+    if (!state[u].messages.length) {
+      var name = u==="alice"?"Alice":"Bob";
+      var partner = u==="alice"?"Bob":"Alice";
+      var w = "Hi " + name + "! 💕 I'm pAIrtner — your private relationship companion. " +
+        "Tell me about yourself and your relationship with " + partner + ". " +
+        "I'll remember what matters and help you two communicate better.\n\n" +
+        "Try saying something like: \"We've been together 5 years and I sometimes feel unheard.\"";
+      var ts = new Date().toISOString();
+      state[u].messages.push({role:"assistant",content:w,ts:ts});
+      addBubble(u,"bot",w,ts);
+      save(u);
+    }
   });
-
-  // If first time, show welcome
-  if (!messages.length) {
-    var welcome = "Hi" + (name ? " " + name : "") + "! 💕 I'm pAIrtner. " +
-      "Tell me about yourself and your relationship — I'll remember what matters and help you communicate better. " +
-      "This is a demo running in your browser with Gemini. Your data stays in localStorage.";
-    var ts = new Date().toISOString();
-    messages.push({ role: "assistant", content: welcome, ts: ts });
-    addBubble("bot", welcome, ts);
-    store(KEYS.messages, messages);
-  }
-
-  $("input").focus();
+  $("alice-input").focus();
 }
 
 function resetAll() {
-  if (!confirm("This will erase all messages and memories. Continue?")) return;
-  Object.values(KEYS).forEach(function(k) { localStorage.removeItem(k); });
-  location.reload();
+  if (!confirm("Erase all messages and memories for both Alice and Bob?")) return;
+  ["alice","bob"].forEach(function(u){ localStorage.removeItem(sk(u,"msgs")); localStorage.removeItem(sk(u,"facts")); });
+  localStorage.removeItem("pd_key"); location.reload();
 }
 
-// On load: restore state
-(function init() {
-  messages = store(KEYS.messages) || [];
-  facts = store(KEYS.facts) || [];
-  profile = store(KEYS.profile) || {};
-  nextFactId = facts.length ? Math.max.apply(null, facts.map(function(f){return f.id})) + 1 : 1;
-
-  var savedKey = store(KEYS.apiKey);
-  var savedName = store(KEYS.name);
-  if (savedName) { $("user-name").value = savedName; profile.name = savedName; }
-
-  // Show existing session info
-  if (messages.length > 0 || facts.length > 0) {
-    $("existing").style.display = "block";
-    $("msg-count").textContent = messages.length;
-    $("fact-count").textContent = facts.length;
-    if (savedKey) { $("api-key").value = ""; $("api-key").placeholder = "Key saved • paste new to change"; }
-  }
-})();
+// Init
+load("alice"); load("bob");
+if (state.alice.messages.length || state.bob.messages.length) {
+  $("resume-btns").style.display = "flex";
+  if (localStorage.getItem("pd_key")) $("api-key").placeholder = "Key saved • paste new to change";
+}
 </script>
 </body>
 </html>

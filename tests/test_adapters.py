@@ -162,8 +162,8 @@ class TestTelegramAdapter:
             "_cmd_start", "_cmd_join", "_cmd_tell", "_cmd_mediate",
             "_cmd_whatdoyouknow", "_cmd_forget", "_cmd_export", "_cmd_help",
             "_cmd_lang", "_cmd_setup", "_cmd_status", "_cmd_history",
-            "_cmd_pause", "_cmd_resume", "_cmd_style", "_cmd_vibe",
-            "_cmd_mood", "_cmd_goal", "_cmd_together", "_cmd_goals",
+            "_cmd_pause", "_cmd_resume", "_cmd_style",
+            "_cmd_goal",
             "_cmd_settings", "_cmd_skip", "_cmd_remember", "_cmd_search",
             "_cmd_conflicts", "_cmd_timeline",
         ]

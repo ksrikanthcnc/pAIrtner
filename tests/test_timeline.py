@@ -201,7 +201,7 @@ class TestTimelineAutoPopulation:
         await set_partner(db, 4003, 4004)
 
         svc = tl_service
-        await svc.handle_together(4003, "Weekly date night")
+        await svc.handle_goal(4003, "shared Weekly date night")
 
         cid = db_mod.make_couple_id(4003, 4004)
         events = await get_timeline_events(db, cid)

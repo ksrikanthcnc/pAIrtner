@@ -21,7 +21,7 @@ async def test_mood_set(test_db, service, paired_users):
     a_id, _ = paired_users
     await ensure_user_profile(test_db, a_id)
 
-    responses = await service.handle_mood(a_id, "stressed")
+    responses = await service.handle_style(a_id, "mood stressed")
     assert len(responses) == 1
     assert "stressed" in responses[0].text.lower()
 
@@ -40,7 +40,7 @@ async def test_mood_show_current(test_db, service, paired_users):
     expires = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
     await set_user_mood(test_db, a_id, "happy", expires)
 
-    responses = await service.handle_mood(a_id, None)
+    responses = await service.handle_style(a_id, "mood")
     assert len(responses) == 1
     assert "happy" in responses[0].text.lower()
 
@@ -51,7 +51,7 @@ async def test_mood_none_active(test_db, service, paired_users):
     a_id, _ = paired_users
     await ensure_user_profile(test_db, a_id)
 
-    responses = await service.handle_mood(a_id, None)
+    responses = await service.handle_style(a_id, "mood")
     assert len(responses) == 1
     assert "no active mood" in responses[0].text.lower() or "usage" in responses[0].text.lower()
 
@@ -62,7 +62,7 @@ async def test_mood_invalid(test_db, service, paired_users):
     a_id, _ = paired_users
     await ensure_user_profile(test_db, a_id)
 
-    responses = await service.handle_mood(a_id, "ecstatic")
+    responses = await service.handle_style(a_id, "mood ecstatic")
     assert len(responses) == 1
     assert "usage" in responses[0].text.lower()
 

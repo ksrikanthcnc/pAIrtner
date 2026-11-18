@@ -75,11 +75,7 @@ class TelegramAdapter(BaseAdapter):
         app.add_handler(CommandHandler("pause", self._cmd_pause))
         app.add_handler(CommandHandler("resume", self._cmd_resume))
         app.add_handler(CommandHandler("style", self._cmd_style))
-        app.add_handler(CommandHandler("vibe", self._cmd_vibe))
-        app.add_handler(CommandHandler("mood", self._cmd_mood))
         app.add_handler(CommandHandler("goal", self._cmd_goal))
-        app.add_handler(CommandHandler("together", self._cmd_together))
-        app.add_handler(CommandHandler("goals", self._cmd_goals))
         app.add_handler(CommandHandler("settings", self._cmd_settings))
         app.add_handler(CommandHandler("mode", self._cmd_mode))
         app.add_handler(CommandHandler("skip", self._cmd_skip))
@@ -350,47 +346,12 @@ class TelegramAdapter(BaseAdapter):
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 
-    async def _cmd_vibe(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
-        if not is_user_allowed(self.config, user.id):
-            return
-        arg = " ".join(ctx.args) if ctx.args else None
-        responses = await self.service.handle_vibe(user.id, arg)
-        for r in responses:
-            await self._send_response(ctx.bot, update.effective_chat.id, r)
-
-    async def _cmd_mood(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
-        if not is_user_allowed(self.config, user.id):
-            return
-        arg = " ".join(ctx.args) if ctx.args else None
-        responses = await self.service.handle_mood(user.id, arg)
-        for r in responses:
-            await self._send_response(ctx.bot, update.effective_chat.id, r)
-
     async def _cmd_goal(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
         if not is_user_allowed(self.config, user.id):
             return
         text = " ".join(ctx.args) if ctx.args else None
         responses = await self.service.handle_goal(user.id, text)
-        for r in responses:
-            await self._send_response(ctx.bot, update.effective_chat.id, r)
-
-    async def _cmd_together(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
-        if not is_user_allowed(self.config, user.id):
-            return
-        text = " ".join(ctx.args) if ctx.args else None
-        responses = await self.service.handle_together(user.id, text)
-        for r in responses:
-            await self._send_response(ctx.bot, update.effective_chat.id, r)
-
-    async def _cmd_goals(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
-        if not is_user_allowed(self.config, user.id):
-            return
-        responses = await self.service.handle_goals(user.id)
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 
