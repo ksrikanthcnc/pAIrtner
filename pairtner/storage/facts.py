@@ -27,13 +27,19 @@ async def add_fact(
     category: str | None = None,
     fact_type: str = "stable",
     source_message_id: int | None = None,
+    source_ids: str | None = None,
+    intensity: float = 0.5,
+    model: str | None = None,
+    metadata: str | None = None,
 ) -> int:
     """Insert a fact; return its id."""
     return await _execute(
         db_path,
-        "INSERT INTO facts (owner_id, text, visibility, source, category, fact_type, source_message_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (owner_id, text, visibility, source, category, fact_type, source_message_id),
+        "INSERT INTO facts (owner_id, text, visibility, source, category, fact_type, "
+        "source_message_id, source_ids, intensity, model, metadata) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (owner_id, text, visibility, source, category, fact_type,
+         source_message_id, source_ids, intensity, model, metadata),
     )
 
 

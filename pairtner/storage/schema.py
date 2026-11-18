@@ -40,6 +40,10 @@ CREATE TABLE IF NOT EXISTS facts (
     citation_count INTEGER DEFAULT 0,
     last_cited_at TIMESTAMP,
     source_message_id INTEGER REFERENCES messages(id),
+    source_ids  TEXT,
+    intensity   REAL DEFAULT 0.5,
+    model       TEXT,
+    metadata    TEXT,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -420,6 +424,24 @@ async def init_db(db_path: str) -> None:
         if "contradicts_id" not in fact_columns:
             await db.execute(
                 "ALTER TABLE facts ADD COLUMN contradicts_id INTEGER REFERENCES facts(id)"
+            )
+
+        # Migration: v2 memory columns
+        if "source_ids" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN source_ids TEXT"
+            )
+        if "intensity" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN intensity REAL DEFAULT 0.5"
+            )
+        if "model" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN model TEXT"
+            )
+        if "metadata" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN metadata TEXT"
             )
 
         # Create memory indexes (after migration)

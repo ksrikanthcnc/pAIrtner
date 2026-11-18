@@ -8,15 +8,14 @@ from typing import Any
 
 
 async def get_user_context_data(
-    db_path: str, user_id: int
+    db_path: str, user_id: int, current_message: str | None = None,
 ) -> dict[str, Any]:
     """Gather all context data for prompt building.
 
     Returns a dict with keys: user_name, partner_name, private_facts,
     shared_facts, recent_messages, lang, profile_summary.
 
-    Facts are ranked by relevance score (Memory API v1):
-    core facts always included, then top-N working by score.
+    Facts are ranked by relevance score + FTS5 search for current message.
     """
     from pairtner.storage.users import get_user
     from pairtner.storage.facts import get_active_facts
@@ -36,7 +35,7 @@ async def get_user_context_data(
             "profile_summary": "",
         }
 
-    # Build profile summary for prompt (always available, even with no facts)
+    # Build profile summary
     profile = await get_user_profile(db_path, user_id)
     profile_lines: list[str] = []
     if profile:
@@ -49,12 +48,14 @@ async def get_user_context_data(
             profile_lines.append(f"Has kids: {kids}")
     profile_summary = "; ".join(profile_lines) if profile_lines else ""
 
-    # Use Memory API for scored context
+    # Use Memory API for scored context + FTS5 search
     api = MemoryAPI(db_path)
     budgets = _get_context_budgets()
     total_budget = budgets.get("total", 1200)
 
-    ctx = await api.get_scored_context(user_id, budget_words=total_budget)
+    ctx = await api.get_scored_context(
+        user_id, budget_words=total_budget, current_message=current_message,
+    )
     private_facts = ctx.lines
 
     # Shared facts from partner

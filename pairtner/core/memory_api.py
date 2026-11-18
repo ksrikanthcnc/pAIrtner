@@ -43,7 +43,11 @@ class Fact:
     citation_count: int
     last_cited_at: str | None
     source_message_id: int | None
+    source_ids: str | None
     contradicts_id: int | None
+    intensity: float
+    model: str | None
+    metadata: str | None
     created_at: str
     updated_at: str
 
@@ -60,7 +64,11 @@ class Fact:
             "citation_count": self.citation_count,
             "last_cited_at": self.last_cited_at,
             "source_message_id": self.source_message_id,
+            "source_ids": self.source_ids,
             "contradicts_id": self.contradicts_id,
+            "intensity": self.intensity,
+            "model": self.model,
+            "metadata": self.metadata,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -179,12 +187,13 @@ _STATUS_WEIGHT: dict[str, float] = {
 def compute_relevance_score(fact_row: dict[str, Any]) -> float:
     """Compute the relevance score for a fact.
 
-    score = kind_weight × decay(age) × status_weight × citation_boost
+    score = kind_weight × decay(age) × status_weight × intensity × citation_boost
     Core facts always score 1.0 (no decay, max weight).
     """
     kind = fact_row.get("kind") or "working"
     status = fact_row.get("status") or "active"
     citations = fact_row.get("citation_count") or 0
+    intensity = fact_row.get("intensity") or 0.5
 
     kind_w = _KIND_WEIGHT.get(kind, 0.5)
     status_w = _STATUS_WEIGHT.get(status, 1.0)
@@ -203,7 +212,7 @@ def compute_relevance_score(fact_row: dict[str, Any]) -> float:
     else:
         decay = math.exp(-age_days / halflife)
 
-    score = kind_w * decay * status_w * citation_boost
+    score = kind_w * decay * status_w * intensity * citation_boost
     return min(score, 1.0)  # cap at 1.0
 
 
@@ -235,7 +244,11 @@ def _row_to_fact(row: dict[str, Any]) -> Fact:
         citation_count=row.get("citation_count") or 0,
         last_cited_at=row.get("last_cited_at"),
         source_message_id=row.get("source_message_id"),
+        source_ids=row.get("source_ids"),
         contradicts_id=row.get("contradicts_id"),
+        intensity=row.get("intensity") or 0.5,
+        model=row.get("model"),
+        metadata=row.get("metadata"),
         created_at=row.get("created_at") or "",
         updated_at=row.get("updated_at") or "",
     )
@@ -430,6 +443,10 @@ class MemoryAPI:
         category: str | None = None,
         fact_type: str = "stable",
         source_message_id: int | None = None,
+        source_ids: str | None = None,
+        intensity: float = 0.5,
+        model: str | None = None,
+        metadata: str | None = None,
     ) -> Fact:
         """Add a new fact and return it with computed score."""
         from pairtner.storage import facts as facts_mod
@@ -441,16 +458,12 @@ class MemoryAPI:
             "private",
             category=category,
             fact_type=fact_type,
+            source_message_id=source_message_id,
+            source_ids=source_ids,
+            intensity=intensity,
+            model=model,
+            metadata=metadata,
         )
-        # Set source_message_id if provided
-        if source_message_id is not None:
-            from pairtner.storage.helpers import _execute
-
-            await _execute(
-                self.db_path,
-                "UPDATE facts SET source_message_id = ? WHERE id = ?",
-                (source_message_id, fact_id),
-            )
 
         await facts_mod.append_memory_version(
             self.db_path,
@@ -552,11 +565,13 @@ class MemoryAPI:
     # --- Scoring & Context ---
 
     async def get_scored_context(
-        self, user_id: int, budget_words: int = 1200
+        self, user_id: int, budget_words: int = 1200,
+        current_message: str | None = None,
     ) -> ContextResult:
         """Build score-ranked memory context for the LLM prompt.
 
-        Returns the formatted lines, and records citations for included facts.
+        If current_message is provided, also includes FTS5 matches
+        for relevant facts that might not rank high by score alone.
         """
         from pairtner.storage.facts import get_active_facts
 
@@ -579,6 +594,18 @@ class MemoryAPI:
         # Sort non-core by score descending
         scored.sort(key=lambda x: x[1], reverse=True)
 
+        # FTS5 search for current message (finds relevant facts regardless of score)
+        fts_ids: set[int] = set()
+        if current_message:
+            try:
+                from pairtner.core.search import search_facts
+                fts_results = await search_facts(
+                    self.db_path, user_id, current_message, limit=5
+                )
+                fts_ids = {r["id"] for r in fts_results}
+            except Exception:
+                pass  # FTS5 not available, skip
+
         lines: list[str] = []
         cited_ids: list[int] = []
         word_count = 0
@@ -592,6 +619,7 @@ class MemoryAPI:
             cited_ids.append(r["id"])
 
         # Then top-scored non-core
+        included_ids = set(cited_ids)
         for r, score in scored:
             if word_count >= budget_words:
                 break
@@ -608,8 +636,26 @@ class MemoryAPI:
             lines.append(line)
             word_count += words
             cited_ids.append(r["id"])
+            included_ids.add(r["id"])
 
-        # Record citations (async, fire-and-forget for non-blocking)
+        # FTS5 matches not already included (relevant to current message)
+        if fts_ids:
+            fts_rows = {r["id"]: r for r in rows}
+            for fid in fts_ids - included_ids:
+                if fid not in fts_rows:
+                    continue
+                r = fts_rows[fid]
+                if r.get("archived_at"):
+                    continue
+                line = f"[{r['id']}] (relevant) {r['text']}"
+                words = len(line.split())
+                if word_count + words > budget_words + 200:  # slight overflow OK for FTS
+                    break
+                lines.append(line)
+                word_count += words
+                cited_ids.append(r["id"])
+
+        # Record citations
         await self._record_citations(cited_ids)
 
         return ContextResult(
