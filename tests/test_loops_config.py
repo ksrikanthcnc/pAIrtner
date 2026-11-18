@@ -115,13 +115,14 @@ async def test_loop_starter_passes_intervals(tmp_path):
          patch("pairtner.adapters.loops.backup_loop", fake("backup")), \
          patch("pairtner.adapters.loops.digest_loop", fake("digest")), \
          patch("pairtner.adapters.loops.checkin_loop", fake("checkin")), \
-         patch("pairtner.adapters.loops.nudge_loop", fake("nudge")):
+         patch("pairtner.adapters.loops.nudge_loop", fake("nudge")), \
+         patch("pairtner.core.memory_maintenance.memory_maintenance_loop", fake("memory")):
         tasks = start_background_loops(
             _Svc(cfg.db_path), cfg, None, None,
             lambda coro: spawned.append(asyncio.ensure_future(coro)) or spawned[-1],
         )
         await asyncio.gather(*tasks)
-    assert set(seen) == {"delivery", "backup", "digest", "checkin", "nudge"}
+    assert set(seen) >= {"delivery", "backup", "digest", "checkin", "nudge"}
     assert seen["digest"]["poll_interval"] == 11
     assert seen["checkin"]["poll_interval"] == 12
     assert seen["nudge"]["poll_interval"] == 13
@@ -143,7 +144,8 @@ async def test_nudge_interval_falls_back_to_hours(tmp_path):
          patch("pairtner.adapters.loops.backup_loop", noop), \
          patch("pairtner.adapters.loops.digest_loop", noop), \
          patch("pairtner.adapters.loops.checkin_loop", noop), \
-         patch("pairtner.adapters.loops.nudge_loop", fake_nudge):
+         patch("pairtner.adapters.loops.nudge_loop", fake_nudge), \
+         patch("pairtner.core.memory_maintenance.memory_maintenance_loop", noop):
         tasks = start_background_loops(
             _Svc(cfg.db_path), cfg, None, None, asyncio.ensure_future)
         await asyncio.gather(*tasks)

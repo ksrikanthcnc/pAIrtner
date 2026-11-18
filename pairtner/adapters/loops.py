@@ -90,4 +90,16 @@ def start_background_loops(
         )))
         logger.info("Nudge loop started")
 
+    # Memory maintenance: aging, auto-outdating, consolidation
+    from pairtner.core.memory_maintenance import memory_maintenance_loop
+
+    tasks.append(spawn(memory_maintenance_loop(
+        service.db_path,
+        service.llm,
+        interval=config.loops_memory_interval_seconds
+        if hasattr(config, "loops_memory_interval_seconds")
+        else 3600,
+    )))
+    logger.info("Memory maintenance loop started")
+
     return tasks

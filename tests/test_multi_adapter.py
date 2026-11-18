@@ -140,7 +140,7 @@ async def test_telegram_run_background_false_creates_no_loops(test_db):
 
     app.create_task = spawn
     await on._post_init(app)
-    assert len(created) == 1  # delivery loop (others disabled in cfg)
+    assert len(created) == 2  # delivery loop + memory maintenance
     for t in created:
         t.cancel()
     await asyncio.gather(*created, return_exceptions=True)
