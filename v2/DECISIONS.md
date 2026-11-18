@@ -220,8 +220,9 @@ This is the authoritative reference. The other v2/*.md files should be updated t
 ## Safety & Operations
 
 49. **NEVER push to GitHub from Mac.** Remote removed. All pushes done manually by user from personal machine. Nielsen security flagged the GitHub remote URL config — the push that triggered the alert was from WSL, not Mac. Mac only uses `git bundle` + `scp` for sync.
-50. **Knowledge is rebuildable from raw.** To switch LLM or fix bad extraction: archive all knowledge → re-process raw messages with new model → run consolidation. Build a `rebuild` command for this. Raw messages are the immutable source of truth.
+50. **Knowledge is rebuildable from raw.** To switch LLM or fix bad extraction: archive all knowledge → process raw messages in chronological batches of 50 → extract facts per batch → after all batches, run one consolidation pass. No need to simulate daily/weekly cadence — batch extraction + final consolidation produces equivalent results. Build a `rebuild` command for this.
 51. **Raw messages are NEVER archived or deleted.** They're the rebuild source. Episodes archive working facts (knowledge), never raw messages. This is the whole point of the two-table design.
+52. **Drop `category` column.** LLM categorizes inconsistently ("household" vs "home" vs "domestic"). FTS5 + scoring handles retrieval. Weekly summary LLM groups thematically at consolidation time — no pre-assigned category needed. One less field for LLM to fill wrong.
 
 ## Proactive Context Injection (decision 28, broadened)
 
