@@ -2,7 +2,7 @@ name: default
 version: 0.1.0
 # Engine/pack interface version; the engine refuses a pack with a different value.
 engine_contract: 1
-languages: [en, te]
+languages: [en]
 
 # Files the engine loads (and hot-reloads). Paths are relative to this folder.
 files:

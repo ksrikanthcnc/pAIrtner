@@ -80,11 +80,9 @@ def test_transport_descriptions():
     assert "this server" in CLIAdapter.transport_description
 
 
-def test_telugu_notice_and_parity():
-    te = t("te", "privacy_note", transport="Telegram servers", llm="Google Gemini")
-    assert "Telegram servers" in te and "Google Gemini" in te
+def test_privacy_keys_exist():
+    """Privacy-related keys exist in the string catalog."""
     for key in ("privacy_note", "not_therapy", "mediate_usage", "mediate_no_input",
                 "fact_now_shared", "fact_now_private", "btn_share_fact",
                 "btn_unshare_fact", "whatdoyouknow_more"):
-        assert key in _STRINGS["en"] and key in _STRINGS["te"], key
-    assert t("te", "mediate_no_input", window="W") != t("en", "mediate_no_input", window="W")
+        assert key in _STRINGS["en"], f"Missing key: {key}"
