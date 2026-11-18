@@ -13,6 +13,7 @@ from pairtner.features.conflict_detector import check_conflict_resolutions
 from pairtner.i18n import t
 from pairtner.llm import LLMClient
 from pairtner.core.prompts import build_digest_prompt
+from pairtner.storage.helpers import _now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,7 @@ async def _send_digest_for_couple(
         await send_func(uid, f"{header}\n{summary}")
 
     # Record the digest timestamp
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = _now_iso()
     await db_mod.set_couple_config(db_path, couple_id, "last_digest", now_iso)
 
     # Periodic conflict resolution check (FEAT-002)

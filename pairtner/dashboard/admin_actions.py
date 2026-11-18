@@ -24,6 +24,8 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from pairtner.storage.helpers import _now_iso
+
 from pairtner.dashboard import store
 from pairtner.dashboard.redaction import quote_ident
 from pairtner.dashboard.store import NotFound
@@ -136,7 +138,7 @@ def _discard(path: str) -> None:
 
 def _audit(backup_dir: str, action: str, target: str, result: ActionResult) -> None:
     line = {
-        "at": datetime.now(timezone.utc).isoformat(),
+        "at": _now_iso(),
         "action": action,
         "target": target,
         "backup": os.path.basename(result.backup_path),

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pairtner import db as db_mod
+from pairtner.storage.helpers import _now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ async def check_conflict_resolutions(
             db_path, conflict["id"], timeout_hours=timeout_hours,
         )
         if should_resolve:
-            now_iso = datetime.now(timezone.utc).isoformat()
+            now_iso = _now_iso()
             await db_mod.update_conflict_status(
                 db_path, conflict["id"], "resolved", resolved_at=now_iso,
             )

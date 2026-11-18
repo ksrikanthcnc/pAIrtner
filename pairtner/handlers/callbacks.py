@@ -9,6 +9,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from pairtner.storage.helpers import _now_iso, _to_iso
+
 from pairtner import db as db_mod
 from pairtner.i18n import t
 
@@ -49,16 +51,16 @@ class CallbacksMixin:
             return [BotResponse(t(lang, "error_generic"))]
 
         if skip_cooldown:
-            send_after = datetime.now(timezone.utc).isoformat()
+            send_after = _now_iso()
             await db_mod.update_pending_status(
                 self.db_path, pending_id, "approved", send_after
             )
             msg = t(lang, "approved_now")
         else:
-            send_after = (
+            send_after = _to_iso(
                 datetime.now(timezone.utc)
                 + timedelta(minutes=self.config.cooldown_minutes)
-            ).isoformat()
+            )
             await db_mod.update_pending_status(
                 self.db_path, pending_id, "approved"
             )

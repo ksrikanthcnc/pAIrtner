@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pairtner import db as db_mod
+from pairtner.storage.helpers import _to_iso
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +59,9 @@ async def _process(
     mood = llm_response.get("detected_mood")
     if mood and mood != "neutral":
         hours = getattr(config, "mood_default_expiry_hours", 2)
-        expires_at = (
+        expires_at = _to_iso(
             datetime.now(timezone.utc) + timedelta(hours=hours)
-        ).isoformat()
+        )
         style = getattr(config, "mood_styles", {}).get(mood, {})
         await db_mod.set_user_mood(
             db_path,

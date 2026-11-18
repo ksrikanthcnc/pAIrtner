@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from pairtner import db as db_mod
 from pairtner.core.sanitize import detect_crisis
+from pairtner.storage.helpers import _to_iso
 from pairtner.config import is_user_allowed
 from pairtner.crypto import decrypt_value, encrypt_value, mask_key
 from pairtner.i18n import t
@@ -708,9 +709,9 @@ class CommandsMixin:
             return [BotResponse(t(lang, "mood_usage"))]
 
         hours = self.config.mood_default_expiry_hours
-        expires_at = (
+        expires_at = _to_iso(
             datetime.now(timezone.utc) + timedelta(hours=hours)
-        ).isoformat()
+        )
 
         style = self.config.mood_styles.get(mood, {})
         await db_mod.set_user_mood(

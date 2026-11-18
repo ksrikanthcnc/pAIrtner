@@ -18,54 +18,15 @@ import aiosqlite
 # Re-export here for backward compatibility.
 from pairtner.storage.schema import SCHEMA_SQL as _SCHEMA_SQL, init_db  # noqa: F401
 from pairtner.storage.helpers import (  # noqa: F401
-    _now_iso, _row_to_dict, _fetch_one, _fetch_all, _execute,
+    _now_iso, _to_iso, _row_to_dict, _fetch_one, _fetch_all, _execute,
 )
 
 # Schema SQL is in storage.schema (re-exported as _SCHEMA_SQL above)
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers are in storage.helpers (re-exported above)
+# Internal helpers are in storage.helpers (canonical source)
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _row_to_dict(row: aiosqlite.Row) -> dict[str, Any]:
-    return dict(row)
-
-
-async def _fetch_one(
-    db_path: str, sql: str, params: tuple = ()
-) -> dict[str, Any] | None:
-    async with aiosqlite.connect(db_path) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(sql, params) as cur:
-            row = await cur.fetchone()
-            return _row_to_dict(row) if row else None
-
-
-async def _fetch_all(
-    db_path: str, sql: str, params: tuple = ()
-) -> list[dict[str, Any]]:
-    async with aiosqlite.connect(db_path) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(sql, params) as cur:
-            rows = await cur.fetchall()
-            return [_row_to_dict(r) for r in rows]
-
-
-async def _execute(
-    db_path: str, sql: str, params: tuple = ()
-) -> int:
-    """Execute a write statement; return lastrowid."""
-    async with aiosqlite.connect(db_path) as db:
-        cur = await db.execute(sql, params)
-        await db.commit()
-        return cur.lastrowid  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
@@ -972,7 +933,7 @@ async def increment_rate_counter(
     Creates the row if missing; resets count when the window has expired.
     """
     now = datetime.now(timezone.utc)
-    reset_at = (now + timedelta(seconds=window_seconds)).isoformat()
+    reset_at = _to_iso(now + timedelta(seconds=window_seconds))
 
     row = await _fetch_one(
         db_path,
@@ -1319,12 +1280,12 @@ async def get_expiring_facts(
 ) -> list[dict[str, Any]]:
     """Get facts where expires_at is within 24 hours from now."""
     now = datetime.now(timezone.utc)
-    soon = (now + timedelta(hours=24)).isoformat()
+    soon = _to_iso(now + timedelta(hours=24))
     return await _fetch_all(
         db_path,
         "SELECT * FROM facts WHERE owner_id = ? AND archived_at IS NULL "
         "AND expires_at IS NOT NULL AND expires_at <= ? AND expires_at > ?",
-        (owner_id, soon, now.isoformat()),
+        (owner_id, soon, _to_iso(now)),
     )
 
 
@@ -1349,9 +1310,9 @@ async def run_fact_aging(db_path: str) -> list[dict[str, Any]]:
     Returns the list of situational facts that need confirmation.
     """
     now = datetime.now(timezone.utc)
-    transient_cutoff = (now - timedelta(days=14)).isoformat()
-    situational_cutoff = (now - timedelta(days=30)).isoformat()
-    now_iso = now.isoformat()
+    transient_cutoff = _to_iso(now - timedelta(days=14))
+    situational_cutoff = _to_iso(now - timedelta(days=30))
+    now_iso = _to_iso(now)
 
     # Auto-archive transient facts older than 14 days (skip core)
     async with aiosqlite.connect(db_path) as db:
@@ -1870,7 +1831,7 @@ async def get_pending_needing_feedback(
     db_path: str, sender_id: int
 ) -> list[dict[str, Any]]:
     """Return sent relays FROM this sender where feedback is NULL and within 24h."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    cutoff = _to_iso(datetime.now(timezone.utc) - timedelta(hours=24))
     return await _fetch_all(
         db_path,
         "SELECT * FROM pending "

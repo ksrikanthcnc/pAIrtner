@@ -9,8 +9,21 @@ import aiosqlite
 
 
 def _now_iso() -> str:
-    """UTC now as an ISO 8601 string (no fractional seconds)."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    """UTC now as an ISO 8601 string (sortable, no fractional seconds, no tz offset).
+
+    All timestamps in the database use this format. Code that stores timestamps
+    must use _now_iso() or _to_iso() — never bare datetime.isoformat()
+    (which appends +00:00, breaking SQLite string comparisons).
+    """
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _to_iso(dt: datetime) -> str:
+    """Format a datetime as a sortable ISO 8601 string (no tz offset).
+
+    Use this when converting a computed datetime (e.g. ``now + timedelta(...)``).
+    """
+    return dt.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _row_to_dict(row: aiosqlite.Row) -> dict[str, Any]:

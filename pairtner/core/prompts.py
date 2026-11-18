@@ -205,6 +205,7 @@ async def build_smart_context(
     from datetime import datetime, timedelta, timezone
 
     from pairtner.db import get_fact_summaries, get_facts_since
+    from pairtner.storage.helpers import _to_iso
     from pairtner.core.search import get_fact_count, search_facts
 
     total = await get_fact_count(db_path, user_id)
@@ -213,9 +214,9 @@ async def build_smart_context(
         return None
 
     # Recent N-day facts
-    since = (
+    since = _to_iso(
         datetime.now(timezone.utc) - timedelta(days=config.context_recent_days)
-    ).isoformat()
+    )
     recent_rows = await get_facts_since(db_path, user_id, since)
     recent_facts = [f["text"] for f in recent_rows]
 
