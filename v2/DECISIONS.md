@@ -76,9 +76,24 @@ This is the authoritative reference. The other v2/*.md files should be updated t
 
 ## Summary & Consolidation
 
-29. **Weekly summary job:** Reads raw messages + existing knowledge → produces episode entries. Source facts can be archived after episode creation.
-30. **Cascading summaries (1d, 3d, 7d... rolling):** PARKED. Interesting idea for keeping old important things alive in compressed form. Currently handled by scoring (cited things stay high regardless of age). If scoring isn't enough, this is the upgrade path. Architecture supports it (just another background job writing episodes). **NOTE: Keep pluggable — should be easy to add later.**
-31. **Episodes point to raw message IDs via `source_ids`.** Can be rebuilt from raw if extraction logic changes.
+29. **No tags.** FTS5 search + scoring + `category` column handle discovery. Tags are manual curation burden nobody maintains at this scale.
+30. **Episodes grouped by topic, not time.** The LLM decides thematic grouping when creating episodes. "Kitchen conflict during in-law visit" is one episode regardless of whether it spanned 1 day or 3 weeks. Time-based bucketing ("Nov week 3") is meaningless for personal facts.
+31. **No separate topic/index table.** FTS5 IS the index. A topic table needs its own maintenance, dedup, staleness — the 27-table path again.
+32. **Summary cadence:**
+    - **Per-message:** LLM extracts facts inline (real-time, part of the reply call).
+    - **Daily:** Nothing. Too frequent, too little change.
+    - **Weekly:** The only maintenance job that matters. Compresses and organizes the knowledge base.
+    - **Monthly:** Nothing separate. 4 weekly episodes naturally cover the month.
+33. **Weekly summary flow:**
+    1. Gather working facts with state `resolved` or `outdated`
+    2. LLM groups by theme/category (not us — the LLM decides what goes together)
+    3. For each group of 3+ facts → LLM summarizes into one episode
+    4. Episode stored: `kind: episode`, `source_ids: [raw msg IDs from all source facts]`
+    5. Source facts → `archived_at` set
+    6. Uses bigger model (Flash, not Lite) for better reasoning
+    - One LLM call per topic group. Episodes persist with scores, get cited like any fact. Old episodes with high citations stay prominent, uncited episodes fade via normal decay.
+34. **Cascading summaries (1d, 3d, 7d... rolling):** PARKED. Currently handled by scoring. If scoring isn't enough, this is the upgrade path. Architecture supports it. **NOTE: Keep pluggable.**
+35. **Episodes point to raw message IDs via `source_ids`.** Can be rebuilt from raw if extraction logic changes.
 
 ## Extensibility
 
