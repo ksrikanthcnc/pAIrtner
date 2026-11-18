@@ -10,7 +10,7 @@ from typing import Any
 import aiosqlite
 
 from pairtner.storage.helpers import (
-    _now_iso, _to_iso, _row_to_dict, _fetch_one, _fetch_all, _execute,
+    _now_iso, _to_iso, _fetch_one, _fetch_all, _execute,
 )
 
 
