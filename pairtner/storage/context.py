@@ -58,6 +58,15 @@ async def get_user_context_data(
     )
     private_facts = ctx.lines
 
+    # Proactive injections (dates, stale conflicts) — prepended before scored facts
+    try:
+        from pairtner.core.proactive import get_proactive_injections
+        injections = await get_proactive_injections(db_path, user_id)
+        if injections:
+            private_facts = injections + private_facts
+    except Exception:
+        pass  # Proactive injection is best-effort
+
     # Shared facts from partner
     partner_id = user.get("partner_id")
     partner_name = None
