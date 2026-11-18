@@ -80,6 +80,11 @@ async def delivery_loop(
 
                     message = t(lang, "relay_sent_to_partner", message=text)
                     await send_func(receiver_id, message)
+                    # Log the relay to the receiver's message history so the
+                    # LLM knows about it in future conversations.
+                    await db_mod.log_message(
+                        db_path, receiver_id, "assistant", message,
+                    )
                     await db_mod.mark_as_sent(db_path, row["id"])
 
                     # Track relay in open conflicts (FEAT-002)
@@ -216,9 +221,11 @@ async def _deliver_batch(
     sender_id = batch["sender_id"]
 
     rlang = (receiver or {}).get("lang") or "en"
-    await send_func(
-        receiver_id, t(rlang, "relay_sent_to_partner", message=merged)
-    )
+    relay_msg = t(rlang, "relay_sent_to_partner", message=merged)
+    await send_func(receiver_id, relay_msg)
+    # Log the relay to the receiver's message history so the
+    # LLM knows about it in future conversations.
+    await db_mod.log_message(db_path, receiver_id, "assistant", relay_msg)
     await db_mod.update_batch_status(db_path, batch["id"], "sent")
 
     slang = (sender or {}).get("lang") or "en"

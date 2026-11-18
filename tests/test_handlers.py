@@ -666,6 +666,42 @@ async def test_delivery_resumes_after_unpause(test_db, paired_users):
     assert pending["status"] == "sent"
 
 
+@pytest.mark.asyncio
+async def test_delivery_logs_message_to_receiver_history(test_db, paired_users):
+    """Delivered relay messages should be logged to the receiver's message history
+    so the LLM can reference them in future conversations."""
+    import asyncio
+
+    from pairtner.approval import delivery_loop
+    from pairtner.db import (
+        create_pending, update_pending_status, get_recent_messages,
+    )
+
+    a_id, b_id = paired_users
+
+    pid = await create_pending(test_db, a_id, b_id, "I miss you")
+    await update_pending_status(test_db, pid, "approved", "2020-01-01T00:00:00")
+
+    sent: list[tuple[int, str]] = []
+
+    async def mock_send(uid: int, text: str) -> None:
+        sent.append((uid, text))
+
+    task = asyncio.create_task(delivery_loop(test_db, mock_send, poll_interval=0.01))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    assert len(sent) >= 1
+    # The relay should be in the RECEIVER's (b_id) message history
+    messages = await get_recent_messages(test_db, b_id, limit=5)
+    relay_msgs = [m for m in messages if "partner" in m["content"].lower()]
+    assert len(relay_msgs) >= 1, "Relay not logged to receiver's message history"
+
+
 # ---------------------------------------------------------------------------
 # FEAT-002: pause notice on approval
 # ---------------------------------------------------------------------------

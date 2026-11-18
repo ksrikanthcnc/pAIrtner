@@ -264,12 +264,53 @@
   function renderMessages(messages) {
     var log = $("log");
     log.textContent = "";
+    _lastDateStr = "";  // Reset date divider tracking
     messages.forEach(function (m) { renderOneMessage(m); });
     scrollDown();
   }
 
+  var _lastDateStr = "";
+
+  function classifyMessage(text) {
+    // Classify bot messages into subtypes for visual styling
+    if (!text) { return ""; }
+    if (/^✅\s*Noted!|^✅\s*Saved\s+\d+|^✅\s*గమనించాను/i.test(text)) { return "note"; }
+    if (/^💡\s*Tip:|^💡\s*చిట్కా:/i.test(text)) { return "tip"; }
+    return "";
+  }
+
+  function maybeAddDateDivider(isoDate) {
+    if (!isoDate) { return; }
+    try {
+      var d = new Date(isoDate);
+      var dateStr = d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+      if (dateStr !== _lastDateStr) {
+        _lastDateStr = dateStr;
+        var divider = document.createElement("div");
+        divider.className = "date-divider";
+        var today = new Date();
+        var yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        if (d.toDateString() === today.toDateString()) {
+          divider.textContent = "Today";
+        } else if (d.toDateString() === yesterday.toDateString()) {
+          divider.textContent = "Yesterday";
+        } else {
+          divider.textContent = dateStr;
+        }
+        $("log").appendChild(divider);
+      }
+    } catch (e) { /* ignore */ }
+  }
+
   function renderOneMessage(m) {
+    maybeAddDateDivider(m.created_at);
     var cls = m.role === "user" ? "me" : "bot";
+    // Sub-classify bot messages
+    if (m.role !== "user") {
+      var subtype = classifyMessage(m.content);
+      if (subtype) { cls += " " + subtype; }
+    }
     var div = document.createElement("div");
     div.className = "msg " + cls;
     if (m.id) { div.dataset.msgId = m.id; }
@@ -396,6 +437,7 @@
       var text = input.value.trim();
       if (!text) { return; }
       input.value = "";
+      input.style.height = "auto";
       addBubble("me", text);
       var typing = addBubble("bot typing", "●●●");
       api("POST", "/api/v1/message", { text: text }).then(function (data) {
@@ -413,6 +455,17 @@
           sendFailed(err);
         }
       });
+    });
+    // Shift+Enter = newline, Enter = send. Auto-resize textarea.
+    $("text").addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter" && !ev.shiftKey) {
+        ev.preventDefault();
+        $("composer").dispatchEvent(new Event("submit"));
+      }
+    });
+    $("text").addEventListener("input", function () {
+      this.style.height = "auto";
+      this.style.height = Math.min(this.scrollHeight, 120) + "px";
     });
     $("menu-btn").addEventListener("click", function () { $("menu").hidden = !$("menu").hidden; });
     $("signout").addEventListener("click", signOut);
