@@ -1,0 +1,99 @@
+# LLM Response Contract — defines what JSON the LLM must return per task.
+# The engine validates responses against this schema.
+# This file is also injected into the LLM system prompt.
+
+tasks:
+  chat:
+    description: "Regular conversation. Respond to the user AND manage their knowledge."
+    schema:
+      reply:
+        type: string
+        required: true
+        description: "Your conversational response to the user."
+
+      memory_ops:
+        type: array
+        required: true
+        default: []
+        max_items: 5
+        description: "Operations on the user's knowledge store. Empty array if nothing to learn."
+        items:
+          oneOf:
+            - op: add
+              fields:
+                text: { type: string, required: true, max_length: 200, description: "One fact, one sentence." }
+                kind: { type: string, enum: [working, core], default: working }
+                intensity: { type: number, min: 0.0, max: 1.0, default: 0.5, description: "How strongly the user feels about this." }
+            - op: revise
+              fields:
+                id: { type: integer, required: true, description: "ID from existing knowledge shown in context." }
+                text: { type: string, required: true, max_length: 200 }
+            - op: state
+              fields:
+                id: { type: integer, required: true }
+                state: { type: string, enum: [active, improving, resolved, outdated] }
+                reason: { type: string }
+            - op: promote
+              fields:
+                id: { type: integer, required: true, description: "Propose working fact for core promotion. User confirms." }
+
+      detected_mood:
+        type: string
+        required: false
+        enum: [stressed, happy, angry, reflective, neutral, sad, anxious, hopeful]
+        description: "User's apparent emotional state. null if ambiguous."
+
+      relay_draft:
+        type: string
+        required: false
+        description: "If the user said something their partner should hear, a gentle rewrite. null if not applicable."
+
+  rewrite:
+    description: "User wants to send something to partner (#send, /tell). Relay draft is required."
+    schema:
+      reply: { type: string, required: true }
+      relay_draft: { type: string, required: true }
+      memory_ops: { type: array, default: [] }
+
+  extract:
+    description: "Background knowledge extraction. Not user-facing. Used by the knowledge worker."
+    schema:
+      new_facts:
+        type: array
+        items:
+          text: { type: string, max_length: 200 }
+          kind: { type: string, enum: [working, core], default: working }
+          intensity: { type: number, min: 0.0, max: 1.0, default: 0.5 }
+      updates:
+        type: array
+        items:
+          id: { type: integer }
+          text: { type: string, max_length: 200 }
+      state_changes:
+        type: array
+        items:
+          id: { type: integer }
+          state: { type: string, enum: [active, improving, resolved, outdated] }
+          reason: { type: string }
+      duplicates:
+        type: array
+        items:
+          keep_id: { type: integer }
+          drop_id: { type: integer }
+          reason: { type: string }
+      contradictions:
+        type: array
+        items:
+          id_a: { type: integer }
+          id_b: { type: integer }
+          resolution: { type: string, enum: [keep_newer, keep_older, merge, ask_user] }
+          merged_text: { type: string, description: "If resolution=merge, the combined fact." }
+
+  consolidate:
+    description: "Weekly summary. Groups resolved facts into episodes."
+    schema:
+      episodes:
+        type: array
+        items:
+          text: { type: string, max_length: 500, description: "Episode summary, one paragraph." }
+          source_ids: { type: array, items: { type: integer }, description: "Knowledge IDs summarized." }
