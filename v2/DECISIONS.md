@@ -201,6 +201,26 @@ This is the authoritative reference. The other v2/*.md files should be updated t
 44. **Use `duo_keep` DB for real conversation data.** Read-only reference for extraction prompt testing. Don't overwrite raw messages.
 45. **Next step: extraction prompt → test on Gemini Flash Lite → establish accuracy baseline.**
 
+## Proactive Context Injection (decision 28, broadened)
+
+46. **`context_inject` is a general mechanism, not just dates.** Any fact the LLM should see regardless of its score. Use cases found so far:
+    - Approaching dates (birthdays, deadlines, anniversaries)
+    - Unresolved conflicts older than N days
+    - Goals with approaching deadlines
+    - Partner inactivity (hasn't messaged in N days — context, not notification)
+    - Build the injection mechanism once, add scan rules incrementally as we find more use cases.
+
+47. **Scheduled proactive messages are intelligent, not blind cron.** Before firing a check-in or follow-up, the engine checks recent messages. If the topic was already discussed organically, skip. Implementation: the scheduled job includes recent messages in its LLM call; the LLM decides whether to send or skip. Not a dumb timer.
+
+48. **LLM-set timers (future, parked for MVP).**
+    - LLM proposes: `"timer": {"check_in": "3 days", "topic": "how did the conversation with mom go?"}`
+    - Engine stores in a `timers` table, fires as a proactive message when due.
+    - **Cancellation/reset:** If the user addresses the topic before the timer fires (e.g. LLM set a "check back about interview" timer but user says "interview went great" the next day), the timer should be cancelled. Two approaches:
+      - **(a) Include active timers in context:** Add pending timers to the LLM prompt. The LLM can then return `"cancel_timer": <id>` when the topic is resolved naturally. Requires increased context budget for timers.
+      - **(b) Timer scan at fire time:** When a timer is about to fire, the engine checks if recent messages already cover the topic (keyword/FTS match). If yes, auto-cancel without firing.
+    - Likely: both. (a) for explicit cancellation, (b) as a safety net.
+    - **NOTE:** This is a v2.1 feature. For MVP, engine-driven schedules only. But the `timers` table and the cancellation design should be noted so we don't paint ourselves into a corner.
+
 ## Build Order
 
 1. Write extraction contract + prompt (30 min)
