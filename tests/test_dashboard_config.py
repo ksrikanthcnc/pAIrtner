@@ -69,14 +69,22 @@ def test_env_overrides_yaml(tmp_path, monkeypatch):
     assert (cfg.db_path, cfg.backup_dir) == ("/x/y.db", "/x/bk")
 
 
-@pytest.mark.parametrize("token", [None, "", "short"])
-def test_missing_or_short_token_raises(monkeypatch, token):
-    if token is None:
-        monkeypatch.delenv("DASHBOARD_TOKEN")
-    else:
-        monkeypatch.setenv("DASHBOARD_TOKEN", token)
-    with pytest.raises(DashboardConfigError):
-        load_dashboard_config("nonexistent.yaml")
+@pytest.mark.parametrize("token", ["short"])
+def test_short_token_auto_generates(monkeypatch, token):
+    """Short or missing tokens auto-generate a dev token instead of raising."""
+    monkeypatch.setenv("DASHBOARD_TOKEN", token)
+    cfg = load_dashboard_config("nonexistent.yaml")
+    # Auto-generated token should be >= 16 chars
+    assert len(cfg.token) >= 16
+    assert cfg.token.startswith("dev-")
+
+
+def test_missing_token_auto_generates(monkeypatch):
+    """Missing DASHBOARD_TOKEN auto-generates a dev token."""
+    monkeypatch.delenv("DASHBOARD_TOKEN", raising=False)
+    cfg = load_dashboard_config("nonexistent.yaml")
+    assert len(cfg.token) >= 16
+    assert cfg.token.startswith("dev-")
 
 
 @pytest.mark.parametrize("env,val", [

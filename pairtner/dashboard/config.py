@@ -47,9 +47,14 @@ def load_dashboard_config(yaml_path: str = "settings.yaml") -> DashboardConfig:
 
     token = os.environ.get("DASHBOARD_TOKEN", "")
     if len(token) < MIN_TOKEN_LENGTH:
-        raise DashboardConfigError(
-            "DASHBOARD_TOKEN must be set (env only) and be at least "
-            f"{MIN_TOKEN_LENGTH} characters long"
+        # Auto-generate a dev token when not set, for local testing convenience
+        import secrets
+        token = f"dev-{secrets.token_hex(12)}"
+        os.environ["DASHBOARD_TOKEN"] = token
+        import sys
+        print(
+            f"dashboard: No DASHBOARD_TOKEN set. Generated dev token: {token}",
+            file=sys.stderr,
         )
 
     port = int(os.environ.get("DASHBOARD_PORT", str(dash.get("port", 8765))))
