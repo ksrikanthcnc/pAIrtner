@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pAIrtner — Try It</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
+<style>
+:root {
+  --bg: #0f0f0f; --surface: #1a1a2e; --card: #16213e; --accent: #e94560;
+  --text: #eee; --dim: #888; --green: #4ecca3; --border: #2a2a4a;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+header { background: var(--surface); padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+header h1 { font-size: 1.2em; font-weight: 600; }
+header .badge { font-size: 0.7em; background: var(--accent); padding: 2px 8px; border-radius: 10px; }
+header .model { margin-left: auto; font-size: 0.8em; color: var(--dim); }
+
+/* Setup screen */
+#setup { max-width: 480px; margin: 60px auto; padding: 20px; }
+#setup h2 { margin-bottom: 8px; }
+#setup p { color: var(--dim); font-size: 0.9em; margin-bottom: 16px; line-height: 1.5; }
+#setup input { width: 100%; padding: 10px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 1em; margin-bottom: 12px; }
+#setup button { width: 100%; padding: 12px; background: var(--accent); border: none; border-radius: 8px; color: #fff; font-size: 1em; cursor: pointer; font-weight: 600; }
+#setup button:hover { opacity: 0.9; }
+#setup .help { font-size: 0.8em; color: var(--dim); margin-top: 8px; }
+#setup .help a { color: var(--green); }
+#setup .existing { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+#setup .existing p { font-size: 0.85em; }
+#setup .stats { display: flex; gap: 16px; margin-top: 8px; }
+#setup .stat { background: var(--card); padding: 8px 14px; border-radius: 8px; font-size: 0.85em; }
+#setup .stat b { color: var(--green); }
+
+/* Chat screen */
+#chat { flex: 1; display: none; flex-direction: column; max-width: 640px; width: 100%; margin: 0 auto; }
+#log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 85%; padding: 10px 14px; border-radius: 16px; font-size: 0.95em; line-height: 1.5; word-wrap: break-word; animation: fadeIn 0.2s; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+.msg.user { align-self: flex-end; background: var(--accent); border-bottom-right-radius: 4px; }
+.msg.bot { align-self: flex-start; background: var(--card); border-bottom-left-radius: 4px; }
+.msg.note { align-self: flex-start; background: #1a3a2a; border-left: 3px solid var(--green); font-size: 0.85em; color: var(--green); }
+.msg .time { font-size: 0.7em; color: var(--dim); margin-top: 4px; }
+.typing { align-self: flex-start; padding: 10px 18px; background: var(--card); border-radius: 16px; }
+.typing span { display: inline-block; width: 8px; height: 8px; background: var(--dim); border-radius: 50%; animation: pulse 1.4s infinite; }
+.typing span:nth-child(2) { animation-delay: 0.2s; }
+.typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes pulse { 0%,80%,100% { opacity: 0.3; } 40% { opacity: 1; } }
+
+/* Date divider */
+.date-div { text-align: center; color: var(--dim); font-size: 0.75em; padding: 8px 0; }
+
+/* Fact badge */
+.fact-badge { display: inline-block; background: #1a3a2a; color: var(--green); font-size: 0.75em; padding: 2px 8px; border-radius: 10px; margin-top: 4px; }
+
+/* Input bar */
+#bar { padding: 12px 16px; background: var(--surface); border-top: 1px solid var(--border); display: flex; gap: 8px; }
+#bar textarea { flex: 1; padding: 10px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 20px; color: var(--text); font-size: 0.95em; resize: none; min-height: 42px; max-height: 120px; font-family: var(--font); }
+#bar button { padding: 10px 20px; background: var(--accent); border: none; border-radius: 20px; color: #fff; cursor: pointer; font-weight: 600; }
+
+/* Memory panel */
+#memory-panel { display: none; max-width: 640px; width: 100%; margin: 0 auto; padding: 16px; }
+#memory-panel h3 { margin-bottom: 8px; }
+.memory-item { background: var(--card); padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; font-size: 0.85em; display: flex; justify-content: space-between; align-items: center; }
+.memory-item .kind { font-size: 0.7em; color: var(--green); text-transform: uppercase; }
+.memory-item button { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 0.8em; }
+
+/* Footer nav */
+#nav { background: var(--surface); border-top: 1px solid var(--border); padding: 8px 16px; display: none; justify-content: center; gap: 24px; max-width: 640px; width: 100%; margin: 0 auto; }
+#nav button { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 0.85em; padding: 4px 8px; }
+#nav button.active { color: var(--green); border-bottom: 2px solid var(--green); }
+
+/* Reset button */
+#reset-btn { position: fixed; bottom: 16px; right: 16px; background: var(--card); border: 1px solid var(--border); color: var(--dim); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.75em; display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>💕 pAIrtner</h1>
+  <span class="badge">demo</span>
+  <span class="model" id="model-label"></span>
+</header>
+
+<!-- Setup Screen -->
+<div id="setup">
+  <h2>Try pAIrtner</h2>
+  <p>Experience how pAIrtner learns about you and your relationship — right in your browser.
+     Your API key stays in your browser (localStorage). Nothing is sent to any server except Google's Gemini API.</p>
+
+  <input id="api-key" type="password" placeholder="Paste your Gemini API key" autocomplete="off">
+  <input id="user-name" type="text" placeholder="Your name (e.g. Alice)" value="">
+  <button onclick="startDemo()">Start chatting</button>
+
+  <p class="help">
+    Don't have a key? <a href="https://aistudio.google.com/apikey" target="_blank">Get one free from Google AI Studio</a> →
+    Create → Copy. The free tier gives ~1500 requests/day.
+  </p>
+
+  <div class="existing" id="existing" style="display:none">
+    <p>📂 Found your previous session:</p>
+    <div class="stats">
+      <div class="stat">💬 <b id="msg-count">0</b> messages</div>
+      <div class="stat">💾 <b id="fact-count">0</b> memories</div>
+    </div>
+    <button onclick="startDemo()" style="margin-top:12px">Continue session</button>
+    <button onclick="resetAll()" style="margin-top:8px; background:transparent; border:1px solid var(--border); color:var(--dim)">Start fresh</button>
+  </div>
+</div>
+
+<!-- Chat Screen -->
+<div id="chat">
+  <div id="log"></div>
+  <div id="bar">
+    <textarea id="input" placeholder="Say something..." rows="1"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"
+      oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"></textarea>
+    <button onclick="send()">Send</button>
+  </div>
+</div>
+
+<!-- Memory Panel -->
+<div id="memory-panel">
+  <h3>🧠 What pAIrtner knows about you</h3>
+  <div id="memory-list"></div>
+</div>
+
+<!-- Nav -->
+<div id="nav">
+  <button class="active" onclick="showTab('chat')">💬 Chat</button>
+  <button onclick="showTab('memory')">🧠 Memory</button>
+</div>
+
+<!-- Reset -->
+<button id="reset-btn" onclick="resetAll()">🗑 Reset demo</button>
+
+<script>
+"use strict";
+
+// ── Storage layer (localStorage-backed) ──────────────────────────────────
+var KEYS = {
+  apiKey: "pairtner_demo_key",
+  name: "pairtner_demo_name",
+  messages: "pairtner_demo_messages",
+  facts: "pairtner_demo_facts",
+  profile: "pairtner_demo_profile",
+};
+
+function store(key, val) { if (val === undefined) { var v = localStorage.getItem(key); try { return JSON.parse(v); } catch(e) { return v; } } localStorage.setItem(key, JSON.stringify(val)); }
+
+// ── State ────────────────────────────────────────────────────────────────
+var messages = [];  // {role, content, ts}
+var facts = [];     // {id, text, kind, created}
+var profile = {};   // {name, relationship_type, duration_years, ...}
+var apiKey = "";
+var nextFactId = 1;
+
+// ── Gemini API ───────────────────────────────────────────────────────────
+var API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+var MODEL = "gemini-2.0-flash";
+
+async function callGemini(systemPrompt, userContent) {
+  var url = API_BASE + "/" + MODEL + ":generateContent?key=" + apiKey;
+  var body = {
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: "user", parts: [{ text: userContent }] }],
+    generationConfig: { temperature: 0.8, maxOutputTokens: 1024, responseMimeType: "application/json" },
+  };
+  var resp = await fetch(url, { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) });
+  if (!resp.ok) {
+    var err = await resp.text();
+    throw new Error("Gemini API error " + resp.status + ": " + err.substring(0, 200));
+  }
+  var data = await resp.json();
+  var text = ((data.candidates || [])[0] || {}).content?.parts?.[0]?.text || "";
+  return text;
+}
+
+// ── System prompt ────────────────────────────────────────────────────────
+function buildSystemPrompt() {
+  var p = [
+    "You are pAIrtner, a warm and emotionally intelligent AI relationship companion.",
+    "You help individuals reflect on their relationship, communicate better, and grow closer to their partner.",
+    "You speak casually, like a wise friend — not a therapist. Short, warm responses. Use emoji occasionally.",
+    "",
+    "IMPORTANT: You MUST respond with a JSON object with this exact shape:",
+    '{"reply": "your message to the user", "memory_ops": [{"op": "save_fact", "text": "fact text", "kind": "working"}], "detected_mood": null}',
+    "",
+    "memory_ops rules:",
+    '- Use op "save_fact" to remember important things the user shares (feelings, events, preferences, patterns).',
+    '- kind can be "core" (fundamental relationship info) or "working" (day-to-day observations).',
+    "- Only save genuinely new information. Don't re-save what's already in the facts list.",
+    "- Save 0-2 facts per message. Most messages need 0.",
+    "",
+  ];
+
+  if (profile.name) p.push("The user's name is " + profile.name + ".");
+  if (profile.relationship_type) p.push("Relationship: " + profile.relationship_type + (profile.duration_years ? " for " + profile.duration_years + " years" : "") + ".");
+
+  if (facts.length > 0) {
+    p.push("", "## What you know about " + (profile.name || "the user") + ":");
+    facts.forEach(function(f) { p.push("- [" + f.kind + "] " + f.text); });
+  }
+
+  return p.join("\n");
+}
+
+function buildUserContent(text) {
+  var history = messages.slice(-10).map(function(m) {
+    return (m.role === "user" ? (profile.name || "User") : "pAIrtner") + ": " + m.content;
+  }).join("\n");
+  return (history ? "## Recent conversation:\n" + history + "\n\n" : "") + "## Current message:\n" + text;
+}
+
+// ── UI helpers ───────────────────────────────────────────────────────────
+function $(id) { return document.getElementById(id); }
+function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; }
+
+function addBubble(cls, text, ts) {
+  var log = $("log");
+  var d = el("div", "msg " + cls);
+  d.innerHTML = text.replace(/\n/g, "<br>");
+  if (ts) { var t = el("div", "time", new Date(ts).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})); d.appendChild(t); }
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+function addNote(text) {
+  addBubble("note", "💾 " + text);
+}
+
+function showTyping() {
+  var d = el("div", "typing"); d.id = "typing-indicator";
+  d.innerHTML = "<span></span><span></span><span></span>";
+  $("log").appendChild(d);
+  $("log").scrollTop = $("log").scrollHeight;
+}
+function hideTyping() { var t = $("typing-indicator"); if (t) t.remove(); }
+
+function renderMemoryPanel() {
+  var list = $("memory-list");
+  list.innerHTML = "";
+  if (!facts.length) { list.innerHTML = '<p style="color:var(--dim);font-size:0.9em">No memories yet. Start chatting!</p>'; return; }
+  facts.forEach(function(f) {
+    var d = el("div", "memory-item");
+    d.innerHTML = '<div><span class="kind">' + f.kind + '</span> ' + f.text + '</div>' +
+      '<button onclick="deleteFact(' + f.id + ')">✕</button>';
+    list.appendChild(d);
+  });
+}
+
+function showTab(tab) {
+  $("chat").style.display = tab === "chat" ? "flex" : "none";
+  $("memory-panel").style.display = tab === "memory" ? "block" : "none";
+  document.querySelectorAll("#nav button").forEach(function(b) { b.classList.remove("active"); });
+  document.querySelectorAll("#nav button")[tab === "chat" ? 0 : 1].classList.add("active");
+  if (tab === "memory") renderMemoryPanel();
+}
+
+// ── Core logic ───────────────────────────────────────────────────────────
+function saveFact(text, kind) {
+  var f = { id: nextFactId++, text: text, kind: kind || "working", created: new Date().toISOString() };
+  facts.push(f);
+  store(KEYS.facts, facts);
+  addNote("Remembered: " + text);
+}
+
+function deleteFact(id) {
+  facts = facts.filter(function(f) { return f.id !== id; });
+  store(KEYS.facts, facts);
+  renderMemoryPanel();
+}
+
+async function send() {
+  var input = $("input");
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  input.style.height = "auto";
+
+  var ts = new Date().toISOString();
+  messages.push({ role: "user", content: text, ts: ts });
+  addBubble("user", text, ts);
+  store(KEYS.messages, messages);
+
+  showTyping();
+  try {
+    var raw = await callGemini(buildSystemPrompt(), buildUserContent(text));
+    hideTyping();
+
+    var data;
+    try { data = JSON.parse(raw); } catch(e) { data = { reply: raw }; }
+
+    var reply = data.reply || raw;
+    var replyTs = new Date().toISOString();
+    messages.push({ role: "assistant", content: reply, ts: replyTs });
+    addBubble("bot", reply, replyTs);
+    store(KEYS.messages, messages);
+
+    // Process memory ops
+    var ops = data.memory_ops || [];
+    ops.forEach(function(op) {
+      if (op.op === "save_fact" && op.text) {
+        saveFact(op.text, op.kind || "working");
+      }
+    });
+
+  } catch(err) {
+    hideTyping();
+    addBubble("bot", "❌ " + err.message);
+  }
+}
+
+// ── Initialization ───────────────────────────────────────────────────────
+function startDemo() {
+  apiKey = $("api-key").value.trim() || store(KEYS.apiKey);
+  var name = $("user-name").value.trim() || store(KEYS.name) || "";
+  if (!apiKey) { alert("Please enter your Gemini API key"); return; }
+
+  store(KEYS.apiKey, apiKey);
+  if (name) { store(KEYS.name, name); profile.name = name; }
+
+  $("setup").style.display = "none";
+  $("chat").style.display = "flex";
+  $("nav").style.display = "flex";
+  $("reset-btn").style.display = "block";
+  $("model-label").textContent = MODEL;
+
+  // Render existing messages
+  messages.forEach(function(m) {
+    addBubble(m.role === "user" ? "user" : "bot", m.content, m.ts);
+  });
+
+  // If first time, show welcome
+  if (!messages.length) {
+    var welcome = "Hi" + (name ? " " + name : "") + "! 💕 I'm pAIrtner. " +
+      "Tell me about yourself and your relationship — I'll remember what matters and help you communicate better. " +
+      "This is a demo running in your browser with Gemini. Your data stays in localStorage.";
+    var ts = new Date().toISOString();
+    messages.push({ role: "assistant", content: welcome, ts: ts });
+    addBubble("bot", welcome, ts);
+    store(KEYS.messages, messages);
+  }
+
+  $("input").focus();
+}
+
+function resetAll() {
+  if (!confirm("This will erase all messages and memories. Continue?")) return;
+  Object.values(KEYS).forEach(function(k) { localStorage.removeItem(k); });
+  location.reload();
+}
+
+// On load: restore state
+(function init() {
+  messages = store(KEYS.messages) || [];
+  facts = store(KEYS.facts) || [];
+  profile = store(KEYS.profile) || {};
+  nextFactId = facts.length ? Math.max.apply(null, facts.map(function(f){return f.id})) + 1 : 1;
+
+  var savedKey = store(KEYS.apiKey);
+  var savedName = store(KEYS.name);
+  if (savedName) { $("user-name").value = savedName; profile.name = savedName; }
+
+  // Show existing session info
+  if (messages.length > 0 || facts.length > 0) {
+    $("existing").style.display = "block";
+    $("msg-count").textContent = messages.length;
+    $("fact-count").textContent = facts.length;
+    if (savedKey) { $("api-key").value = ""; $("api-key").placeholder = "Key saved • paste new to change"; }
+  }
+})();
+</script>
+</body>
+</html>
