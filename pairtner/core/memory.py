@@ -43,6 +43,7 @@ class MemoryOp:
     why: str = ""               # reason for status change
     category: str | None = None
     fact_type: str = "stable"
+    intensity: float = 0.5      # v2: how strongly user feels (0.0-1.0)
 
 
 @dataclass
@@ -139,6 +140,17 @@ def is_explicit_core_request(
 # ---------------------------------------------------------------------------
 
 VALID_OPS = {"add", "revise", "status", "propose_core", "pin_core"}
+
+
+def _parse_intensity(raw: Any) -> float:
+    """Parse intensity value, clamping to 0.0-1.0 range."""
+    if raw is None:
+        return 0.5
+    try:
+        val = float(raw)
+        return max(0.0, min(1.0, val))
+    except (ValueError, TypeError):
+        return 0.5
 VALID_KINDS = {"working", "core"}
 VALID_STATUSES = {"active", "improving", "resolved", "outdated"}
 VALID_CATEGORIES = {
@@ -213,6 +225,7 @@ def parse_memory_ops(
             valid.append(MemoryOp(
                 op="add", kind=kind, text=text,
                 category=category, fact_type=fact_type,
+                intensity=_parse_intensity(raw.get("intensity")),
             ))
 
         # --- revise ---
@@ -339,6 +352,7 @@ async def apply_memory_ops(
                     db_path, user_id, op.text, "private",
                     category=op.category, fact_type=op.fact_type,
                     source_message_id=message_id,
+                    intensity=op.intensity,
                 )
                 await db_mod.append_memory_version(
                     db_path, fact_id, op.text, "active", "add",

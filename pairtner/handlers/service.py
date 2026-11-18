@@ -133,9 +133,11 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         # Tier 3: global key (None → caller uses config.gemini_api_key)
         return None
 
-    async def _build_ctx(self, user_id: int) -> UserContext:
+    async def _build_ctx(self, user_id: int, current_message: str | None = None) -> UserContext:
         """Build the prompt context for a user."""
-        data = await db_mod.get_user_context_data(self.db_path, user_id)
+        data = await db_mod.get_user_context_data(
+            self.db_path, user_id, current_message=current_message,
+        )
         return UserContext(**data)
 
     def _approval_buttons(

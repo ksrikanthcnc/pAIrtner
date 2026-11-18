@@ -110,7 +110,7 @@ class TagsMixin:
     ) -> list[BotResponse]:
         """Process a ``#keep`` message — extract and save facts only."""
         lang = await self._get_lang(user_id)
-        ctx = await self._build_ctx(user_id)
+        ctx = await self._build_ctx(user_id, current_message=text)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
         smart_ctx = await build_smart_context(
             self.db_path, user_id, text, self.config,
@@ -148,7 +148,7 @@ class TagsMixin:
         if not user or not user.get("partner_id"):
             return [BotResponse(t(lang, "not_paired"))]
 
-        ctx = await self._build_ctx(user_id)
+        ctx = await self._build_ctx(user_id, current_message=text)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
         partner_summary = await self._get_partner_summary(user_id)
         goals_text = await self._get_goals_text(user_id)
@@ -269,7 +269,7 @@ class TagsMixin:
     ) -> list[BotResponse]:
         """Process a ``#deep`` message — chat using the heavy model."""
         lang = await self._get_lang(user_id)
-        ctx = await self._build_ctx(user_id)
+        ctx = await self._build_ctx(user_id, current_message=text)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
         partner_summary = await self._get_partner_summary(user_id)
         goals_text = await self._get_goals_text(user_id)
@@ -313,7 +313,7 @@ class TagsMixin:
     ) -> list[BotResponse]:
         """Process a ``#blunt`` / ``#honest`` message — direct, unfiltered feedback."""
         lang = await self._get_lang(user_id)
-        ctx = await self._build_ctx(user_id)
+        ctx = await self._build_ctx(user_id, current_message=text)
         voice_text, damp_instr = await self._get_enriched_style(user_id, has_blunt_tag=True)
         smart_ctx = await build_smart_context(
             self.db_path, user_id, text, self.config,
@@ -347,7 +347,7 @@ class TagsMixin:
     ) -> list[BotResponse]:
         """Process a plain message (no tag) — chat, then optionally offer relay."""
         lang = await self._get_lang(user_id)
-        ctx = await self._build_ctx(user_id)
+        ctx = await self._build_ctx(user_id, current_message=text)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
         partner_summary = await self._get_partner_summary(user_id)
         goals_text = await self._get_goals_text(user_id)

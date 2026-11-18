@@ -69,7 +69,7 @@ class CommandsMixin:
         tags, clean = parse_tags(text)
         skip_cooldown = "#now" in tags
 
-        ctx = await self._build_ctx(user_id)
+        ctx = await self._build_ctx(user_id, current_message=clean)
         mode = await db_mod.get_user_preference(self.db_path, user_id, "mode", default="mediator") or "mediator"
         system, content = build_tell_prompt(ctx, clean, mode=mode)
 
