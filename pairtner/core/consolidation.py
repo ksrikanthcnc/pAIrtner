@@ -1,7 +1,8 @@
-"""Memory consolidation — compress old memories into episode summaries.
+"""Memory consolidation v2 — compress old memories into topic-based episodes.
 
-Runs periodically (weekly or on-demand). Reads the pack's consolidation config
-and produces episode summaries from resolved/outdated working memories.
+Runs weekly (or on-demand). Gathers resolved/outdated working facts,
+sends them to the LLM for thematic grouping and summarization, and
+creates episode entries. Source facts are archived after episode creation.
 """
 
 from __future__ import annotations
@@ -15,17 +16,38 @@ import aiosqlite
 
 from pairtner import db as db_mod
 from pairtner.llm import LLMClient
-from pairtner.core.prompts import build_consolidation_prompt
+from pairtner.storage.helpers import _now_iso
 
 log = logging.getLogger(__name__)
 
-# Default config (overridden by pack.yaml consolidation section)
 DEFAULT_CONFIG = {
     "resolved_age_days": 30,
     "outdated_age_days": 14,
     "max_memories_per_episode": 10,
     "min_memories_for_episode": 3,
 }
+
+CONSOLIDATION_SYSTEM = """You are a knowledge consolidation engine. Given a list of resolved/outdated facts
+about a person, group them by theme and summarize each group into one episode.
+
+Respond with ONLY valid JSON:
+{
+  "episodes": [
+    {
+      "text": "One paragraph summarizing this group of related facts.",
+      "source_ids": [1, 2, 5]
+    }
+  ]
+}
+
+Rules:
+- Group by theme (household, work, emotional, relationship dynamics), NOT by time.
+- Each episode should be a self-contained paragraph, 1-3 sentences.
+- Include ALL source fact IDs in source_ids.
+- Facts that don't fit any group of 3+ can be left out (they stay as-is).
+- Be concise. Capture the key events and outcomes.
+- Write in third person ("They argued about..." not "You argued about...").
+"""
 
 
 async def run_consolidation(
@@ -35,14 +57,14 @@ async def run_consolidation(
     config: dict[str, Any] | None = None,
     api_key_override: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Consolidate old memories into episode summaries.
+    """Consolidate resolved/outdated working facts into episodes.
 
     Returns a list of created episode dicts.
     """
     cfg = {**DEFAULT_CONFIG, **(config or {})}
     episodes_created: list[dict[str, Any]] = []
 
-    # Find candidates: resolved memories older than threshold
+    # Find candidates: resolved/outdated working facts
     candidates = await _find_consolidation_candidates(db_path, user_id, cfg)
     if len(candidates) < cfg["min_memories_for_episode"]:
         log.info(
@@ -51,32 +73,64 @@ async def run_consolidation(
         )
         return episodes_created
 
-    # Group candidates by time period (month)
-    groups = _group_by_period(candidates)
+    # Build the user message with all candidate facts
+    fact_lines = []
+    for f in candidates:
+        fact_lines.append(f"[{f['id']}] ({f.get('status', 'active')}) {f['text']}")
+    user_msg = "Facts to consolidate:\n" + "\n".join(fact_lines)
 
-    for period, memories in groups.items():
-        if len(memories) < cfg["min_memories_for_episode"]:
-            continue
+    # Call LLM for thematic grouping + summarization
+    try:
+        result = await llm.generate(
+            user_msg,
+            CONSOLIDATION_SYSTEM,
+            api_key_override=api_key_override,
+        )
 
-        batch = memories[:cfg["max_memories_per_episode"]]
+        # Parse the episodes from LLM response
+        raw_episodes = _parse_episodes(result)
+        if not raw_episodes:
+            log.info("consolidation: LLM returned no episodes for user %s", user_id)
+            return episodes_created
 
-        # Build prompt for summarization
-        system, content = build_consolidation_prompt(batch, period)
+        candidate_ids = {f["id"] for f in candidates}
 
-        try:
-            result = await llm.generate(
-                content, system, api_key_override=api_key_override,
-            )
-            summary = result.get("reply", "").strip()
-            if not summary:
+        for ep in raw_episodes:
+            text = ep.get("text", "").strip()
+            source_ids = ep.get("source_ids", [])
+            if not text or len(source_ids) < cfg["min_memories_for_episode"]:
                 continue
 
-            # Save the episode as a new fact with kind='episode'
+            # Validate source_ids are from our candidates
+            valid_ids = [sid for sid in source_ids if sid in candidate_ids]
+            if len(valid_ids) < cfg["min_memories_for_episode"]:
+                continue
+
+            # Collect raw message IDs from source facts for provenance
+            raw_msg_ids: list[int] = []
+            for sid in valid_ids:
+                fact = next((f for f in candidates if f["id"] == sid), None)
+                if fact:
+                    # Get source_message_id or source_ids from the fact
+                    smid = fact.get("source_message_id")
+                    if smid:
+                        raw_msg_ids.append(smid)
+                    sids = fact.get("source_ids")
+                    if sids:
+                        try:
+                            raw_msg_ids.extend(json.loads(sids))
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+
+            # Create the episode
             episode_id = await db_mod.add_fact(
-                db_path, user_id, summary, "private",
+                db_path, user_id, text, "private",
                 fact_type="stable",
+                source_ids=json.dumps(raw_msg_ids) if raw_msg_ids else None,
+                model=getattr(llm, '_last_model', None),
             )
-            # Update kind to episode
+
+            # Set kind to episode
             async with aiosqlite.connect(db_path) as db:
                 await db.execute(
                     "UPDATE facts SET kind = 'episode', status = 'active' WHERE id = ?",
@@ -84,38 +138,54 @@ async def run_consolidation(
                 )
                 await db.commit()
 
-            # Archive the source memories (they're now captured in the episode)
-            for m in batch:
-                await db_mod.archive_fact(db_path, m["id"])
+            # Archive the source facts
+            for sid in valid_ids:
+                await db_mod.archive_fact(db_path, sid)
 
             episodes_created.append({
                 "id": episode_id,
-                "period": period,
-                "summary": summary,
-                "source_count": len(batch),
-                "source_ids": [m["id"] for m in batch],
+                "text": text,
+                "source_count": len(valid_ids),
+                "source_ids": valid_ids,
+                "raw_msg_ids": raw_msg_ids,
             })
 
             log.info(
-                "consolidation: user %s — episode for %s from %d memories",
-                user_id, period, len(batch),
-            )
-        except Exception:
-            log.exception(
-                "consolidation: failed to create episode for user %s period %s",
-                user_id, period,
+                "consolidation: user %s — episode from %d facts: %s",
+                user_id, len(valid_ids), text[:80],
             )
 
+    except Exception:
+        log.exception("consolidation: failed for user %s", user_id)
+
     return episodes_created
+
+
+def _parse_episodes(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract episodes from LLM response."""
+    # Try direct field access (structured JSON response)
+    episodes = result.get("episodes")
+    if isinstance(episodes, list):
+        return episodes
+
+    # Try parsing the reply as JSON
+    reply = result.get("reply", "")
+    if isinstance(reply, str):
+        try:
+            parsed = json.loads(reply)
+            if isinstance(parsed, dict) and "episodes" in parsed:
+                return parsed["episodes"]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return []
 
 
 async def _find_consolidation_candidates(
     db_path: str, user_id: int, cfg: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Find memories eligible for consolidation."""
+    """Find working facts eligible for consolidation."""
     now = datetime.now(timezone.utc)
-
-    # Get all non-archived, non-core memories
     all_facts = await db_mod.get_active_facts(db_path, user_id)
     candidates = []
 
@@ -123,18 +193,19 @@ async def _find_consolidation_candidates(
         kind = f.get("kind") or "working"
         status = f.get("status") or "active"
 
-        # Skip core memories -- they never age
-        if kind == "core":
+        # Only working facts
+        if kind != "working":
             continue
 
-        # Skip episodes -- they're already consolidated
-        if kind == "episode":
+        # Resolved or outdated facts are candidates
+        if status in ("resolved", "outdated"):
+            candidates.append(f)
             continue
 
+        # Active working facts older than 90 days with no citations
         created = f.get("created_at")
         if not created:
             continue
-
         try:
             created_dt = datetime.fromisoformat(created)
             if created_dt.tzinfo is None:
@@ -143,26 +214,8 @@ async def _find_consolidation_candidates(
             continue
 
         age_days = (now - created_dt).days
-
-        # Resolved memories: consolidate after resolved_age_days
-        if status in ("resolved", "outdated") and age_days >= cfg["resolved_age_days"]:
-            candidates.append(f)
-        # Old active working memories that haven't been touched
-        elif status == "active" and kind == "working" and age_days >= cfg.get("active_age_days", 90):
+        citations = f.get("citation_count") or 0
+        if status == "active" and age_days >= 90 and citations == 0:
             candidates.append(f)
 
     return candidates
-
-
-def _group_by_period(facts: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    """Group facts by their creation month (YYYY-MM)."""
-    groups: dict[str, list[dict[str, Any]]] = {}
-    for f in facts:
-        created = f.get("created_at", "")
-        try:
-            dt = datetime.fromisoformat(created)
-            period = dt.strftime("%Y-%m")
-        except (ValueError, TypeError):
-            period = "unknown"
-        groups.setdefault(period, []).append(f)
-    return dict(sorted(groups.items()))
