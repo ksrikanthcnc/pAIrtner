@@ -1,0 +1,52 @@
+# All scoring and context parameters. Engine reads at startup.
+# Developer knobs — not user-facing.
+
+scoring:
+  kind_weight:
+    core: 1.0        # identity facts, always in prompt
+    episode: 0.7     # compressed summaries of past periods
+    working: 0.5     # current situations, temporary
+    partner: 0.4     # unverified impressions about partner
+
+  halflife_days:
+    core: null        # infinite — no decay
+    episode: 180      # slow fade over 6 months
+    working: 21       # fast fade over 3 weeks
+    partner: 30       # moderate fade
+
+  state_weight:
+    active: 1.0
+    improving: 0.9
+    resolved: 0.3
+    outdated: 0.1
+
+  citation_boost_per: 0.1    # +0.1 per citation
+  citation_boost_max: 1.5    # cap at 1.5x
+  score_cap: 1.0             # max score
+
+context:
+  budget_words:
+    core: 300
+    working: 400
+    episodes: 200
+    fts_matches: 200
+    recent_messages: 500
+    total: 1600
+  recent_message_count: 20   # last N messages included
+  fts_match_limit: 5         # top N FTS5 results per message
+  fts_budget_overflow: 200   # extra words allowed for FTS matches beyond total
+
+aging:
+  uncited_outdated_days: 30  # mark as outdated after N days without citation
+  outdated_archive_days: 14  # archive N days after becoming outdated
+  transient_archive_days: 14 # auto-archive transient facts after N days
+
+consolidation:
+  interval_days: 7           # run weekly
+  min_facts_for_episode: 3   # need at least N facts to consolidate
+  max_facts_per_episode: 10  # summarize up to N facts into one episode
+  active_age_days: 90        # active working facts older than this with 0 citations are candidates
+
+date_injection:
+  lookahead_days: 7          # inject date facts N days before they occur
+  scan_interval_hours: 24    # how often to scan for approaching dates
