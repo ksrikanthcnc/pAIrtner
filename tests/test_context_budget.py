@@ -39,8 +39,8 @@ async def test_context_budget_caps_working_facts(test_db):
     """With many working facts, the context builder should cap by word budget."""
     await db_mod.ensure_user(test_db, 1001, "Alice")
 
-    # Add 100 working facts (each ~10 words)
-    for i in range(100):
+    # Add 200 working facts (each ~10 words) to exceed 1200 word total budget
+    for i in range(200):
         await db_mod.add_fact(
             test_db, 1001,
             f"Working memory number {i} about something important to remember",
@@ -48,8 +48,8 @@ async def test_context_budget_caps_working_facts(test_db):
         )
 
     data = await db_mod.get_user_context_data(test_db, 1001)
-    # With 400 word budget for working, ~10 words each, should cap around 40 items
-    assert len(data["private_facts"]) < 100
+    # With 1200 word total budget, ~10 words each, should cap well under 200
+    assert len(data["private_facts"]) < 200
     # But should have some
     assert len(data["private_facts"]) > 0
 

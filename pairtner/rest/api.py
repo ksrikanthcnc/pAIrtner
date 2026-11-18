@@ -103,6 +103,11 @@ ROUTES: tuple[Route, ...] = (
     Route("GET", "/api/v1/facts", False, "_facts"),
     Route("DELETE", "/api/v1/message", False, "_delete_message", needs_json=True),
     Route("POST", "/api/v1/token/rotate", False, "_rotate"),
+    # Memory API v1
+    Route("GET", "/api/v1/memory", False, "_memory_list"),
+    Route("GET", "/api/v1/memory/stats", False, "_memory_stats"),
+    Route("GET", "/api/v1/memory/recency", False, "_memory_recency"),
+    Route("GET", "/api/v1/memory/search", False, "_memory_search"),
 ) + tuple(Route("GET", p, True, "_static") for p in STATIC_FILES)
 
 _ROUTE_INDEX: dict[tuple[str, str], Route] = {(r.method, r.path): r for r in ROUTES}
@@ -378,6 +383,61 @@ class RestApi:
 
     async def _rotate(self, *, uid: int, **_: Any) -> Response:
         return _json(200, {"user_id": uid, "token": await self._issue_token(uid)})
+
+    # -----------------------------------------------------------------------
+    # Memory API v1
+    # -----------------------------------------------------------------------
+
+    async def _memory_list(self, *, uid: int, query: dict[str, str], **_: Any) -> Response:
+        """List facts with optional scoring, filtering, pagination."""
+        from pairtner.core.memory_api import MemoryAPI
+
+        api = MemoryAPI(self.db_path)
+        kind = query.get("kind")
+        status = query.get("status")
+        scored = query.get("scored", "").lower() in ("1", "true", "yes")
+        try:
+            limit = int(query.get("limit", "50"))
+            offset = int(query.get("offset", "0"))
+        except ValueError:
+            raise ApiError(400, "invalid_query")
+
+        result = await api.list_facts(
+            uid, kind=kind, status=status, limit=limit, offset=offset, scored=scored,
+        )
+        return _json(200, result.to_dict())
+
+    async def _memory_stats(self, *, uid: int, **_: Any) -> Response:
+        """Memory statistics for this user."""
+        from pairtner.core.memory_api import MemoryAPI
+
+        api = MemoryAPI(self.db_path)
+        stats = await api.get_stats(uid)
+        return _json(200, stats.to_dict())
+
+    async def _memory_recency(self, *, uid: int, **_: Any) -> Response:
+        """Memory health report."""
+        from pairtner.core.memory_api import MemoryAPI
+
+        api = MemoryAPI(self.db_path)
+        report = await api.get_recency_report(uid)
+        return _json(200, report.to_dict())
+
+    async def _memory_search(self, *, uid: int, query: dict[str, str], **_: Any) -> Response:
+        """Search facts by text query."""
+        from pairtner.core.memory_api import MemoryAPI
+
+        q = query.get("q", "").strip()
+        if not q:
+            raise ApiError(400, "missing_query")
+        try:
+            limit = int(query.get("limit", "10"))
+        except ValueError:
+            raise ApiError(400, "invalid_query")
+
+        api = MemoryAPI(self.db_path)
+        facts = await api.search(uid, q, limit=limit)
+        return _json(200, {"facts": [f.to_dict() for f in facts], "count": len(facts)})
 
     async def _history(self, *, uid: int, query: dict[str, str], **_: Any) -> Response:
         """Return the full message history for a user (oldest first, with timestamps)."""

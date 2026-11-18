@@ -338,6 +338,7 @@ async def apply_memory_ops(
                 fact_id = await db_mod.add_fact(
                     db_path, user_id, op.text, "private",
                     category=op.category, fact_type=op.fact_type,
+                    source_message_id=message_id,
                 )
                 await db_mod.append_memory_version(
                     db_path, fact_id, op.text, "active", "add",
@@ -407,6 +408,7 @@ async def apply_memory_ops(
                 db_path, user_id, op.text, "private",
                 category=op.category or "relationship",
                 fact_type="stable",
+                source_message_id=message_id,
             )
             existing_texts[fact_id] = op.text
             result.propose_core_items.append({
@@ -433,6 +435,7 @@ async def apply_memory_ops(
                 fact_id = await db_mod.add_fact(
                     db_path, user_id, op.text, "private",
                     fact_type="stable",
+                    source_message_id=message_id,
                 )
                 result.propose_core_items.append({
                     "id": fact_id, "text": op.text,
@@ -459,6 +462,7 @@ async def apply_memory_ops(
                 fact_id = await db_mod.add_fact(
                     db_path, user_id, op.text, "private",
                     fact_type="stable",
+                    source_message_id=message_id,
                 )
                 await db_mod.promote_to_core(db_path, fact_id)
                 existing_texts[fact_id] = op.text

@@ -194,6 +194,57 @@ Query parameters:
 - `kind` — filter by memory kind: `core`, `working`, `episode`, `partner_view` (optional)
 - `visibility` — filter by `private` or `shared` (optional)
 
+### `GET /api/v1/memory?kind=K&status=S&scored=1&limit=N&offset=N`
+
+Memory API v1. List facts with relevance scoring, filtering, and pagination.
+
+Response `200`:
+
+```json
+{"facts": [{"id": 1, "text": "Likes morning walks", "kind": "core", "status": "active",
+            "relevance_score": 1.0, "citation_count": 5, "last_cited_at": "...",
+            "source_message_id": 42, "contradicts_id": null, "created_at": "...", "updated_at": "..."}],
+ "total": 47, "offset": 0}
+```
+
+Query parameters:
+- `kind` — filter: `core`, `working`, `episode`, `partner_view`
+- `status` — filter: `active`, `improving`, `resolved`, `outdated`, `archived`
+- `scored` — `1` or `true` to sort by relevance score descending
+- `limit` — max results (default 50)
+- `offset` — pagination offset (default 0)
+
+### `GET /api/v1/memory/stats`
+
+Memory statistics for the authenticated user.
+
+```json
+{"total": 47, "by_kind": {"core": 12, "working": 30, "episode": 5},
+ "by_status": {"active": 40, "resolved": 5, "outdated": 2},
+ "avg_score": 0.623, "oldest_uncited_days": 45}
+```
+
+### `GET /api/v1/memory/recency`
+
+Memory health breakdown — useful for a "memory health" indicator in the PWA.
+
+```json
+{"healthy": 30, "aging": 12, "stale": 5, "contradictions": 1}
+```
+
+- `healthy`: cited in last 7 days
+- `aging`: 7–30 days since last citation
+- `stale`: >30 days, archival candidates
+- `contradictions`: facts with detected contradictions
+
+### `GET /api/v1/memory/search?q=pizza&limit=N`
+
+Search facts by text (FTS5 when available, LIKE fallback).
+
+```json
+{"facts": [...], "count": 3}
+```
+
 ### Static client files (no auth)
 
 `GET /`, `/index.html`, `/duo.html`, `/app.js`, `/render.js`, `/sw.js`, `/style.css`, `/manifest.webmanifest`, `/icons/icon-192.png`, `/icons/icon-512.png`, `/icons/icon.svg`. This is a fixed list; any other path is `404 not_found`.
@@ -229,6 +280,7 @@ With `ALLOWED_USER_IDS` set on the server, registration also needs an explicit a
 | 400 | `invalid_lang` | `lang` is not `en` or `te` |
 | 400 | `invalid_data` | `data` missing, blank, or over 256 chars |
 | 400 | `invalid_query` | Bad `after` or `wait` |
+| 400 | `missing_query` | Search query parameter `q` is empty or missing |
 | 400 | `invalid_id` | Message id missing or not a positive integer |
 | 401 | `unauthorized` | Bad or missing token (response has `WWW-Authenticate`) |
 | 403 | `not_allowed` | Id not in `ALLOWED_USER_IDS` |
