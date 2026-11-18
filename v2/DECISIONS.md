@@ -81,16 +81,17 @@ This is the authoritative reference. The other v2/*.md files should be updated t
 31. **No separate topic/index table.** FTS5 IS the index. A topic table needs its own maintenance, dedup, staleness — the 27-table path again.
 32. **Summary cadence:**
     - **Per-message:** LLM extracts facts inline (real-time, part of the reply call).
-    - **Daily:** Nothing. Too frequent, too little change.
-    - **Weekly:** The only maintenance job that matters. Compresses and organizes the knowledge base.
-    - **Monthly:** Nothing separate. 4 weekly episodes naturally cover the month.
+    - **Daily:** No fixed schedule. Instead, trigger consolidation when active fact count exceeds a threshold (e.g. 50). Event-driven, not calendar-driven.
+    - **Weekly:** The primary maintenance job. Compresses and organizes the knowledge base.
+    - **Monthly/Quarterly:** Consolidate weekly episodes into bigger episodes. Same mechanism, wider scope. Start with weekly, add layers when needed. This is the cascading summary idea — implemented as stacking consolidation passes, not as a separate system.
 33. **Weekly summary flow:**
-    1. Gather working facts with state `resolved` or `outdated`
+    1. Gather working facts with state `resolved` or `outdated` (NOT active — those are current situations, not ready for summarization)
     2. LLM groups by theme/category (not us — the LLM decides what goes together)
-    3. For each group of 3+ facts → LLM summarizes into one episode
+    3. For each group of 3+ facts → LLM summarizes into one episode (groups <3 stay as working facts — not worth an episode, they decay or get cited naturally)
     4. Episode stored: `kind: episode`, `source_ids: [raw msg IDs from all source facts]`
     5. Source facts → `archived_at` set
     6. Uses bigger model (Flash, not Lite) for better reasoning
+    7. LLM returns array of episodes — one call can produce multiple topic-grouped episodes
     - One LLM call per topic group. Episodes persist with scores, get cited like any fact. Old episodes with high citations stay prominent, uncited episodes fade via normal decay.
 34. **Cascading summaries (1d, 3d, 7d... rolling):** PARKED. Currently handled by scoring. If scoring isn't enough, this is the upgrade path. Architecture supports it. **NOTE: Keep pluggable.**
 35. **Episodes point to raw message IDs via `source_ids`.** Can be rebuilt from raw if extraction logic changes.
@@ -215,6 +216,12 @@ This is the authoritative reference. The other v2/*.md files should be updated t
 43. **Qwen3:8B local test completed.** Results in `tmp-kiro/qwen-json-test/`. Valid JSON with thinking OFF, unreliable reasoning.
 44. **Use `duo_keep` DB for real conversation data.** Read-only reference for extraction prompt testing. Don't overwrite raw messages.
 45. **Next step: extraction prompt → test on Gemini Flash Lite → establish accuracy baseline.**
+
+## Safety & Operations
+
+49. **NEVER push to GitHub from Mac.** Remote removed. All pushes done manually by user from personal machine. Nielsen security flagged the GitHub remote URL config — the push that triggered the alert was from WSL, not Mac. Mac only uses `git bundle` + `scp` for sync.
+50. **Knowledge is rebuildable from raw.** To switch LLM or fix bad extraction: archive all knowledge → re-process raw messages with new model → run consolidation. Build a `rebuild` command for this. Raw messages are the immutable source of truth.
+51. **Raw messages are NEVER archived or deleted.** They're the rebuild source. Episodes archive working facts (knowledge), never raw messages. This is the whole point of the two-table design.
 
 ## Proactive Context Injection (decision 28, broadened)
 
