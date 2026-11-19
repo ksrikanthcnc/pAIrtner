@@ -68,6 +68,12 @@ USER_SCOPES: list[tuple[str, str]] = [
     ("rest_outbox", "user_id = :uid"),
     ("user_meta", "user_id = :uid"),
     ("users", "tg_id = :uid"),
+    # v2 tables
+    ("relay_queue", "sender_id = :uid OR receiver_id = :uid"),
+    ("analysis_results", "user_id = :uid OR about_id = :uid"),
+    ("goals", f"user_id = :uid OR created_by = :uid"),
+    ("relationship_config", f"relationship_id LIKE :cid_a OR relationship_id LIKE :cid_b"),
+    ("relationships", "user_a_id = :uid OR user_b_id = :uid"),
 ]
 # Tables with no per-user key (aggregate counters).
 GLOBAL_TABLES = {"usage", "llm_calls", "pack_snapshots"}

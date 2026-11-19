@@ -34,12 +34,16 @@ METADATA_COLUMNS: dict[str, set[str]] = {
         "citation_count", "last_cited_at", "source_message_id", "source_ids",
         "intensity", "model", "metadata", "event_date", "recurring",
         "created_at", "updated_at",
+        # v2 columns
+        "relationship_id", "msg_source",
+        "nudge_target_id", "nudge_type", "nudge_cooldown_h", "nudge_ttl_h",
+        "nudge_status", "nudge_delivered_at", "nudge_cancelled_at",
     },
     "pending": {
         "id", "sender_id", "receiver_id", "status", "send_after", "created_at",
         "sent_at", "feedback", "acknowledged_at",
     },
-    "messages": {"id", "user_id", "role", "deleted_at", "created_at"},
+    "messages": {"id", "user_id", "role", "deleted_at", "created_at", "relationship_id"},
     "usage": {"date", "model", "count"},
     "llm_calls": {"id", "created_at", "task", "model", "pack_hash", "prompt_sha256"},
     "pack_snapshots": {
@@ -51,13 +55,13 @@ METADATA_COLUMNS: dict[str, set[str]] = {
     "pending_batch_items": {"id", "batch_id", "status", "created_at"},
     "checkins": {
         "id", "couple_id", "week_start", "partner_a_id", "partner_b_id",
-        "status", "created_at",
+        "status", "created_at", "relationship_id",
     },
     "rate_limit": {"user_id", "window", "count", "reset_at"},
     "user_profiles": {
         "user_id", "default_voice", "voice_intensity", "dampening_base",
         "onboarding_done", "onboarding_step", "message_count", "created_at",
-        "updated_at",
+        "updated_at", "default_interaction_mode",
     },
     "user_mood_styles": {
         "id", "user_id", "voice_override", "dampening_override",
@@ -79,8 +83,9 @@ METADATA_COLUMNS: dict[str, set[str]] = {
     },
     "conflicts": {
         "id", "couple_id", "status", "opened_at", "resolved_at", "relay_ids",
+        "relationship_id",
     },
-    "timeline_events": {"id", "couple_id", "event_type", "created_at"},
+    "timeline_events": {"id", "couple_id", "event_type", "created_at", "relationship_id"},
     "fact_summaries": {"id", "user_id", "year_month", "fact_count", "created_at"},
     "auth_tokens": {"user_id", "created_at"},
     "rest_outbox": {"id", "user_id", "kind", "created_at"},
@@ -91,13 +96,33 @@ METADATA_COLUMNS: dict[str, set[str]] = {
         "id", "user_id", "message_id", "outcome", "fact_id", "created_at",
     },
     "user_meta": {"user_id", "key", "updated_at"},
+    # v2 tables
+    "relationships": {
+        "id", "user_a_id", "user_b_id", "rel_type", "persona", "status", "created_at",
+    },
+    "relay_queue": {
+        "id", "relationship_id", "sender_id", "receiver_id", "status", "batch_id",
+        "send_after", "created_at", "sent_at", "feedback", "acknowledged_at",
+    },
+    "analysis_results": {
+        "id", "relationship_id", "user_id", "about_id", "result_type", "sentiment",
+        "confidence", "frequency", "interaction_dir", "source",
+        "first_seen", "last_seen", "created_at", "updated_at",
+    },
+    "goals": {
+        "id", "user_id", "relationship_id", "scope", "created_by", "status",
+        "created_at", "updated_at",
+    },
+    "relationship_config": {
+        "relationship_id", "config_key", "created_at", "updated_at",
+    },
 }
 
 # Known free-text columns (shown only with show_raw_text). Used by the schema
 # coverage test; unknown columns are treated the same way at runtime.
 RAW_TEXT_COLUMNS: dict[str, set[str]] = {
     "users": {"name"},
-    "facts": {"text", "source"},
+    "facts": {"text", "source", "nudge_suggestion", "nudge_cancel_reason"},
     "pending": {"draft", "edited_draft"},
     "messages": {"content"},
     "pending_batch_items": {"draft", "edited_draft"},
@@ -118,6 +143,11 @@ RAW_TEXT_COLUMNS: dict[str, set[str]] = {
     "memory_versions": {"text", "reason"},
     "memory_op_log": {"op_json", "reason"},
     "user_meta": {"value"},
+    # v2 tables
+    "relay_queue": {"draft", "edited_draft"},
+    "analysis_results": {"content"},
+    "goals": {"text", "progress"},
+    "relationship_config": {"config_value"},
 }
 
 

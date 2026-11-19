@@ -502,3 +502,7 @@ async def init_db(db_path: str) -> None:
     # Initialise FTS5 search index
     from pairtner.core.search import init_fts
     await init_fts(db_path)
+
+    # Upgrade to the v2 schema (idempotent)
+    from pairtner.storage.migrate_v2 import migrate_to_v2
+    await migrate_to_v2(db_path)

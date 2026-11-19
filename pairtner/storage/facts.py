@@ -18,6 +18,10 @@ from pairtner.storage.helpers import (
 # Basic fact CRUD
 # ---------------------------------------------------------------------------
 
+# Columns that exist only in the v1 schema (dropped in v2, decision 306).
+_V1_ONLY_COLUMNS = ("source", "category", "fact_type")
+
+
 async def add_fact(
     db_path: str,
     owner_id: int,
@@ -33,16 +37,97 @@ async def add_fact(
     metadata: str | None = None,
     event_date: str | None = None,
     recurring: bool = False,
+    *,
+    kind: str | None = None,
+    msg_source: str | None = None,
+    nudge_type: str | None = None,
+    nudge_suggestion: str | None = None,
+    nudge_target_id: int | None = None,
+    nudge_cooldown_h: int | None = None,
+    nudge_ttl_h: int | None = None,
+    nudge_status: str | None = None,
+    relationship_id: str | None = None,
 ) -> int:
-    """Insert a fact; return its id."""
-    return await _execute(
+    """Insert a fact; return its id.
+
+    Works against both schemas: v1-only columns (source, category, fact_type)
+    are written only if the table has them; v2 columns are written only when a
+    value is given, so v1 callers are unaffected.
+    """
+    values: dict[str, Any] = {
+        "owner_id": owner_id,
+        "text": text,
+        "visibility": visibility,
+        "source": source,
+        "category": category,
+        "fact_type": fact_type,
+        "source_message_id": source_message_id,
+        "source_ids": source_ids,
+        "intensity": intensity,
+        "model": model,
+        "metadata": metadata,
+        "event_date": event_date,
+        "recurring": 1 if recurring else 0,
+    }
+    v2_values = {
+        "kind": kind,
+        "msg_source": msg_source,
+        "nudge_type": nudge_type,
+        "nudge_suggestion": nudge_suggestion,
+        "nudge_target_id": nudge_target_id,
+        "nudge_cooldown_h": nudge_cooldown_h,
+        "nudge_ttl_h": nudge_ttl_h,
+        "nudge_status": nudge_status,
+        "relationship_id": relationship_id,
+    }
+    values.update({k: v for k, v in v2_values.items() if v is not None})
+
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute("PRAGMA table_info(facts)") as cur:
+            columns = {row[1] for row in await cur.fetchall()}
+        for col in _V1_ONLY_COLUMNS:
+            if col not in columns:
+                values.pop(col, None)
+        unknown = set(values) - columns
+        if unknown:
+            raise ValueError(f"facts table has no column(s): {sorted(unknown)}")
+        names = list(values)
+        cur = await db.execute(
+            f"INSERT INTO facts ({', '.join(names)}) "
+            f"VALUES ({', '.join('?' for _ in names)})",
+            tuple(values[n] for n in names),
+        )
+        await db.commit()
+        return cur.lastrowid or 0
+
+
+async def cancel_nudge(
+    db_path: str, fact_id: int, user_id: int, reason: str = "addressed"
+) -> bool:
+    """Cancel a pending nudge. Only the fact's owner or nudge target may do so.
+
+    Returns True if a pending nudge was cancelled.
+    """
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "UPDATE facts SET nudge_status = 'cancelled', "
+            "nudge_cancelled_at = ?, nudge_cancel_reason = ?, "
+            "updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ? AND nudge_status = 'pending' "
+            "AND (owner_id = ? OR nudge_target_id = ?)",
+            (_now_iso(), reason, fact_id, user_id, user_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def set_user_meta(db_path: str, user_id: int, key: str, value: str) -> None:
+    """Upsert a user_meta key/value."""
+    await _execute(
         db_path,
-        "INSERT INTO facts (owner_id, text, visibility, source, category, fact_type, "
-        "source_message_id, source_ids, intensity, model, metadata, event_date, recurring) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (owner_id, text, visibility, source, category, fact_type,
-         source_message_id, source_ids, intensity, model, metadata,
-         event_date, 1 if recurring else 0),
+        "INSERT OR REPLACE INTO user_meta (user_id, key, value, updated_at) "
+        "VALUES (?, ?, ?, ?)",
+        (user_id, key, value, _now_iso()),
     )
 
 
@@ -129,8 +214,11 @@ async def promote_to_core(db_path: str, fact_id: int) -> bool:
     Core facts are never aged or archived.
     """
     async with aiosqlite.connect(db_path) as db:
+        async with db.execute("PRAGMA table_info(facts)") as pc:
+            has_fact_type = any(r[1] == "fact_type" for r in await pc.fetchall())
+        fact_type_sql = "fact_type = 'stable', " if has_fact_type else ""
         cur = await db.execute(
-            "UPDATE facts SET kind = 'core', fact_type = 'stable', "
+            f"UPDATE facts SET kind = 'core', {fact_type_sql}"
             "expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (fact_id,),
         )
