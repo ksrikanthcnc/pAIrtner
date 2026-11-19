@@ -105,5 +105,57 @@ async def _maybe_consolidate(
                 (user_id, _now_iso()),
             )
             await db.commit()
+
+        # Run cascading consolidation monthly
+        await _maybe_cascade(db_path, llm, user_id)
+
     except Exception:
         logger.exception("Consolidation failed for user %s", user_id)
+
+
+async def _maybe_cascade(
+    db_path: str, llm: Any, user_id: int
+) -> None:
+    """Run cascading consolidation (monthly/quarterly) if 30+ days since last."""
+    from pairtner.storage.helpers import _fetch_one
+
+    row = await _fetch_one(
+        db_path,
+        "SELECT value FROM user_meta WHERE user_id = ? AND key = 'last_cascade'",
+        (user_id,),
+    )
+
+    if row and row.get("value"):
+        try:
+            last = datetime.fromisoformat(row["value"])
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            days_since = (datetime.now(timezone.utc) - last).days
+            if days_since < 30:
+                return  # Too soon
+        except (ValueError, TypeError):
+            pass
+
+    try:
+        from pairtner.core.consolidation import run_cascading_consolidation
+
+        result = await run_cascading_consolidation(db_path, llm, user_id)
+        monthly = result.get("monthly", [])
+        quarterly = result.get("quarterly", [])
+        if monthly or quarterly:
+            logger.info(
+                "Cascading: user %s — %d monthly, %d quarterly episodes",
+                user_id, len(monthly), len(quarterly),
+            )
+
+        import aiosqlite
+
+        async with aiosqlite.connect(db_path) as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO user_meta (user_id, key, value, updated_at) "
+                "VALUES (?, 'last_cascade', ?, CURRENT_TIMESTAMP)",
+                (user_id, _now_iso()),
+            )
+            await db.commit()
+    except Exception:
+        logger.exception("Cascading consolidation failed for user %s", user_id)
