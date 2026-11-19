@@ -431,3 +431,26 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 105. **HOW_IT_WORKS.md created.** Complete system reference covering: two-table architecture, message flow, fact visibility, tags, relay flow, scoring, consolidation chain, proactive injection, commands, architecture. Located at `v2/HOW_IT_WORKS.md`.
 
 106. **Lighter model test: gemma3:4b pulling.** 2.3GB, 4B params. Will benchmark when ready to find the quality floor.
+
+
+## Simplification, Splitting, Telegram (Decision 107-116)
+
+107. **Simplify tiers: remove weekly accumulation.** Each job processes ONE fixed window, no rolling. Weekly job (Mon) → previous week's resolved facts only. Monthly job (1st) → that month's weekly episodes only. Quarterly (Jan/Apr/Jul/Oct 1st) → that quarter's monthlies only. No overlap, no reprocessing, no leftover accumulation.
+
+108. **Hard monthly for large batches.** If monthly finds >20 weekly episodes, split into 2+ consolidation calls (~10 each) instead of one big prompt. Keeps episode quality consistent and bounded LLM input size.
+
+109. **"Lucky hunch" = define the frame.** Each consolidation job has a fixed, explicit time frame. No "grab whatever's unprocessed" rolling semantics. The schedule defines the window, the job processes exactly that window.
+
+110. **LLM output pagination for search tool.** The FTS5 search tool (v2.1) will accept `limit` from the LLM (default 5, LLM can request 10/20). Bigger models can handle bigger pages. Not over-engineering — it's one parameter.
+
+111. **Telegram message splitting added.** `_split_message()` splits at paragraph > newline > sentence > hard-cut boundaries. Buttons attach to last chunk only. Tested with 8 unit tests.
+
+112. **Telegram offline behavior: messages are buffered.** Long-polling means Telegram queues user messages (up to ~24h). Bot receives them on reconnect. Bot replies that failed are lost — user sees no response for that message.
+
+113. **Explicit schedule logging.** Maintenance loop now logs days-since-last and skip/run decisions at DEBUG/INFO level. Makes schedule behavior inspectable without guessing.
+
+114. **"Keep to myself" button fully removed (prior turn).** Only "💬 Share with partner" remains. Dismiss = default (already kept). No confusing second button.
+
+115. **`/debug` = full level, dropped episodes = `/warnings` level.** Two separate commands: `/debug` shows complete knowledge state, `/warnings` shows only quality issues (dropped episodes, coverage warnings, schedule skips).
+
+116. **Privacy isolation for sensitive facts confirmed.** Every fact defaults to `private`. 8+ tests verify Alice's private facts NEVER appear in Bob's prompt across all prompt types. Sensitive info (e.g., "wish partner would exercise") stays private and the LLM uses indirect hints only.
