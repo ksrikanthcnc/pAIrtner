@@ -4,16 +4,23 @@ Changes from v1 (22 tables → 17 + FTS5):
 - Merged: pending + pending_batch + pending_batch_items → relay_queue
 - Merged: partner_perceptions + user_patterns + interaction_scores → analysis_results
 - Merged: user_goals + shared_goals → goals
-- Dropped: fact_summaries (replaced by v2 summary tiers in facts table)
+- Dropped: fact_summaries (replaced by v2 summary levels in facts table)
 - Dropped: category column (FTS5 handles discovery)
 - Removed: users.partner_id (replaced by relationships table)
-- Renamed: kind → tier (working|core|daily|weekly|monthly|quarterly|yearly)
+- Reverted: tier → kind (original name works fine; 'tier' was unnecessary rename)
+- kind CHECK expanded: working|core + 9 summary levels (daily through yearly)
+  Ship with 5 active; intermediates (triday, biweekly, bimonthly, semiannual)
+  activate via config with no schema migration
 - Changed: visibility default 'private' → 'nudge_eligible'
 - Added: relationships table (multi-relationship support, deterministic IDs)
 - Added: relationship_id on facts (replaces couple_id; links to relationships)
 - Added: msg_source column (user|bot|system) — extract facts from bot responses too
-- Added: nudge columns + self_nudge + probe_partner for therapeutic steering
-- Added: messages.relationship_id (which relationship context this message belongs to)
+- Added: nudge lifecycle (pending→delivered→cancelled→expired) with TTL per type
+- Added: user_profiles.default_interaction_mode (solution|vent|adaptive)
+- Simplified: dropped self_nudge/probe_partner flags — visibility alone drives
+  LLM behavior (private = engage owner + probe partner on topic; nudge_eligible
+  = also steer partner directly)
+- Added: messages.relationship_id (which relationship context)
 """
 
 from __future__ import annotations
@@ -76,9 +83,11 @@ CREATE TABLE IF NOT EXISTS facts (
     text            TEXT NOT NULL,
     visibility      TEXT NOT NULL DEFAULT 'nudge_eligible'
                     CHECK(visibility IN ('private', 'nudge_eligible', 'shareable')),
-    tier            TEXT NOT NULL DEFAULT 'working'
-                    CHECK(tier IN ('working','core','daily','weekly','monthly',
-                                   'quarterly','yearly')),
+    kind            TEXT NOT NULL DEFAULT 'working'
+                    CHECK(kind IN ('working','core',
+                                   'daily','triday','weekly','biweekly',
+                                   'monthly','bimonthly','quarterly',
+                                   'semiannual','yearly')),
     status          TEXT NOT NULL DEFAULT 'active',
     fact_type       TEXT DEFAULT 'stable'
                     CHECK(fact_type IN ('transient','situational','stable')),
@@ -90,11 +99,12 @@ CREATE TABLE IF NOT EXISTS facts (
     nudge_target_id INTEGER REFERENCES users(tg_id),    -- partner to nudge (NULL = no nudge)
     nudge_type      TEXT,               -- appreciation|attention|communication|support|quality_time|conflict_prevention
     nudge_cooldown_h INTEGER DEFAULT 24, -- min hours before nudge can fire
+    nudge_ttl_h     INTEGER,            -- hours until nudge expires if undelivered (per nudge_type)
+    nudge_status    TEXT DEFAULT 'pending'
+                    CHECK(nudge_status IN ('pending','delivered','cancelled','expired')),
     nudge_delivered_at TIMESTAMP,        -- when the nudge was actually delivered
     nudge_cancelled_at TIMESTAMP,        -- if cancelled (organically addressed or by LLM)
     nudge_cancel_reason TEXT,            -- why cancelled
-    self_nudge      INTEGER DEFAULT 0,   -- therapeutically engage the fact owner about this
-    probe_partner   INTEGER DEFAULT 0,   -- subtly probe partner's perspective on the TOPIC (no attribution)
     -- lifecycle
     expires_at      TIMESTAMP,
     archived_at     TIMESTAMP,
@@ -125,6 +135,8 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     onboarding_done INTEGER DEFAULT 0,
     onboarding_step INTEGER DEFAULT 0,
     learned_voice   TEXT,
+    default_interaction_mode TEXT DEFAULT 'adaptive'
+                    CHECK(default_interaction_mode IN ('solution','vent','adaptive')),
     message_count   INTEGER DEFAULT 0,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -344,13 +356,11 @@ CREATE TABLE IF NOT EXISTS rest_outbox (
 
 CREATE INDEX IF NOT EXISTS idx_facts_owner_vis ON facts(owner_id, visibility);
 CREATE INDEX IF NOT EXISTS idx_facts_owner_created ON facts(owner_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_facts_tier ON facts(owner_id, tier);
+CREATE INDEX IF NOT EXISTS idx_facts_kind ON facts(owner_id, kind);
 CREATE INDEX IF NOT EXISTS idx_facts_status ON facts(owner_id, status);
-CREATE INDEX IF NOT EXISTS idx_facts_relationship ON facts(relationship_id, tier);
-CREATE INDEX IF NOT EXISTS idx_facts_nudge ON facts(nudge_target_id, nudge_delivered_at)
+CREATE INDEX IF NOT EXISTS idx_facts_relationship ON facts(relationship_id, kind);
+CREATE INDEX IF NOT EXISTS idx_facts_nudge ON facts(nudge_target_id, nudge_status)
     WHERE nudge_target_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_facts_self_nudge ON facts(owner_id, self_nudge)
-    WHERE self_nudge = 1;
 CREATE INDEX IF NOT EXISTS idx_messages_user_created ON messages(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_messages_relationship ON messages(relationship_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_relay_relationship ON relay_queue(relationship_id, status);

@@ -721,3 +721,32 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 231. **Timeline events include nudges.** Added 'nudge' to `timeline_events.event_type` CHECK constraint. Tracks when nudges were delivered, cancelled, or organically addressed — visible in the relationship timeline.
 
 232. **Schema v2 fully rewritten.** 17 tables + FTS5. New: relationships. Renamed: kind→tier, couple_id→relationship_id, couple_config→relationship_config. Removed: users.partner_id, user_profiles relationship fields. Added: nudge cancellation, self_nudge, probe_partner, messages.relationship_id.
+
+
+## Nudge Lifecycle, Simplified Privacy, Interaction Mode, Column Names, Spaced Intervals (Decision 233-245)
+
+233. **Nudge lifecycle with TTL.** Nudges have states: pending → delivered → cancelled → expired. TTL per type: appreciation 7d, attention 5d, communication 14d, support 3d, quality_time 7d, conflict_prevention 14d. After TTL, auto-expire. Max 5 active nudges per relationship — oldest pending expires if 6th created. Prevents unbounded nudge growth.
+
+234. **Dropped self_nudge and probe_partner columns.** Overcomplication. Visibility alone drives LLM behavior via the persona prompt: (1) private = engage the owner therapeutically, probe partner on the general topic without attribution. (2) nudge_eligible = also steer partner directly with unattributed nudges. (3) shareable = relay. The LLM doesn't need boolean flags — it needs one clear visibility level and the persona handles the rest.
+
+235. **Admin unified timeline.** Chronological interleaved view of ALL events for a relationship: raw messages, bot responses, fact extraction, LLM decisions, nudges (created/delivered/cancelled), summaries, archival. Single stream ordered by timestamp. Shows full causal chain: message → fact → nudge → delivery → outcome. Powered by joining messages + facts + timeline_events ordered by created_at.
+
+236. **Solution seeker vs venter — user personality.** New `default_interaction_mode` on user_profiles: 'solution' (default is help-me-fix-this, venting is explicit), 'vent' (default is just-listen, solution-seeking is explicit), 'adaptive' (detect per conversation). Per-conversation detection: high intensity + rapid messages + no questions = venting. Questions + moderate tone = solution-seeking. Explicit signals always override: "I just need to vent" → vent mode. "What should I do?" → solution mode.
+
+237. **Reverted tier → kind.** `kind` was the original name and works fine. `tier` implied a hierarchy that doesn't fit time-period names well. `kind='weekly'` reads clearly. No unnecessary rename.
+
+238. **Spaced repetition intervals: 9 levels in schema, 5 active by default.** Full set: daily(1d), triday(3d), weekly(7d), biweekly(15d), monthly(30d), bimonthly(60d), quarterly(90d), semiannual(180d), yearly(365d). Schema CHECK allows all 9. Config activates which ones run. Ship with 5: daily, weekly, monthly, quarterly, yearly. Intermediates activate by config change, no migration needed.
+
+239. **Cascade with spaced intervals (when all 9 active):** daily → triday (merges 3 dailies) → weekly (merges d3+remaining) → biweekly (merges 2 weeklies) → monthly (merges biweeklies) → bimonthly (merges 2 monthlies) → quarterly → semiannual → yearly. Each level summarizes and archives its predecessor. Smooth gradient, no sudden information loss.
+
+240. **Daily summary threshold still counts user messages only.** Even with bot message extraction, the ≥10 threshold is user messages. Bot responses are extracted for advice tracking but don't inflate the "busy day" metric.
+
+241. **Nudge index updated.** `idx_facts_nudge` now indexes `(nudge_target_id, nudge_status)` instead of `(nudge_target_id, nudge_delivered_at)`. Queries for pending nudges: `WHERE nudge_target_id=? AND nudge_status='pending'`.
+
+242. **kind CHECK constraint includes all 9 summary levels + working + core.** 11 total values. Clean English names: triday, biweekly, bimonthly, semiannual. No abbreviations (d3, w2, m2 rejected as ugly).
+
+243. **LLM calls for intermediate levels are cheap.** Adding 4 intermediate levels: ~4 extra calls per user per year (triday, biweekly, bimonthly, semiannual each run a handful of times). Total ~140 calls/year at 9 levels. Free on Gemini Flash Lite, ~$2-4/year paid. Not a concern.
+
+244. **Active intervals are a config knob.** `ACTIVE_SUMMARY_INTERVALS` in scoring.yaml. Operators can tune without code changes. Default: `['daily', 'weekly', 'monthly', 'quarterly', 'yearly']`. Adding `'triday'` to the list activates 3-day summaries immediately.
+
+245. **Max active nudges per relationship: 5.** Stored as a config in relationship_config or scoring.yaml. If a couple generates more than 5 pending nudges before any are delivered, the oldest pending one auto-expires with reason 'max_active_exceeded'. This is the growth bound.
