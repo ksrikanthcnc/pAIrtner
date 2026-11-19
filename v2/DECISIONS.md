@@ -340,3 +340,32 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
     - Episodes tagged with metadata `{"level": "weekly|monthly|quarterly"}`
     - Maintenance loop runs cascading monthly (30d interval via user_meta)
     - Tested: 88 weekly episodes → 18 monthly episodes (5x compression)
+
+
+## LLM Comparison, Paging, Button Rename (Decision 77-82)
+
+77. **Paging for LLM search (v2.1).** When the LLM uses FTS5 "search my memory" tool, results should be paginated: `search_facts(query, limit=5, offset=0)`. LLM asks for page 1, reads, asks for page 2 if needed. Separate from pre-loaded scored context. FTS5 infrastructure is ready.
+
+78. **Consolidation bound architecture clarified:**
+    - Weekly: FACT lifecycle-based. Compresses ANY resolved/outdated working fact → weekly episode. No age upper bound (facts get resolved organically week by week).
+    - Monthly: EPISODE age-based. Weekly episodes aged 30-90d → monthly episodes.
+    - Quarterly: Monthly episodes aged 90d+ → quarterly episodes.
+    - Bounds are on the cascading layer, not the weekly layer.
+
+79. **Button rename:** "Save privately" → "🤫 Keep to myself", "Pass it on gently" → "💬 Share with partner". Clearer what each action does.
+
+80. **gemini-2.0-flash-lite deprecated.** Google returns 404, recommends `gemini-3.5-flash-lite`. Update all model references.
+
+81. **LLM comparison results (same 7 messages, no existing knowledge):**
+    | | Gemini 3.5 Flash Lite | Qwen3 8B (local) |
+    |---|---|---|
+    | Facts extracted | 4 | 7 |
+    | Valid JSON | ✅ | ✅ |
+    | Key themes hit | 4/6 | 4-5/6 |
+    | Intensity range | 0.7-0.9 | 0.6-0.9 |
+    | Granularity | Coarser (merged "lost" + "communication") | Finer (separate facts per person) |
+    | Missing | Kids asking for Bob, Bob trying to provide | Varies per run |
+
+    **Assessment:** Qwen3 8B is comparable to Gemini for extraction. It's more granular (7 vs 4 facts) which may be better for knowledge building. Both produce valid JSON with reasonable intensity scores. The quality gap is smaller than expected — local models are viable for extraction.
+
+82. **Two-iteration refinement for local models (parked).** Qwen3 8B does well enough on first pass. If we see quality issues in real usage, add a verification pass. Not needed now.
