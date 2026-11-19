@@ -847,3 +847,26 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 288. **User can opt into/out of partner nudging.** During onboarding or anytime via /settings: "Would you like me to gently help bring up things that matter to you with your partner? I'll never reveal what you told me — just steer the conversation naturally." If user says no → their private facts generate zero nudges. If yes (default) → standard nudge behavior. Respects autonomy.
 
 289. **Schema v2 updated: sensitivity column removed.** One fewer column, one fewer concept. Privacy is structural (engine) + visibility (column). Clean.
+
+
+## LLM-First Architecture, Settings Ops, Topic Suppression, Nudge Routing (Decision 290-299)
+
+290. **Topic suppression needs no explicit feature.** If a user says "don't talk about X," the LLM extracts it as a core fact: "Does not want to discuss X." That fact stays in the user's context forever. Next time the topic comes up, the LLM sees the preference and avoids it. The memory system IS the suppression system. No separate suppression table needed.
+
+291. **LLM can change user settings via settings_ops.** The extraction contract includes an optional `settings_ops` field: `[{"key": "camouflage_frequency", "value": "low"}]`. The engine validates against a whitelist of allowed settings and allowed values. Code-guardrailed: LLM can only change settings for the CURRENT user, never partner's, never system settings. After applying, the engine returns success/failure and the LLM confirms to the user.
+
+292. **Allowed settings whitelist.** `camouflage_frequency` (off|low|normal|high), `nudge_enabled` (bool), `interaction_mode` (vent|solution|adaptive), `voice` (casual|warm|formal), `response_length` (short|normal|long). Each has a scope (user) and valid values. Anything not in the whitelist is rejected. The whitelist lives in config, not code.
+
+293. **LLM-FIRST architecture: the LLM is the brain, the engine is the plumbing.** The LLM classifies content, sets visibility, tags nudge types, decides sensitivity — all during extraction from the user's own conversation. The engine never interprets text, never does keyword matching, never makes content decisions. It only reads the structured fields the LLM set and routes mechanically.
+
+294. **The structural isolation flow (detailed).** (1) Alice sends message. (2) LLM processes it in Alice's context (sees all of Alice's facts). (3) LLM extracts facts with metadata: visibility, nudge_type, nudge_target. (4) Engine stores the fact with all LLM-assigned fields. (5) When building Bob's prompt, engine queries: own facts (all visibilities) + partner facts (ONLY non-private) + pending nudges (just the nudge_type, not the source fact text). (6) Bob's LLM sees a generic nudge suggestion matching the type, never the source.
+
+295. **nudge_type is the bridge between private facts and partner nudges.** Alice's LLM tags a fact with `nudge_type='connection'`. Bob's prompt gets: "Therapeutic suggestion: gently encourage quality time and emotional connection." The nudge_type vocabulary bridges without carrying content. The LLM on Alice's side decides the type. The engine on Bob's side injects the generic suggestion. The specific content never crosses.
+
+296. **No keyword checks, no code-level content guards.** Partners use different names, nicknames, indirect references. Code can't reliably match "that woman from his office" to "coworker crush." The LLM handles all content interpretation during extraction. The engine is content-agnostic — it reads fields (visibility, nudge_type) not text.
+
+297. **Camouflage frequency is user-adjustable.** Via natural language ("you ask too many questions") → LLM stores as preference AND returns settings_op to change camouflage_frequency. Or via /style command. The frequency maps to: off=0, low=1/week, normal=2-3/week, high=3-5/week (scaled by activity).
+
+298. **User feedback loop for nudging.** If Bob gets a nudge and later says "I noticed Alice was happier after I complimented her" — the LLM captures this as outcome feedback on the nudge. If Bob says "these random questions are annoying" — the LLM adjusts frequency AND returns a settings_op. Both paths are LLM-driven, not code-driven.
+
+299. **System handles topic suppression, frequency adjustment, and preference learning all through the same memory mechanism.** User preferences are facts. The LLM reads them from context and adjusts behavior. The engine stores them. No special subsystems needed for each preference type. This is the adaptive, robust system.
