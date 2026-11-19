@@ -414,3 +414,20 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 98. **Episodes are always multi-row per consolidation run.** 20 facts → 3-5 topic-grouped episodes, each with own source_ids. A 1-year mega-summary in one row would make raw msg retrieval impossible. Cross-topic connections handled by LLM at retrieval time.
 
 99. **No lighter models available to test.** All local Ollama models are 5-18GB (8B+ params). Need to pull a smaller model (qwen3:1.7b or gemma3:4b) for floor testing. Parked — not urgent since Qwen3 8B works well enough.
+
+
+## Sensitive Facts, Archival Chain, Docs (Decision 100-106)
+
+100. **Sensitive facts — indirect hinting.** When Alice says "I wish Bob would exercise," the LLM knows this as Alice's private fact. Bob's prompt NEVER contains it (structural guarantee). The LLM can hint indirectly when talking to Alice: "Have you two thought about doing something active together?" — framed as a couple suggestion, not revealing. The tact is the LLM's job; the privacy is the engine's job.
+
+101. **Monthly window is 30-90d.** The 30d minimum prevents monthly from touching recent weekly episodes that are still useful individually. The 90d upper bound hands off to quarterly. The window is 60 days wide. This is a config knob in `CASCADING_CONFIG` — adjustable.
+
+102. **Archival chain confirmed:** raw facts → weekly episodes (archives raw facts) → monthly episodes (archives weekly) → quarterly episodes (archives monthly). Each level archives its inputs. Raw messages table NEVER touched — immutable rebuild source.
+
+103. **Explicit schedule is the `days_since_last` check in user_meta.** Weekly runs if 7+ days since `last_consolidation`. Monthly runs if 30+ days since `last_cascade`. The maintenance loop runs hourly but the timestamp gate makes it weekly/monthly. Deterministic, logged, inspectable. Not a heuristic.
+
+104. **Debug mode should show quality drops.** When building `/debug`, include: fact count by kind/status, dropped episodes (too short, low coverage), recent consolidation results, FTS5 search test.
+
+105. **HOW_IT_WORKS.md created.** Complete system reference covering: two-table architecture, message flow, fact visibility, tags, relay flow, scoring, consolidation chain, proactive injection, commands, architecture. Located at `v2/HOW_IT_WORKS.md`.
+
+106. **Lighter model test: gemma3:4b pulling.** 2.3GB, 4B params. Will benchmark when ready to find the quality floor.
