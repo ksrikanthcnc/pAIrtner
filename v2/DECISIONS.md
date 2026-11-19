@@ -605,3 +605,30 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 179. **Archival flow finalized.** Daily summary (if ≥10 msgs) archives that day's raw facts. Weekly archives remaining raw facts + daily summaries. Monthly archives weekly summaries. Quarterly archives monthly. Yearly archives quarterly. Each level archives its inputs.
 
 180. **Proactive pokes operate in the days 1-7 gap.** Before the first weekly summary, raw active facts are the only source. The poke system surfaces old uncited raw facts during casual conversations. After weekly summary, the topic lives in summaries and surfaces through the summary layer.
+
+
+## Structured Summaries, Scoring Simplification, Configurability (Decision 181-192)
+
+181. **Summaries stored as structured JSON, rendered as prose.** Storage: `{"resolved": [...], "ongoing": [...], "new": [...], "narrative": "..."}` in metadata. LLM prompt receives the narrative prose. Structure enables queries/debugging; prose enables natural conversation.
+
+182. **Summaries are per-user (owner_id).** Alice's weekly summary covers Alice's conversations. Bob gets his own. Shared dynamics (check-ins, couple observations) are separate records or in the checkins table.
+
+183. **Implementation is both code and MD files.** Design → DECISIONS.md. Prompts → v2/prompts/*.md. Contracts → v2/contracts/*.yaml. Engine → pairtner/core/*.py. Storage → pairtner/storage/schema.py. Tests → tests/*.py. Prompts and contracts are the bridge between design and code.
+
+184. **Weekly is the minimum guaranteed summary level.** Daily is optional (≥10 msgs). Weekly, monthly, quarterly, yearly always run if their period had any activity. Empty periods produce no summary.
+
+185. **One summary function for all periods.** `create_summary(db_path, llm, user_id, period_type, period_id)`. period_type = daily|weekly|monthly|quarterly|yearly. What changes: input source (raw facts vs lower-level summaries) and what gets archived.
+
+186. **Summary intervals are CONFIGURABLE.** Ship with 5 levels (daily, weekly, monthly, quarterly, yearly). Architecture supports adding intermediate levels (3-day, biweekly, bimonthly, biannual) by adding a row to config. No code changes needed for new levels.
+
+187. **Gradual fact loss vs sudden transitions.** Current 1→7→30 jumps may feel abrupt. The configurable architecture lets us add 3d, 14d, 60d, 180d levels based on user testing. Each extra level costs ~1 LLM call per period per user. Total: ~70 calls/year at 5 levels, ~140 at 9 levels. Both are cheap.
+
+188. **DROPPED: intensity from scoring formula.** Scoring is now: `kind × decay × citations`. Intensity stays in extraction contract as optional metadata for LLM reference but doesn't mechanically affect ranking. The summary layer handles importance through prose emphasis — "thinking about divorce" gets prominent placement naturally, "had pizza" gets one word.
+
+189. **No false precision.** The LLM judging "is this 0.7 or 0.8?" is theater. The LLM makes better importance judgments from MEANING in the consolidation prompt than from a number it assigned earlier. Let the prose carry the weight.
+
+190. **Resolved facts mentioned in summaries provide closure, not nag.** The archived raw fact disappears from scoring. The summary text says "interview resolved positively." The LLM can reference it when relevant without the fact cluttering the active context.
+
+191. **Memory viewer UI needed (future).** Timeline of facts, summary hierarchy, scheduler status, per-fact drill-down. REST API endpoints exist for most data. PWA feature for future build.
+
+192. **LLM discretion on topic survival in summaries is correct.** The LLM deciding what's worth carrying forward IS the value. Raw messages are never deleted — rebuild recovers anything the LLM dropped. The safety net is the immutable raw message log, not a scoring formula.
