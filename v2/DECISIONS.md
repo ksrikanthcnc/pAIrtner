@@ -286,3 +286,12 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 61. **"Save privately" button** is the pAIrtner bot's own UI: saves the bot's response as a private fact (only the user sees it). "Pass it on gently" drafts a relay. This is the v1 memory system. Auto-save (append-only raw log) is separate and always on.
 
 62. **Multiple iterations for weaker models.** For local models that miss extraction on first pass, a verification/refinement loop: extract → pass results back → "did you miss anything?" Cheap second pass. Not built yet, noted for when we move extraction to local Qwen.
+
+
+## Memory Growth Analysis & Cascading Consolidation (Decision 63-65)
+
+63. **Episode consolidation is needed.** After a year, ~100+ weekly episodes compete for prompt space. Without cascading, the context fills with moderately-scored summaries. Fix: Level 0 (working) → Level 1 (weekly) → Level 2 (monthly, after 30d) → Level 3 (quarterly, after 90d). Source episodes archived after consolidation. Growth stabilizes at ~66-82 facts regardless of age.
+
+64. **"Save privately" button** is ONLY about the relay draft — dismissing the suggestion to forward something to the partner. Facts are auto-saved by memory_ops on every message. The user never manually saves facts. Clarified in DECISIONS.md for future agents.
+
+65. **Docker always binds 0.0.0.0** inside the container (container networking requires it). Host-side binding is controlled by the `ports:` mapping in docker-compose. REST_BIND variable controls the host interface.
