@@ -166,3 +166,34 @@
 - `v2/DECISIONS.md` — decisions 107-116
 
 ### Test count: 1268 (1253 core + 15 stress), all passing
+
+
+## 2026-11-19 — v2 design session (continued, session 4-5)
+
+### Key design shifts this session
+1. **Consolidation redesign**: summaries cover ALL activity (not just resolved facts). Summaries archive their source facts. Ongoing topics survive in summary prose.
+2. **Scoring simplified**: kind × decay × citations × intensity. Intensity kept for raw facts (pre-summary window) but irrelevant for episodes.
+3. **Dropped**: fact_count as scoring factor, priority flag (redundant with intensity).
+4. **Adaptive daily summaries**: only if ≥10 messages that day. Weekly is guaranteed minimum.
+5. **Configurable intervals**: 1d(adaptive)-7d-30d-90d-365d. Architecture supports adding 3d, 14d etc.
+6. **Calendar periods**: ISO weeks, calendar months, quarters. Not rolling windows.
+7. **Fixed-window consolidation**: if server was down 2 months, runs each missed week separately.
+8. **Telegram**: message splitting (4096 limit), retry with backoff (3 attempts), offline behavior documented.
+9. **Schema v2**: 22→16 tables (relay merged, analysis merged, goals merged, fact_summaries dropped). Not wired yet.
+10. **gemma3:4b benchmark**: 0% on full contract, 100% on simplified. Floor = 8B params.
+
+### Files created/changed
+- `v2/DECISIONS.md` — decisions 107-192 (86 new decisions this session)
+- `v2/USER_FLOWS.md` — 10 typical user flows
+- `v2/HOW_IT_WORKS.md` — updated with Telegram, LAN, debug sections
+- `pairtner/storage/schema_v2.py` — new consolidated schema (not wired)
+- `pairtner/adapters/telegram_adapter.py` — message splitting + retry
+- `pairtner/core/memory_maintenance.py` — fixed-window consolidation + explicit logging
+- `pairtner/core/consolidation.py` — window_start/window_end params
+- `dev/benchmark/results/ollama-gemma3-4b.json` — benchmark results
+- `TODO.md` — v2 build queue added
+- `agents/main/journal.md` — this entry
+
+### Test count: 1268 (1253 core + 15 stress), all passing
+### Decision count: 192
+### Next: implement the build queue (unified summary function → context window composer → schema migration)

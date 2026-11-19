@@ -127,6 +127,8 @@ Project: 18k source lines, 1229 tests, 76 Python files, 87 commits.
 
 ### P1 — Memory UX
 - [ ] **PWA memory panel** — view facts, edit, delete, promote to core, see recency
+- [ ] **PWA memory viewer** — timeline of facts, summary hierarchy, scheduler status, per-fact drill-down
+- [ ] **PWA scheduler dashboard** — consolidation runs, logs, next scheduled run, what was processed
 - [x] **"Why do you think that?"** — trace fact back to source message (provenance API)
 - [ ] **Fact rewrite** — `/review rewrite` sends facts to heavy model for cleanup
 - [ ] **Inline fact editing** — tap a fact in PWA to edit its text
@@ -173,3 +175,35 @@ pairtner/
 ├── pack.py          # Pack loader
 └── crypto.py        # Fernet encryption
 ```
+
+
+---
+
+## v2 Memory System (192 design decisions in v2/DECISIONS.md)
+
+### Build Queue (in order)
+- [ ] **Unified summary function** — `create_summary(user_id, period_type, period_id)` for all levels
+- [ ] **Context window composer** — multi-source: core + top-K working + FTS5 + summaries + proactive
+- [ ] **Update consolidation** — summaries archive raw facts, not just resolved ones
+- [ ] **Wire schema v2** — migrate from 22 tables to 16 (schema_v2.py ready, not wired)
+- [ ] **LLM search endpoint** — two-pass retrieval: LLM returns search_query, engine runs FTS5
+- [ ] **Proactive poke system** — surface old uncited facts as natural conversation topics
+- [ ] **Chat import** — JSON template with timestamps → batch extract → per-period consolidation
+- [ ] **Simplified extraction prompt for 4B models** — gemma3:4b works with simple contract
+- [ ] **Benchmark HTML viewer** — Alice/Bob flow visualization for model testing
+- [ ] **/debug and /warnings commands** — inspect knowledge state and quality drops
+- [ ] **Configurable summary intervals** — ship 5 levels, architecture supports adding more
+
+### Design Docs
+- [x] `v2/DECISIONS.md` — 192 numbered decisions from design sessions
+- [x] `v2/HOW_IT_WORKS.md` — complete system reference
+- [x] `v2/USER_FLOWS.md` — 10 typical user flows
+- [x] `v2/contracts/response.yaml` — extraction JSON schemas
+- [x] `v2/contracts/scoring.yaml` — scoring configuration
+- [x] `v2/prompts/extract.md` — extraction prompt (Gemini + Qwen tested)
+- [x] `dev/benchmark/` — model comparison framework + seed DB
+
+### Key Metrics
+- Tests: 1268 (1253 core + 15 stress)
+- Benchmark results: Gemini 80%, Qwen3 8B 73%, gemma3 4B 0% (full contract) / 100% (simple)
+- Schema: v2 ready (22→16 tables), not yet wired

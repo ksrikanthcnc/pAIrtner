@@ -632,3 +632,16 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 191. **Memory viewer UI needed (future).** Timeline of facts, summary hierarchy, scheduler status, per-fact drill-down. REST API endpoints exist for most data. PWA feature for future build.
 
 192. **LLM discretion on topic survival in summaries is correct.** The LLM deciding what's worth carrying forward IS the value. Raw messages are never deleted — rebuild recovers anything the LLM dropped. The safety net is the immutable raw message log, not a scoring formula.
+
+
+## Intensity Revert, Shared Facts, Tracking (Decision 193-197)
+
+193. **PARTIAL REVERT: intensity stays in scoring for raw facts.** Without it, "thinking about divorce" and "we had pizza" score identically in the pre-summary window (days 1-7). Intensity is the only distinguisher for live raw facts. For episodes (summaries), intensity is always 1.0 (neutral) — the prose carries importance. Revised scoring: `kind × decay × citations × intensity`.
+
+194. **Shared vs per-user data properly scoped.** Raw facts: per-user (owner_id), some with visibility=shared. Summaries: per-user primarily. Couple-level summaries (combined view) are a future enhancement for check-ins and mediation. The facts table has owner_id but no couple_id — adding couple_id is a future schema change.
+
+195. **DECISIONS.md is developer documentation, never sent to LLM.** The LLM sees: contract.md, memory.md, persona.md, extraction prompts, and the system prompt built by core/prompts.py. Design rationale stays in the repo for humans.
+
+196. **TODO.md updated with v2 build queue.** 11 items in priority order: unified summary function → context window composer → consolidation update → schema migration → LLM search → proactive pokes → chat import → 4B prompt → benchmark viewer → debug commands → configurable intervals.
+
+197. **PWA memory viewer and scheduler dashboard tracked.** Added to P1 in TODO.md. REST API endpoints exist for most data. Build when the core memory engine is stable.
