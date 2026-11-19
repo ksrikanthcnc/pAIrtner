@@ -494,3 +494,36 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 132. **LLM has NO search tool.** Context is pre-loaded by the scoring engine (top-K by score + FTS5 per-message matches). The LLM cannot proactively search memory. v2.1 feature: add a `search_query` field to the LLM contract for two-pass retrieval (RAG-style).
 
 133. **`fact_summaries` table is v1 dead code.** Monthly summaries for dashboard display, replaced by v2 consolidation episodes. Safe to drop when cleaning up.
+
+
+## Schema Rewrite, Consolidation Redesign, Import, Search (Decision 134-148)
+
+134. **Fact resolution: two paths.** (1) LLM marks it via `status` op during conversation. (2) Auto-aging at 90d uncited — but this should flag for user review, not silently archive. Add `/review` for old uncited facts.
+
+135. **Unresolved facts stay active forever.** No silent expiry. Active facts score 3.3x higher than resolved (1.0 vs 0.3). Human discussions that go unresolved naturally dominate the context window. This is correct behavior.
+
+136. **Avoid auto-aging at 90d.** User is right — if it reaches 90d uncited, it slipped past checks. Replace with a `/review` prompt showing old uncited facts. User decides, not the engine.
+
+137. **No daily consolidation.** Days rarely have enough resolved facts. The weekly cadence is the minimum useful unit for fact consolidation.
+
+138. **Calendar periods, not rolling windows.** ISO weeks (Mon-Sun), calendar months, calendar quarters. "Week 33" not "7 days since last run." Eliminates boundary ambiguity entirely.
+
+139. **Episodes carry `fact_count` in metadata for weighted scoring.** A 15-fact episode from a heated argument week scores higher than a 1-fact trivial passthrough. Sparse weeks don't get disproportionate weight.
+
+140. **Import existing chat feature.** JSON template with `{from, text, timestamp}` per message. Import → batch extract → consolidation per period. Uses `rebuild_knowledge()` infrastructure. Added to TODO.
+
+141. **LLM calls are cheap.** ~68 consolidation calls/year. Free on Gemini Flash Lite, ~$1-2/year on paid models. Don't over-optimize to avoid them.
+
+142. **Consolidation checks ALL unarchived items in its scope.** Not rigid tier-only. Quarterly catches straggler weekly episodes AND orphan facts that slipped through monthly. Each input tagged with its weight/type.
+
+143. **LLM search endpoint (v2.1).** Two-pass retrieval: LLM returns `search_query`, engine runs FTS5, injects results, second LLM pass with enriched context. High-value QoL feature.
+
+144. **Schema rewrite: merge redundant tables.** 22 → ~16. Merge 3 relay tables → 1, 3 analysis tables → 1, 2 goal tables → 1. Drop `fact_summaries` (dead v1 code).
+
+145. **Benchmark DB usable by others.** The stress test DB with 600+ messages should be extractable as a standalone test harness. Add simple HTML viewer for Alice/Bob flow visualization.
+
+146. **Consolidation sends source tags.** When consolidating, the LLM receives `[working:0.8]` or `[weekly_episode:5_facts]` so it knows source weight/type. Prevents equal-weighting sparse and dense inputs.
+
+147. **Scoring formula includes episode `fact_count`.** `score = kind_weight × decay × status × intensity × citations × fact_count_boost`. An episode summarizing 15 facts scores higher than one summarizing 2.
+
+148. **Flow confirmed: calendar periods.** Week 33 (Mon-Sun), July, Q2. Not ≥7d/≥30d/≥90d. Each consolidation pass processes exactly one named period. Server catches up by running missed periods individually.
