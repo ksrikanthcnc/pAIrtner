@@ -750,3 +750,36 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 244. **Active intervals are a config knob.** `ACTIVE_SUMMARY_INTERVALS` in scoring.yaml. Operators can tune without code changes. Default: `['daily', 'weekly', 'monthly', 'quarterly', 'yearly']`. Adding `'triday'` to the list activates 3-day summaries immediately.
 
 245. **Max active nudges per relationship: 5.** Stored as a config in relationship_config or scoring.yaml. If a couple generates more than 5 pending nudges before any are delivered, the oldest pending one auto-expires with reason 'max_active_exceeded'. This is the growth bound.
+
+
+## Privacy Safety, Nudge Config, Venting Default, Sensitivity, Testing Plan (Decision 246-260)
+
+246. **All nudge parameters in scoring.yaml, not hardcoded.** max_active_per_relationship, default_cooldown_h, ttl_by_type, pre_fire_check, enabled (master switch). Override via env for testing: NUDGE_MAX_ACTIVE=2 NUDGE_COOLDOWN_H=0 etc.
+
+247. **Sensitivity classification for private facts.** New column: `sensitivity IN ('normal','sensitive','critical')`. Normal: standard behavior. Sensitive: longer cooldown (72h), topic-distant nudges only. Critical: NO partner-facing behavior at all — self-engagement only. Triggers professional help suggestion for self-harm/abuse disclosures.
+
+248. **NEVER-NUDGE topics.** The LLM must classify as `sensitivity='critical'`: infidelity/attraction to others, abuse (physical/emotional/financial), self-harm/suicidal ideation, exit planning (divorce/separation), substance abuse disclosure. These get `visibility='private'` AND `sensitivity='critical'`. No partner-facing behavior of any kind.
+
+249. **Attribution risk in nudges.** Even "unattributed" nudges can be traced by a smart partner (Alice complains Monday, Bob gets nudged Tuesday). Safeguards: (1) topic distance — nudge must be sufficiently general that the partner can't connect it. (2) Variable cooldown — not always 24h, randomize 24-72h to break the pattern. (3) Pre-fire LLM check: "could the partner trace this back?"
+
+250. **Structural isolation against prompt injection.** Private facts are NEVER in the partner's context window. Not "don't mention" — literally absent. The LLM can't leak what it doesn't see. This is the primary defense. Secondary: prompt hardening ("you never have access to partner's private thoughts"). Tertiary: output filter scanning bot responses for private fact content before delivery.
+
+251. **Prompt injection defense layers.** (1) Structural: private facts excluded from partner's prompt (engine-level, not LLM-level). (2) Prompt hardening: explicit instruction to decline requests for partner's private info. (3) Output filtering: post-generation scan for private fact leakage, regenerate if detected. (4) No cross-user raw context: partner only sees shared/nudge_eligible facts, never private ones even paraphrased.
+
+252. **Venting is the default interaction mode.** Changed from 'adaptive' to 'vent'. Most people vent by default. Solution mode activates only when: (1) user explicitly asks ("what should I do?", "any suggestions?"), (2) user sets via /style, (3) personality questionnaire determines solution-oriented. The bot defaults to active listening — validate, reflect, empathize. NO unsolicited suggestions.
+
+253. **Personality questionnaire during onboarding.** Casual questions to determine interaction preferences: vent vs solution default, communication style, emotional expressiveness, preferred bot tone. Stored in user_profiles. Can also be inferred over time from conversation patterns (does user respond well to suggestions or shut them down?). Not a mandatory form — weave into natural conversation.
+
+254. **Column stays `kind`, not `mem_kind` or `tier`.** No more renaming. `kind` was the original name, it's clear, everyone understands `kind='weekly'`. The rename churn (kind → tier → kind) was unnecessary. Final.
+
+255. **Admin UI: pretty timeline, not log file.** Color-coded cards per event type (messages=blue, facts=purple, nudges=amber, summaries=green, archival=gray). Collapsible detail. Filterable by event type. Per-relationship view showing both partners' conversations interleaved. Chat-client aesthetic, not terminal dump. PWA page.
+
+256. **Test plan: 5 levels vs 9 levels comparison.** Generate 6 months of realistic couples conversation data. Run consolidation at 5 levels and 9 levels. Compare: context window coverage, information loss at each boundary, retrieval accuracy (can the bot find a 3-month-old fact?), LLM call count. Specific focus: does 7d→30d jump in 5-level lose context that 15d intermediate preserves?
+
+257. **Professional help referral for critical sensitivity.** When `sensitivity='critical'` and topic is self-harm/suicidal ideation, the bot provides helpline numbers (988 Suicide & Crisis Lifeline, Crisis Text Line) and gently suggests professional counseling. Does NOT attempt to be a therapist for these topics. Does NOT notify partner.
+
+258. **Nudge cooldown randomization.** Don't always fire at exactly cooldown_h. Randomize within a range: cooldown_h to cooldown_h * 3. Breaks the temporal pattern that allows attribution. Alice vents at 9am, nudge fires anywhere between 9am tomorrow and 9am in 3 days.
+
+259. **Output filter for private fact leakage.** Before sending bot response to a user, engine checks: does this response contain content matching the PARTNER's private facts? Uses FTS5 similarity or simple keyword matching. If match > threshold, regenerate with stricter prompt. Defense in depth — structural isolation is primary, this is the safety net.
+
+260. **Personality questionnaire is conversational, not form-based.** The bot asks naturally during early conversations: "When you're stressed, do you want help figuring it out or just someone to listen?" Answers stored in user_profiles. Not a mandatory onboarding wall — questions weave into natural chat over the first few sessions. Can be updated anytime via /style.
