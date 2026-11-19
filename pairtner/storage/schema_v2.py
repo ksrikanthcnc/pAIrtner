@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS facts (
     fact_type       TEXT DEFAULT 'stable'
                     CHECK(fact_type IN ('transient','situational','stable')),
     sensitivity     TEXT DEFAULT 'normal'
-                    CHECK(sensitivity IN ('normal','sensitive','critical')),
+                    CHECK(sensitivity IN ('normal','critical')),
     intensity       REAL DEFAULT 0.5,
     -- source tracking
     msg_source      TEXT DEFAULT 'user'
