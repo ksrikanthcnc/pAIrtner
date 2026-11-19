@@ -369,3 +369,20 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
     **Assessment:** Qwen3 8B is comparable to Gemini for extraction. It's more granular (7 vs 4 facts) which may be better for knowledge building. Both produce valid JSON with reasonable intensity scores. The quality gap is smaller than expected — local models are viable for extraction.
 
 82. **Two-iteration refinement for local models (parked).** Qwen3 8B does well enough on first pass. If we see quality issues in real usage, add a verification pass. Not needed now.
+
+
+## Relay UX, Quality Checks, Timeline, Paging (Decision 83-89)
+
+83. **Single relay button.** Removed "Keep to myself" — the default is don't share (just dismiss). Only one button: "💬 Share with partner". If the user does nothing, the draft dies. Simpler UX.
+
+84. **Consolidation quality validation.** Two checks: (1) Episodes shorter than 8 words are rejected — prevents meaningless one-liner summaries. (2) Coverage logging: if <50% of input facts are covered by episodes, warns in logs. Quality check via second LLM call parked for now — start with these structural checks.
+
+85. **Fixed-window consolidation schedule.** Weekly runs once per 7d (tracks last run in user_meta). Monthly runs once per 30d. Quarterly once per 90d. No overlap, no reprocessing. The age-based filtering in `_find_episode_candidates` (30-90d for monthly, 90d+ for quarterly) naturally enforces window boundaries.
+
+86. **Dynamic pagination for LLM search.** Search tool accepts `limit` param from the LLM. Default `limit=5`, LLM can ask for `limit=10`, `limit=20` on subsequent pages. Not over-engineering — it's one parameter on an existing function. FTS5 already returns ordered results.
+
+87. **Episodes are always multi-row, topic-grouped.** The consolidation prompt says "group by theme, NOT by time" and returns an array. 20 resolved facts → 3-5 episodes (one per topic). Each episode links to its specific source fact IDs via `source_ids`. Cross-topic connections are the LLM's job at retrieval time, not at storage time. Confirmed: this is already the implementation.
+
+88. **Gemini 2.0 Flash Lite deprecated.** Google returns 404 with redirect to gemini-3.5-flash-lite. Update all model references.
+
+89. **LLM comparison validated.** Qwen3 8B (local) produces 7 facts vs Gemini 3.5 Flash Lite's 4 facts on same input. Both valid JSON, both reasonable. Local models are viable. Quality gap smaller than expected.
