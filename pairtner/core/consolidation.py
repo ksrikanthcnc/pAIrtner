@@ -56,8 +56,14 @@ async def run_consolidation(
     user_id: int,
     config: dict[str, Any] | None = None,
     api_key_override: str | None = None,
+    window_start: str | None = None,
+    window_end: str | None = None,
 ) -> list[dict[str, Any]]:
     """Consolidate resolved/outdated working facts into episodes.
+
+    When *window_start* and *window_end* are given (ISO timestamps), only facts
+    whose ``updated_at`` (or ``created_at``) falls within that range are
+    considered.  This supports fixed-calendar-window consolidation.
 
     Returns a list of created episode dicts.
     """
@@ -65,7 +71,10 @@ async def run_consolidation(
     episodes_created: list[dict[str, Any]] = []
 
     # Find candidates: resolved/outdated working facts
-    candidates = await _find_consolidation_candidates(db_path, user_id, cfg)
+    candidates = await _find_consolidation_candidates(
+        db_path, user_id, cfg,
+        window_start=window_start, window_end=window_end,
+    )
     if len(candidates) < cfg["min_memories_for_episode"]:
         log.info(
             "consolidation: user %s has %d candidates, need %d",
@@ -201,6 +210,9 @@ def _parse_episodes(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 async def _find_consolidation_candidates(
     db_path: str, user_id: int, cfg: dict[str, Any],
+    *,
+    window_start: str | None = None,
+    window_end: str | None = None,
 ) -> list[dict[str, Any]]:
     """Find working facts eligible for weekly consolidation.
 
@@ -208,11 +220,24 @@ async def _find_consolidation_candidates(
     1. Resolved/outdated facts (any age) — these are done, compress them.
     2. Active stale facts (90d+ with no citations) — forgotten, auto-archive.
 
-    The cascading layer (monthly/quarterly) handles EPISODE age bounds.
-    Weekly consolidation is about FACT lifecycle, not time windows.
+    When *window_start*/*window_end* are given, only facts whose updated_at
+    (status-change timestamp) or created_at falls within [start, end) are
+    considered.  This implements fixed-calendar-window consolidation.
     """
     now = datetime.now(timezone.utc)
     all_facts = await db_mod.get_active_facts(db_path, user_id)
+
+    # Parse window boundaries if provided
+    win_start_dt = win_end_dt = None
+    if window_start:
+        win_start_dt = datetime.fromisoformat(window_start)
+        if win_start_dt.tzinfo is None:
+            win_start_dt = win_start_dt.replace(tzinfo=timezone.utc)
+    if window_end:
+        win_end_dt = datetime.fromisoformat(window_end)
+        if win_end_dt.tzinfo is None:
+            win_end_dt = win_end_dt.replace(tzinfo=timezone.utc)
+
     candidates = []
 
     for f in all_facts:
@@ -222,6 +247,23 @@ async def _find_consolidation_candidates(
         # Only working facts
         if kind != "working":
             continue
+
+        # Window filter: if a window is specified, check the fact's timestamp
+        if win_start_dt or win_end_dt:
+            # Prefer updated_at (when status changed), fall back to created_at
+            ts_str = f.get("updated_at") or f.get("created_at")
+            if not ts_str:
+                continue
+            try:
+                ts = datetime.fromisoformat(ts_str)
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+            except (ValueError, TypeError):
+                continue
+            if win_start_dt and ts < win_start_dt:
+                continue
+            if win_end_dt and ts >= win_end_dt:
+                continue
 
         # Resolved or outdated facts are always candidates
         if status in ("resolved", "outdated"):

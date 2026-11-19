@@ -64,8 +64,14 @@ async def _get_active_user_ids(db_path: str) -> list[int]:
 async def _maybe_consolidate(
     db_path: str, llm: Any, user_id: int
 ) -> None:
-    """Run consolidation if enough time has passed since the last run."""
+    """Run weekly consolidation for each missed calendar week.
+
+    Fixed-window strategy: if the bot was down for 3 weeks, run 3 separate
+    weekly passes (week 1, week 2, week 3) — NOT one big pass.  Each pass
+    processes only facts resolved within that 7-day window.
+    """
     from pairtner.storage.helpers import _fetch_one
+    from datetime import timedelta
 
     row = await _fetch_one(
         db_path,
@@ -73,47 +79,63 @@ async def _maybe_consolidate(
         (user_id,),
     )
 
+    now = datetime.now(timezone.utc)
+
     if row and row.get("value"):
         try:
             last = datetime.fromisoformat(row["value"])
             if last.tzinfo is None:
                 last = last.replace(tzinfo=timezone.utc)
-            days_since = (datetime.now(timezone.utc) - last).days
-            if days_since < 7:
-                logger.debug(
-                    "Weekly consolidation: user %s — %dd since last run, skipping (next in %dd)",
-                    user_id, days_since, 7 - days_since,
-                )
-                return  # Too soon
-            logger.info(
-                "Weekly consolidation: user %s — %dd since last run, running now",
-                user_id, days_since,
-            )
         except (ValueError, TypeError):
-            logger.warning(
-                "Weekly consolidation: user %s — malformed last_consolidation timestamp, running anyway",
-                user_id,
-            )
+            last = now - timedelta(days=7)  # Malformed — process last week
+    else:
+        last = now - timedelta(days=7)  # First run — process last week
+
+    days_since = (now - last).days
+    if days_since < 7:
+        logger.debug(
+            "Weekly consolidation: user %s — %dd since last run, skipping (next in %dd)",
+            user_id, days_since, 7 - days_since,
+        )
+        return
+
+    # How many weekly windows to process
+    weeks_missed = days_since // 7
+    logger.info(
+        "Weekly consolidation: user %s — %dd since last run, processing %d weekly window(s)",
+        user_id, days_since, weeks_missed,
+    )
 
     try:
         from pairtner.core.consolidation import run_consolidation
-
-        episodes = await run_consolidation(db_path, llm, user_id)
-        if episodes:
-            logger.info(
-                "Consolidation: user %s — created %d episodes",
-                user_id,
-                len(episodes),
-            )
-
-        # Record the run
         import aiosqlite
 
+        total_episodes = 0
+        for week_num in range(weeks_missed):
+            # Each window: [last + week_num*7d, last + (week_num+1)*7d)
+            window_start = last + timedelta(days=week_num * 7)
+            window_end = last + timedelta(days=(week_num + 1) * 7)
+
+            episodes = await run_consolidation(
+                db_path, llm, user_id,
+                window_start=window_start.isoformat(),
+                window_end=window_end.isoformat(),
+            )
+            total_episodes += len(episodes) if episodes else 0
+
+        if total_episodes:
+            logger.info(
+                "Consolidation: user %s — created %d episodes across %d weekly windows",
+                user_id, total_episodes, weeks_missed,
+            )
+
+        # Record the run — advance to the last completed window boundary
+        completed_up_to = last + timedelta(days=weeks_missed * 7)
         async with aiosqlite.connect(db_path) as db:
             await db.execute(
                 "INSERT OR REPLACE INTO user_meta (user_id, key, value, updated_at) "
                 "VALUES (?, 'last_consolidation', ?, CURRENT_TIMESTAMP)",
-                (user_id, _now_iso()),
+                (user_id, completed_up_to.isoformat()),
             )
             await db.commit()
 
