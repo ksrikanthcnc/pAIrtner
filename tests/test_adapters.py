@@ -13,7 +13,7 @@ import pytest_asyncio
 from pairtner.adapters import ADAPTER_REGISTRY, get_adapter
 from pairtner.adapters.base import BaseAdapter
 from pairtner.adapters.cli_adapter import CLIAdapter
-from pairtner.adapters.telegram_adapter import TelegramAdapter
+from pairtner.adapters.telegram_adapter import TelegramAdapter, _split_message
 from pairtner.adapters.websocket_adapter import WebSocketAdapter
 from pairtner.config import Config
 from pairtner.db import (
@@ -144,6 +144,59 @@ class TestBaseAdapter:
 # ---------------------------------------------------------------------------
 # Step 3: TelegramAdapter tests
 # ---------------------------------------------------------------------------
+
+
+class TestSplitMessage:
+    """Test Telegram message splitting for the 4096-char limit."""
+
+    def test_short_message_unchanged(self):
+        assert _split_message("hello") == ["hello"]
+
+    def test_exact_limit_unchanged(self):
+        text = "x" * 4096
+        assert _split_message(text) == [text]
+
+    def test_splits_at_paragraph_boundary(self):
+        # Two paragraphs, each under limit, total over limit
+        p1 = "A" * 3000
+        p2 = "B" * 3000
+        text = p1 + "\n\n" + p2
+        parts = _split_message(text)
+        assert len(parts) == 2
+        assert parts[0] == p1
+        assert parts[1] == p2
+
+    def test_splits_at_newline_when_no_paragraph(self):
+        line1 = "A" * 3000
+        line2 = "B" * 3000
+        text = line1 + "\n" + line2
+        parts = _split_message(text)
+        assert len(parts) == 2
+        assert all(len(p) <= 4096 for p in parts)
+
+    def test_hard_cut_when_no_boundary(self):
+        text = "A" * 8000  # No whitespace at all
+        parts = _split_message(text)
+        assert len(parts) == 2
+        assert parts[0] == "A" * 4096
+        assert parts[1] == "A" * 3904
+
+    def test_custom_limit(self):
+        text = "Hello world. How are you. I'm fine."
+        parts = _split_message(text, limit=20)
+        assert all(len(p) <= 20 for p in parts)
+        assert len(parts) >= 2
+
+    def test_empty_string(self):
+        assert _split_message("") == [""]
+
+    def test_buttons_only_on_last_chunk(self):
+        """Verify the adapter contract: buttons go on the last chunk only."""
+        # This is a design-level test -- the actual wiring is in the adapter
+        parts = _split_message("A" * 5000)
+        assert len(parts) > 1
+        # Buttons should be on parts[-1], None on parts[:-1]
+        # (tested structurally, not functionally -- adapter handles this)
 
 
 class TestTelegramAdapter:

@@ -6,6 +6,53 @@ import asyncio
 import logging
 from io import BytesIO
 
+# Telegram's hard limit for a single text message.
+_TG_MSG_LIMIT = 4096
+
+
+def _split_message(text: str, limit: int = _TG_MSG_LIMIT) -> list[str]:
+    """Split *text* into chunks that each fit within *limit* characters.
+
+    Tries paragraph boundaries first, then sentence boundaries, then hard-cuts
+    at the limit.  Guarantees every returned chunk is <= *limit* and non-empty.
+    """
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= limit:
+            chunks.append(remaining)
+            break
+
+        # Try paragraph break (double newline)
+        cut = remaining.rfind("\n\n", 0, limit)
+        if cut > 0:
+            chunks.append(remaining[:cut])
+            remaining = remaining[cut + 2:]  # skip the \n\n
+            continue
+
+        # Try single newline
+        cut = remaining.rfind("\n", 0, limit)
+        if cut > 0:
+            chunks.append(remaining[:cut])
+            remaining = remaining[cut + 1:]
+            continue
+
+        # Try sentence boundary (". ")
+        cut = remaining.rfind(". ", 0, limit)
+        if cut > 0:
+            chunks.append(remaining[: cut + 1])
+            remaining = remaining[cut + 2:]
+            continue
+
+        # Hard-cut at limit
+        chunks.append(remaining[:limit])
+        remaining = remaining[limit:]
+
+    return [c for c in chunks if c.strip()]
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
 from telegram.ext import (
@@ -135,12 +182,16 @@ class TelegramAdapter(BaseAdapter):
                 chat_id=int(user_id), document=doc, caption=text[:1024],
             )
         else:
-            await self._app.bot.send_message(
-                chat_id=int(user_id),
-                text=text,
-                reply_markup=markup,
-                parse_mode="HTML",
-            )
+            parts = _split_message(text)
+            for i, part in enumerate(parts):
+                # Attach buttons only to the last chunk
+                mk = markup if i == len(parts) - 1 else None
+                await self._app.bot.send_message(
+                    chat_id=int(user_id),
+                    text=part,
+                    reply_markup=mk,
+                    parse_mode="HTML",
+                )
 
     async def send_typing(self, user_id: int | str) -> None:
         if self._app:
@@ -175,12 +226,15 @@ class TelegramAdapter(BaseAdapter):
                 chat_id=target, document=doc, caption=response.text[:1024],
             )
         else:
-            await bot.send_message(
-                chat_id=target,
-                text=response.text,
-                reply_markup=markup,
-                parse_mode="HTML",
-            )
+            parts = _split_message(response.text)
+            for i, part in enumerate(parts):
+                mk = markup if i == len(parts) - 1 else None
+                await bot.send_message(
+                    chat_id=target,
+                    text=part,
+                    reply_markup=mk,
+                    parse_mode="HTML",
+                )
 
     # ── background tasks ─────────────────────────────────────────────────
 

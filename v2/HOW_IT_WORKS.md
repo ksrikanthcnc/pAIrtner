@@ -224,3 +224,42 @@ dev/
   benchmark/             ← Model comparison framework
   localtest/             ← Local testing with Ollama
 ```
+
+
+---
+
+## Telegram-Specific Behavior
+
+### Message Splitting
+Telegram has a hard 4096-character limit per message. The adapter automatically
+splits long replies at paragraph > newline > sentence > hard-cut boundaries.
+Buttons (e.g., "Share with partner") attach to the **last** chunk only.
+
+### Offline Behavior
+The bot uses **long-polling** (not webhooks). When the server is down:
+- Telegram **buffers undelivered messages** on their servers (up to ~24h in practice).
+- When the bot reconnects, it receives any messages sent while it was offline.
+- User messages are NOT lost — they're queued by Telegram.
+- Bot **replies** that failed to send while offline are lost (the bot doesn't retry).
+  The user just sees no response for that message.
+
+### LAN Access (Android)
+Run with `--lan` flag to bind to `0.0.0.0` instead of `127.0.0.1`:
+```
+uv run python dev/localtest/run_local.py --llm ollama --port 8766 --keep --lan
+```
+Then open `http://<mac-ip>:8766/duo.html` from any device on the same WiFi.
+
+---
+
+## Debug & Warnings
+
+| Command | Level | What it shows |
+|---|---|---|
+| `/whatdoyouknow` | User | All active facts for the user (existing) |
+| `/debug` (planned) | Full | Knowledge table state, scores, FTS5 index, metadata |
+| `/warnings` (planned) | Warn | Dropped consolidation episodes, quality failures, schedule skips |
+
+Quality checks during consolidation (min 8 words per episode, 50% coverage)
+log warnings when episodes are dropped. The `/warnings` command will surface
+these to the user.

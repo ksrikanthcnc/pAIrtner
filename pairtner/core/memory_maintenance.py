@@ -80,9 +80,20 @@ async def _maybe_consolidate(
                 last = last.replace(tzinfo=timezone.utc)
             days_since = (datetime.now(timezone.utc) - last).days
             if days_since < 7:
+                logger.debug(
+                    "Weekly consolidation: user %s — %dd since last run, skipping (next in %dd)",
+                    user_id, days_since, 7 - days_since,
+                )
                 return  # Too soon
+            logger.info(
+                "Weekly consolidation: user %s — %dd since last run, running now",
+                user_id, days_since,
+            )
         except (ValueError, TypeError):
-            pass  # Malformed timestamp — run anyway
+            logger.warning(
+                "Weekly consolidation: user %s — malformed last_consolidation timestamp, running anyway",
+                user_id,
+            )
 
     try:
         from pairtner.core.consolidation import run_consolidation
@@ -132,9 +143,20 @@ async def _maybe_cascade(
                 last = last.replace(tzinfo=timezone.utc)
             days_since = (datetime.now(timezone.utc) - last).days
             if days_since < 30:
+                logger.debug(
+                    "Monthly cascade: user %s — %dd since last run, skipping (next in %dd)",
+                    user_id, days_since, 30 - days_since,
+                )
                 return  # Too soon
+            logger.info(
+                "Monthly cascade: user %s — %dd since last run, running now",
+                user_id, days_since,
+            )
         except (ValueError, TypeError):
-            pass
+            logger.warning(
+                "Monthly cascade: user %s — malformed last_cascade timestamp, running anyway",
+                user_id,
+            )
 
     try:
         from pairtner.core.consolidation import run_cascading_consolidation
