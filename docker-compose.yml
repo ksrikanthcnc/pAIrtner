@@ -32,10 +32,10 @@ services:
     # Uncomment for the web app / REST API instead (publish on a private interface;
     # REST_INVITE_CODE is read from .env via env_file, never write it here):
     # ports:
-    #   - "127.0.0.1:8780:8780"
+    #   - "${REST_BIND:-0.0.0.0}:8780:8780"
     # environment:
     #   - ADAPTER=telegram+rest      # or: rest
-    #   - REST_HOST=0.0.0.0
+    #   - REST_HOST=0.0.0.0          # always 0.0.0.0 inside container; host-side binding is in ports
     #   - REST_REGISTRATION=invite
     # Uncomment for Ollama on the host (Linux):
     # extra_hosts:
