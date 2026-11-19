@@ -1,22 +1,35 @@
-"""Database schema v2 — consolidated from 22 tables to 16.
+"""Database schema v2 — consolidated and redesigned.
 
-Changes from v1:
+Changes from v1 (22 tables → 17 + FTS5):
 - Merged: pending + pending_batch + pending_batch_items → relay_queue
 - Merged: partner_perceptions + user_patterns + interaction_scores → analysis_results
 - Merged: user_goals + shared_goals → goals
-- Dropped: fact_summaries (replaced by v2 consolidation episodes in facts table)
-- Dropped: category column (LLM categorizes inconsistently; FTS5 handles discovery)
-- Changed: kind='episode' → explicit kind per level (daily, weekly, monthly, quarterly, yearly)
-- Changed: visibility default 'private' → 'nudge_eligible' (therapeutic nudging is the default)
-- Added: couple_id on facts (couple-level summaries)
+- Dropped: fact_summaries (replaced by v2 summary tiers in facts table)
+- Dropped: category column (FTS5 handles discovery)
+- Removed: users.partner_id (replaced by relationships table)
+- Renamed: kind → tier (working|core|daily|weekly|monthly|quarterly|yearly)
+- Changed: visibility default 'private' → 'nudge_eligible'
+- Added: relationships table (multi-relationship support, deterministic IDs)
+- Added: relationship_id on facts (replaces couple_id; links to relationships)
 - Added: msg_source column (user|bot|system) — extract facts from bot responses too
-- Added: nudge columns (nudge_target_id, nudge_type, nudge_cooldown_h, nudge_delivered_at)
+- Added: nudge columns + self_nudge + probe_partner for therapeutic steering
+- Added: messages.relationship_id (which relationship context this message belongs to)
 """
 
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# Schema SQL — v2 (16 tables + FTS5 virtual table)
+# Helpers
+# ---------------------------------------------------------------------------
+
+def make_relationship_id(user_a_id: int, user_b_id: int) -> str:
+    """Deterministic, order-independent relationship ID from two user IDs."""
+    lo, hi = sorted([user_a_id, user_b_id])
+    return f"{lo}_{hi}"
+
+
+# ---------------------------------------------------------------------------
+# Schema SQL — v2 (17 tables + FTS5 virtual table)
 # ---------------------------------------------------------------------------
 
 SCHEMA_V2_SQL = """
@@ -27,42 +40,61 @@ SCHEMA_V2_SQL = """
 CREATE TABLE IF NOT EXISTS users (
     tg_id       INTEGER PRIMARY KEY,
     name        TEXT,
-    partner_id  INTEGER REFERENCES users(tg_id),
     lang        TEXT DEFAULT 'en',
     paused      INTEGER DEFAULT 0,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS relationships (
+    id          TEXT PRIMARY KEY,        -- deterministic: "min_max" of tg_ids
+    user_a_id   INTEGER NOT NULL REFERENCES users(tg_id),
+    user_b_id   INTEGER NOT NULL REFERENCES users(tg_id),
+    rel_type    TEXT NOT NULL DEFAULT 'couple'
+                CHECK(rel_type IN ('couple','parent_child','friends','siblings')),
+    persona     TEXT DEFAULT 'couple',   -- which persona pack to load
+    status      TEXT DEFAULT 'active'
+                CHECK(status IN ('active','paused','ended')),
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_a_id, user_b_id),
+    CHECK(user_a_id < user_b_id)         -- enforce ordering, matches make_relationship_id
+);
+
 CREATE TABLE IF NOT EXISTS messages (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(tg_id),
-    role        TEXT NOT NULL,
-    content     TEXT NOT NULL,
-    deleted_at  TIMESTAMP,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL REFERENCES users(tg_id),
+    relationship_id TEXT REFERENCES relationships(id),  -- which relationship context
+    role            TEXT NOT NULL,       -- user|assistant|system
+    content         TEXT NOT NULL,
+    deleted_at      TIMESTAMP,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS facts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_id        INTEGER NOT NULL REFERENCES users(tg_id),
+    owner_id        INTEGER REFERENCES users(tg_id),    -- NULL for relationship-level summaries
+    relationship_id TEXT REFERENCES relationships(id),   -- which relationship this belongs to
     text            TEXT NOT NULL,
     visibility      TEXT NOT NULL DEFAULT 'nudge_eligible'
                     CHECK(visibility IN ('private', 'nudge_eligible', 'shareable')),
-    kind            TEXT NOT NULL DEFAULT 'working'
-                    CHECK(kind IN ('working','core','daily','weekly','monthly',
+    tier            TEXT NOT NULL DEFAULT 'working'
+                    CHECK(tier IN ('working','core','daily','weekly','monthly',
                                    'quarterly','yearly')),
     status          TEXT NOT NULL DEFAULT 'active',
-    fact_type       TEXT DEFAULT 'stable' CHECK(fact_type IN ('transient','situational','stable')),
+    fact_type       TEXT DEFAULT 'stable'
+                    CHECK(fact_type IN ('transient','situational','stable')),
     intensity       REAL DEFAULT 0.5,
-    -- ownership & visibility
-    couple_id       TEXT,                   -- non-NULL for couple-level summaries
-    msg_source      TEXT DEFAULT 'user'     -- who said it: user|bot|system
+    -- source tracking
+    msg_source      TEXT DEFAULT 'user'
                     CHECK(msg_source IN ('user','bot','system')),
     -- nudge system
-    nudge_target_id INTEGER REFERENCES users(tg_id),  -- partner to nudge (NULL = no nudge)
-    nudge_type      TEXT,                   -- appreciation|attention|communication|support|quality_time|conflict_prevention
-    nudge_cooldown_h INTEGER DEFAULT 24,    -- hours before nudge can fire
-    nudge_delivered_at TIMESTAMP,           -- when the nudge was actually delivered
+    nudge_target_id INTEGER REFERENCES users(tg_id),    -- partner to nudge (NULL = no nudge)
+    nudge_type      TEXT,               -- appreciation|attention|communication|support|quality_time|conflict_prevention
+    nudge_cooldown_h INTEGER DEFAULT 24, -- min hours before nudge can fire
+    nudge_delivered_at TIMESTAMP,        -- when the nudge was actually delivered
+    nudge_cancelled_at TIMESTAMP,        -- if cancelled (organically addressed or by LLM)
+    nudge_cancel_reason TEXT,            -- why cancelled
+    self_nudge      INTEGER DEFAULT 0,   -- therapeutically engage the fact owner about this
+    probe_partner   INTEGER DEFAULT 0,   -- subtly probe partner's perspective on the TOPIC (no attribution)
     -- lifecycle
     expires_at      TIMESTAMP,
     archived_at     TIMESTAMP,
@@ -74,11 +106,11 @@ CREATE TABLE IF NOT EXISTS facts (
     last_cited_at   TIMESTAMP,
     -- provenance
     source_message_id INTEGER REFERENCES messages(id),
-    source_ids      TEXT,           -- JSON array of source fact/summary IDs
-    model           TEXT,           -- which LLM extracted this
-    metadata        TEXT,           -- JSON: {period, resolved, ongoing, new, narrative, ...}
+    source_ids      TEXT,               -- JSON array of source fact/summary IDs
+    model           TEXT,               -- which LLM extracted this
+    metadata        TEXT,               -- JSON: {period, resolved, ongoing, new, narrative, ...}
     -- proactive
-    event_date      TEXT,           -- ISO date for date-based reminders
+    event_date      TEXT,               -- ISO date for date-based reminders
     recurring       INTEGER DEFAULT 0,
     -- timestamps
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -92,11 +124,6 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     dampening_base  REAL DEFAULT 0.7,
     onboarding_done INTEGER DEFAULT 0,
     onboarding_step INTEGER DEFAULT 0,
-    relationship_type TEXT,
-    duration_years  INTEGER,
-    has_kids        INTEGER,
-    age_range       TEXT,
-    love_story_brief TEXT,
     learned_voice   TEXT,
     message_count   INTEGER DEFAULT 0,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -116,19 +143,20 @@ CREATE TABLE IF NOT EXISTS user_meta (
 -- ═══════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE IF NOT EXISTS relay_queue (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    sender_id     INTEGER NOT NULL REFERENCES users(tg_id),
-    receiver_id   INTEGER NOT NULL REFERENCES users(tg_id),
-    draft         TEXT NOT NULL,
-    edited_draft  TEXT,
-    status        TEXT NOT NULL DEFAULT 'awaiting_approval'
-                  CHECK(status IN ('awaiting_approval','accumulating','reviewing',
-                                   'approved','sent','discarded')),
-    batch_id      INTEGER,         -- NULL = single relay, non-NULL = part of a batch
-    send_after    TIMESTAMP,
-    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    sent_at       TIMESTAMP,
-    feedback      TEXT CHECK(feedback IN ('yes','not_sure','no')),
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    relationship_id TEXT NOT NULL REFERENCES relationships(id),
+    sender_id       INTEGER NOT NULL REFERENCES users(tg_id),
+    receiver_id     INTEGER NOT NULL REFERENCES users(tg_id),
+    draft           TEXT NOT NULL,
+    edited_draft    TEXT,
+    status          TEXT NOT NULL DEFAULT 'awaiting_approval'
+                    CHECK(status IN ('awaiting_approval','accumulating','reviewing',
+                                     'approved','sent','discarded')),
+    batch_id        INTEGER,        -- NULL = single relay, non-NULL = part of a batch
+    send_after      TIMESTAMP,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    sent_at         TIMESTAMP,
+    feedback        TEXT CHECK(feedback IN ('yes','not_sure','no')),
     acknowledged_at TIMESTAMP
 );
 
@@ -165,22 +193,23 @@ CREATE TABLE IF NOT EXISTS memory_op_log (
 -- ═══════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE IF NOT EXISTS analysis_results (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(tg_id),
-    about_id    INTEGER REFERENCES users(tg_id),   -- NULL for self-patterns
-    couple_id   TEXT,                                -- for interaction scores
-    result_type TEXT NOT NULL
-                CHECK(result_type IN ('perception','pattern','interaction','horsemen','articulation')),
-    content     TEXT NOT NULL,                       -- the theme/pattern/description
-    sentiment   TEXT DEFAULT 'neutral',              -- for perceptions
-    confidence  REAL DEFAULT 0.5,
-    frequency   INTEGER DEFAULT 1,                   -- for patterns
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    relationship_id TEXT NOT NULL REFERENCES relationships(id),
+    user_id         INTEGER REFERENCES users(tg_id),    -- NULL for relationship-level
+    about_id        INTEGER REFERENCES users(tg_id),    -- NULL for self-patterns
+    result_type     TEXT NOT NULL
+                    CHECK(result_type IN ('perception','pattern','interaction',
+                                          'horsemen','articulation','health_score')),
+    content         TEXT NOT NULL,
+    sentiment       TEXT DEFAULT 'neutral',
+    confidence      REAL DEFAULT 0.5,
+    frequency       INTEGER DEFAULT 1,
     interaction_dir TEXT CHECK(interaction_dir IN ('positive','negative',NULL)),
-    source      TEXT DEFAULT 'llm',
-    first_seen  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_seen   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    source          TEXT DEFAULT 'llm',
+    first_seen      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_seen       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS user_mood_styles (
@@ -200,7 +229,7 @@ CREATE TABLE IF NOT EXISTS user_mood_styles (
 
 CREATE TABLE IF NOT EXISTS checkins (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    couple_id        TEXT NOT NULL,
+    relationship_id  TEXT NOT NULL REFERENCES relationships(id),
     week_start       TEXT NOT NULL,
     partner_a_id     INTEGER NOT NULL,
     partner_a_answers TEXT,
@@ -213,40 +242,40 @@ CREATE TABLE IF NOT EXISTS checkins (
 );
 
 CREATE TABLE IF NOT EXISTS goals (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER REFERENCES users(tg_id),   -- NULL for shared goals
-    couple_id   TEXT,                                -- non-NULL for shared goals
-    scope       TEXT NOT NULL DEFAULT 'personal'
-                CHECK(scope IN ('personal', 'shared')),
-    text        TEXT NOT NULL,
-    created_by  INTEGER REFERENCES users(tg_id),
-    status      TEXT DEFAULT 'active'
-                CHECK(status IN ('active','achieved','dropped')),
-    progress    TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER REFERENCES users(tg_id),    -- NULL for shared goals
+    relationship_id TEXT REFERENCES relationships(id),   -- non-NULL for shared goals
+    scope           TEXT NOT NULL DEFAULT 'personal'
+                    CHECK(scope IN ('personal', 'shared')),
+    text            TEXT NOT NULL,
+    created_by      INTEGER REFERENCES users(tg_id),
+    status          TEXT DEFAULT 'active'
+                    CHECK(status IN ('active','achieved','dropped')),
+    progress        TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS conflicts (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    couple_id   TEXT NOT NULL,
-    theme       TEXT NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'open'
-                CHECK(status IN ('open','resolved','recurring')),
-    opened_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    resolved_at TIMESTAMP,
-    relay_ids   TEXT
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    relationship_id TEXT NOT NULL REFERENCES relationships(id),
+    theme           TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'open'
+                    CHECK(status IN ('open','resolved','recurring')),
+    opened_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved_at     TIMESTAMP,
+    relay_ids       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS timeline_events (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    couple_id   TEXT NOT NULL,
-    event_type  TEXT NOT NULL
-                CHECK(event_type IN ('paired','conflict','resolution','milestone',
-                                     'goal','relay','checkin')),
-    summary     TEXT NOT NULL,
-    metadata    TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    relationship_id TEXT NOT NULL REFERENCES relationships(id),
+    event_type      TEXT NOT NULL
+                    CHECK(event_type IN ('paired','conflict','resolution','milestone',
+                                         'goal','relay','checkin','nudge')),
+    summary         TEXT NOT NULL,
+    metadata        TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -268,13 +297,13 @@ CREATE TABLE IF NOT EXISTS rate_limit (
     PRIMARY KEY (user_id, window)
 );
 
-CREATE TABLE IF NOT EXISTS couple_config (
-    couple_id    TEXT NOT NULL,
-    config_key   TEXT NOT NULL,
-    config_value TEXT NOT NULL,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (couple_id, config_key)
+CREATE TABLE IF NOT EXISTS relationship_config (
+    relationship_id TEXT NOT NULL REFERENCES relationships(id),
+    config_key      TEXT NOT NULL,
+    config_value    TEXT NOT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (relationship_id, config_key)
 );
 
 CREATE TABLE IF NOT EXISTS pack_snapshots (
@@ -313,23 +342,27 @@ CREATE TABLE IF NOT EXISTS rest_outbox (
 -- INDEXES
 -- ═══════════════════════════════════════════════════════════════════════════
 
-CREATE INDEX IF NOT EXISTS idx_facts_owner_visibility ON facts(owner_id, visibility);
+CREATE INDEX IF NOT EXISTS idx_facts_owner_vis ON facts(owner_id, visibility);
 CREATE INDEX IF NOT EXISTS idx_facts_owner_created ON facts(owner_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_facts_kind ON facts(owner_id, kind);
+CREATE INDEX IF NOT EXISTS idx_facts_tier ON facts(owner_id, tier);
 CREATE INDEX IF NOT EXISTS idx_facts_status ON facts(owner_id, status);
-CREATE INDEX IF NOT EXISTS idx_facts_couple ON facts(couple_id, kind);
+CREATE INDEX IF NOT EXISTS idx_facts_relationship ON facts(relationship_id, tier);
 CREATE INDEX IF NOT EXISTS idx_facts_nudge ON facts(nudge_target_id, nudge_delivered_at)
     WHERE nudge_target_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_facts_self_nudge ON facts(owner_id, self_nudge)
+    WHERE self_nudge = 1;
 CREATE INDEX IF NOT EXISTS idx_messages_user_created ON messages(user_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_relay_sender_status ON relay_queue(sender_id, status);
+CREATE INDEX IF NOT EXISTS idx_messages_relationship ON messages(relationship_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_relay_relationship ON relay_queue(relationship_id, status);
 CREATE INDEX IF NOT EXISTS idx_relay_status_send ON relay_queue(status, send_after);
 CREATE INDEX IF NOT EXISTS idx_mood_user_expires ON user_mood_styles(user_id, expires_at);
-CREATE INDEX IF NOT EXISTS idx_analysis_user ON analysis_results(user_id, result_type);
-CREATE INDEX IF NOT EXISTS idx_analysis_couple ON analysis_results(couple_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_analysis_rel ON analysis_results(relationship_id, result_type);
 CREATE INDEX IF NOT EXISTS idx_goals_user_status ON goals(user_id, status);
-CREATE INDEX IF NOT EXISTS idx_goals_couple ON goals(couple_id, status);
-CREATE INDEX IF NOT EXISTS idx_conflicts_couple ON conflicts(couple_id, status);
-CREATE INDEX IF NOT EXISTS idx_timeline_couple ON timeline_events(couple_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_goals_relationship ON goals(relationship_id, status);
+CREATE INDEX IF NOT EXISTS idx_conflicts_relationship ON conflicts(relationship_id, status);
+CREATE INDEX IF NOT EXISTS idx_timeline_relationship ON timeline_events(relationship_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_relationships_user_a ON relationships(user_a_id);
+CREATE INDEX IF NOT EXISTS idx_relationships_user_b ON relationships(user_b_id);
 CREATE INDEX IF NOT EXISTS idx_memory_versions_fact ON memory_versions(fact_id);
 CREATE INDEX IF NOT EXISTS idx_rest_outbox_user ON rest_outbox(user_id, id);
 """

@@ -680,3 +680,44 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 212. **`category` column DROPPED from schema.** Decision 52 confirmed. FTS5 + scoring handles discovery. Consolidation LLM groups thematically. One less field to fill wrong.
 
 213. **Schema v2 updated with all new columns.** kind CHECK constraint, couple_id, msg_source, nudge columns (nudge_target_id, nudge_type, nudge_cooldown_h, nudge_delivered_at), visibility default changed to 'nudge_eligible'. New indexes: idx_facts_couple, idx_facts_nudge.
+
+
+## Multi-Relationship, Nudge Cancellation, Self-Nudge, Column Renames (Decision 214-232)
+
+214. **Multi-relationship support.** A user can be in multiple relationships (couple with partner, parent-child with kid, friends with a mate). New `relationships` table with deterministic IDs. `users.partner_id` REMOVED — replaced by relationship lookups. Each relationship loads its own persona/prompt pack.
+
+215. **Deterministic relationship IDs.** `id = f"{min(a,b)}_{max(a,b)}"`. Alice=123, Bob=456 → "123_456". Order-independent, computable without DB lookup. The `CHECK(user_a_id < user_b_id)` constraint enforces the same ordering at the DB level.
+
+216. **`couple_id` → `relationship_id` everywhere.** All tables that had `couple_id` now use `relationship_id REFERENCES relationships(id)`. Tables affected: facts, relay_queue, analysis_results, checkins, goals, conflicts, timeline_events. Also `couple_config` → `relationship_config`.
+
+217. **`kind` renamed to `tier`.** Values: `working|core|daily|weekly|monthly|quarterly|yearly`. Maps naturally to the summary hierarchy. `core` is the special permanent tier outside the cascade. Clean in queries: `WHERE tier='weekly'`.
+
+218. **Messages tagged with relationship_id.** Each message belongs to a relationship context. When Alice talks about Bob, `relationship_id` points to their couple relationship. When Alice talks about her son Max, it points to their parent_child relationship. The bot uses this to load the right persona and scope the fact extraction.
+
+219. **Nudge cancellation — two paths.** (1) Pre-fire check: when a nudge is eligible, LLM checks if the concern was already addressed in target's recent messages. If yes, cancel. (2) Real-time: during extraction, the LLM can return `cancel_nudge: [nudge_id]` when it notices the target addressed the topic organically. New columns: `nudge_cancelled_at`, `nudge_cancel_reason`.
+
+220. **Pending nudges visible to LLM.** The system prompt includes pending nudges for the current relationship so the LLM can cancel or adjust them during normal conversation. The extraction contract includes a `cancel_nudge` field.
+
+221. **Self-nudge for private facts.** `private` visibility means "never share with or nudge PARTNER." It does NOT mean "don't act on it at all." The bot CAN and SHOULD therapeutically engage the user who said it. Example: Alice says "I have a crush on a coworker" → private fact, self_nudge=true. Next conversation with Alice, bot gently probes relationship satisfaction.
+
+222. **Probe partner on private topics.** For private facts, the bot can subtly check the other side's perspective WITHOUT attribution. Example: Alice mentions regretting marriage → `probe_partner=true`. Next conversation with Bob, bot casually asks "how do you think things are going between you two?" — no mention of Alice's statement. New columns: `self_nudge`, `probe_partner` (both boolean flags).
+
+223. **Daily summary threshold: count user messages only.** Bot messages are responses, not new information density. A 5-exchange day = 5 user messages + 5 bot messages. The ≥10 threshold counts only user messages. Otherwise daily summaries would fire almost every active day.
+
+224. **Token/LLM limit warnings.** At 80%: subtle inline note ("I'll be more concise"). At 95%: explicit warning ("nearly at my limit"). At 100%: graceful degradation ("I can't respond but I'm still saving your messages — back tomorrow"). Messages are always logged even when the bot can't generate responses. No data loss.
+
+225. **Venting mode (single user).** Trigger: high intensity + rapid messages + negative sentiment from ONE user. Behavior: active listening ONLY — validate, reflect, empathize. NO suggestions, NO "have you tried", NO reframing. Exit when user calms down or explicitly asks for advice. Separate from de-escalation (which is both users angry simultaneously).
+
+226. **De-escalation mode (both users).** Trigger: both users in the relationship sent high-intensity negative messages within a short window. Behavior: emotional holding, shorter messages, validation only, no nudges/relays/check-ins. Both modes transition smoothly — no sudden personality switch.
+
+227. **Bot-source facts: advice tracking.** Extracting from bot responses enables: (1) No broken-record advice — bot knows it already suggested I-statements. (2) Advice outcome tracking — did the topic improve after the suggestion? (3) Therapeutic continuity — the bot remembers its own treatment plan.
+
+228. **Relationship health score.** Stored in `analysis_results` with `result_type='health_score'`. Internal metric, not user-facing. Based on Gottman ratios, conflict frequency/resolution, communication patterns. Adjusts bot behavior: declining → more proactive. Improving → celebrate wins.
+
+229. **Admin dashboard priority items.** Per-relationship health trajectory, fact counts by tier/status, nudge history (sent/cancelled/organically_addressed), summary hierarchy viewer, consolidation scheduler status, token usage by model/day. REST API endpoints mostly exist already. Build as PWA feature.
+
+230. **`user_profiles` simplified.** Removed `relationship_type`, `duration_years`, `has_kids`, `age_range`, `love_story_brief` — these are now per-relationship (stored in `relationship_config`) not per-user. A user might have kids with partner A but not partner B.
+
+231. **Timeline events include nudges.** Added 'nudge' to `timeline_events.event_type` CHECK constraint. Tracks when nudges were delivered, cancelled, or organically addressed — visible in the relationship timeline.
+
+232. **Schema v2 fully rewritten.** 17 tables + FTS5. New: relationships. Renamed: kind→tier, couple_id→relationship_id, couple_config→relationship_config. Removed: users.partner_id, user_profiles relationship fields. Added: nudge cancellation, self_nudge, probe_partner, messages.relationship_id.
