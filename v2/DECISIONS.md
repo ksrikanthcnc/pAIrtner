@@ -590,3 +590,18 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 173. **Context window composer: design done (decision 160), implementation pending.** Multi-source: core always, top-K working facts, FTS5 matches, period summaries (weekly for recent, monthly for older, quarterly for oldest), proactive injections. Next build task.
 
 174. **No forced schedule for daily — use ≥5 message threshold.** Aligns with activity-based rather than calendar-forced. Busy days get summarized next-day. Quiet days stay as raw facts for weekly pickup.
+
+
+## Final Consolidation Schedule (Decision 175-180)
+
+175. **Adaptive daily summaries: ≥10 messages, not forced.** Threshold raised from 5 to 10. A 5-message conversation is usually one topic — barely worth a summary. At 10 you have 2-3 topics worth compressing. Below 10, raw facts stay for weekly pickup.
+
+176. **Weekly summary handles quiet days fine.** 7 days × ≤10 msgs/day = ≤70 messages → ~30 raw facts → well within one LLM call capacity (benchmarked at 50 facts per call). No bias issue because intensity protects important low-volume facts.
+
+177. **Intensity protects single-mention important facts.** A quiet Tuesday with "thinking about leaving" (intensity 0.9) mixed into a busy week won't get lost — the consolidation prompt includes intensity, so the LLM knows to weight it heavily in the summary.
+
+178. **Summary intervals: 1d(adaptive)-7d-30d-90d-365d.** Stick with this for now. The 7d→30d gap (4 weeklies before monthly) is the biggest jump. If testing shows it's too coarse, add a 15d biweekly layer. Easier to add than remove.
+
+179. **Archival flow finalized.** Daily summary (if ≥10 msgs) archives that day's raw facts. Weekly archives remaining raw facts + daily summaries. Monthly archives weekly summaries. Quarterly archives monthly. Yearly archives quarterly. Each level archives its inputs.
+
+180. **Proactive pokes operate in the days 1-7 gap.** Before the first weekly summary, raw active facts are the only source. The poke system surfaces old uncited raw facts during casual conversations. After weekly summary, the topic lives in summaries and surfaces through the summary layer.
