@@ -32,7 +32,7 @@ METADATA_COLUMNS: dict[str, set[str]] = {
         "id", "owner_id", "visibility", "category", "fact_type", "kind", "status",
         "expires_at", "archived_at", "shared_at", "supersedes_id", "contradicts_id",
         "citation_count", "last_cited_at", "source_message_id", "source_ids",
-        "intensity", "model", "metadata",
+        "intensity", "model", "metadata", "event_date", "recurring",
         "created_at", "updated_at",
     },
     "pending": {

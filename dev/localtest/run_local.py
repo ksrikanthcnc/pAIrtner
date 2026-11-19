@@ -30,7 +30,8 @@ FAKE_PORT = 11435
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--keep", action="store_true", help="keep the existing test DB")
-    ap.add_argument("--port", type=int, default=8766, help="REST/UI port (127.0.0.1 only)")
+    ap.add_argument("--port", type=int, default=8766, help="REST/UI port")
+    ap.add_argument("--lan", action="store_true", help="bind to 0.0.0.0 (accessible from LAN/Android)")
     ap.add_argument("--llm", choices=["ollama", "fake", "gemini"], default="ollama",
                     help="ollama = local qwen3; fake = deterministic UPPER(input) endpoint; "
                          "gemini = real Google Gemini (key from the main checkout .env)")
@@ -44,7 +45,10 @@ async def main(args: argparse.Namespace) -> None:
     if not args.keep and db.exists():
         db.unlink()
     if args.llm == "gemini":
-        config = rig.make_gemini_config(str(db), port=args.port, cooldown=args.cooldown)
+        config = rig.make_gemini_config(
+            str(db), port=args.port, cooldown=args.cooldown,
+            rest_host="0.0.0.0" if args.lan else "127.0.0.1",
+        )
     elif args.llm == "fake":
         import fake_llm
         fake_llm.start(args.fake_port)
@@ -57,11 +61,17 @@ async def main(args: argparse.Namespace) -> None:
         config = rig.make_config(
             str(db), llm_url=llm_url, model=model, reasoning=reasoning,
             port=args.port, cooldown=args.cooldown,
+            rest_host="0.0.0.0" if args.lan else "127.0.0.1",
         )
     _service, adapter, task = await rig.start_rig(config)
-    base = f"http://127.0.0.1:{adapter.bound_port}"
+    host = "0.0.0.0" if args.lan else "127.0.0.1"
+    base = f"http://{host}:{adapter.bound_port}"
     print(f"UI:      {base}/", flush=True)
     print(f"Duo UI:  {base}/duo.html", flush=True)
+    if args.lan:
+        import socket
+        lan_ip = socket.gethostbyname(socket.gethostname())
+        print(f"LAN:     http://{lan_ip}:{adapter.bound_port}/duo.html  (from Android/phone)", flush=True)
     print(f"API:     {base}/api/v1/meta   (LLM: {describe_llm(config)}, DB: {db})", flush=True)
     await task
 

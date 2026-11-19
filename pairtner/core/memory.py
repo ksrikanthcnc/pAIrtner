@@ -44,6 +44,8 @@ class MemoryOp:
     category: str | None = None
     fact_type: str = "stable"
     intensity: float = 0.5      # v2: how strongly user feels (0.0-1.0)
+    event_date: str | None = None  # v2: structured date (YYYY-MM-DD) from LLM
+    recurring: bool = False        # v2: True for birthdays/anniversaries
 
 
 @dataclass
@@ -151,6 +153,19 @@ def _parse_intensity(raw: Any) -> float:
         return max(0.0, min(1.0, val))
     except (ValueError, TypeError):
         return 0.5
+
+
+def _parse_event_date(raw: Any) -> str | None:
+    """Validate and return a YYYY-MM-DD date string, or None if invalid."""
+    if not raw or not isinstance(raw, str):
+        return None
+    raw = raw.strip()
+    try:
+        from datetime import datetime as _dt
+        _dt.strptime(raw, "%Y-%m-%d")
+        return raw
+    except ValueError:
+        return None
 VALID_KINDS = {"working", "core"}
 VALID_STATUSES = {"active", "improving", "resolved", "outdated"}
 VALID_CATEGORIES = {
@@ -226,6 +241,8 @@ def parse_memory_ops(
                 op="add", kind=kind, text=text,
                 category=category, fact_type=fact_type,
                 intensity=_parse_intensity(raw.get("intensity")),
+                event_date=_parse_event_date(raw.get("date")),
+                recurring=bool(raw.get("recurring", False)),
             ))
 
         # --- revise ---
@@ -353,6 +370,8 @@ async def apply_memory_ops(
                     category=op.category, fact_type=op.fact_type,
                     source_message_id=message_id,
                     intensity=op.intensity,
+                    event_date=op.event_date,
+                    recurring=op.recurring,
                 )
                 await db_mod.append_memory_version(
                     db_path, fact_id, op.text, "active", "add",

@@ -186,7 +186,7 @@ async def test_message_log(test_db):
 
 @pytest.mark.asyncio
 async def test_recent_messages_timestamp_in_prompt(test_db):
-    """Timestamps are formatted with relative time in _format_history."""
+    """Timestamps are formatted as absolute times in _format_history."""
     from pairtner.core.prompts import _format_history
 
     await create_user(test_db, 11, "TimeTester")
@@ -202,8 +202,8 @@ async def test_recent_messages_timestamp_in_prompt(test_db):
     # Should contain the messages
     assert "morning msg" in output
     assert "good morning" in output
-    # Should contain time markers (just now or min ago)
-    assert "[" in output  # relative time markers are bracketed
+    # Should contain absolute time markers like [2026-11-19 08:30]
+    assert "[" in output  # bracketed timestamps
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,8 @@
-"""Tests for proactive context injection."""
+"""Tests for proactive context injection.
+
+Date detection is LLM-driven via the ``event_date`` / ``recurring`` columns —
+no regex parsing of prose.  Tests insert structured data directly.
+"""
 from __future__ import annotations
 
 import pytest
@@ -8,7 +12,6 @@ import aiosqlite
 
 from pairtner.core.proactive import (
     get_proactive_injections,
-    _parse_date,
     _find_date_facts,
     _find_stale_active,
 )
@@ -24,62 +27,101 @@ async def db(tmp_path):
     return path
 
 
-class TestDateParsing:
-    def test_iso_date(self):
-        d = _parse_date("1992-03-15", 2027)
-        assert d is not None
-        assert d.month == 3 and d.day == 15
-
-    def test_month_name(self):
-        d = _parse_date("March 15", 2027)
-        assert d is not None
-        assert d.month == 3 and d.day == 15
-
-    def test_abbreviated_month(self):
-        d = _parse_date("Jan 5", 2027)
-        assert d is not None
-        assert d.month == 1 and d.day == 5
-
-    def test_invalid(self):
-        assert _parse_date("not a date", 2027) is None
-
-    def test_recurring_next_year(self):
-        """If the date already passed this year, return next year."""
-        # Use a date that's definitely in the past
-        past_date = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
-        d = _parse_date(past_date, date.today().year)
-        assert d is not None
-        assert d >= date.today()
-
-
 class TestDateFacts:
     @pytest.mark.asyncio
-    async def test_finds_birthday(self, db):
-        # Add a core fact with a birthday date
+    async def test_finds_birthday_via_event_date(self, db):
+        """Date facts are found by the structured event_date column, not regex."""
         tomorrow = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
         async with aiosqlite.connect(db) as conn:
             await conn.execute(
-                "INSERT INTO facts (owner_id, text, visibility, kind, status) "
-                "VALUES (1, ?, 'private', 'core', 'active')",
-                (f"Partner birthday: {tomorrow}",),
+                "INSERT INTO facts (owner_id, text, visibility, kind, status, event_date, recurring) "
+                "VALUES (1, 'Partner birthday', 'private', 'core', 'active', ?, 1)",
+                (tomorrow,),
             )
             await conn.commit()
 
-        results = await _find_date_facts(db, 1)
-        assert len(results) >= 1
+        today = date.today()
+        results = await _find_date_facts(db, 1, today, lookahead_days=7)
+        assert len(results) == 1
+        assert results[0][0] == "Partner birthday"
+
+    @pytest.mark.asyncio
+    async def test_recurring_wraps_to_next_year(self, db):
+        """A recurring date that already passed this year returns next year."""
+        past = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
+        async with aiosqlite.connect(db) as conn:
+            await conn.execute(
+                "INSERT INTO facts (owner_id, text, visibility, kind, status, event_date, recurring) "
+                "VALUES (1, 'Anniversary', 'private', 'core', 'active', ?, 1)",
+                (past,),
+            )
+            await conn.commit()
+
+        today = date.today()
+        results = await _find_date_facts(db, 1, today, lookahead_days=7)
+        # Past recurring date wraps to next year — outside 7-day window
+        assert len(results) == 0
+
+    @pytest.mark.asyncio
+    async def test_one_time_deadline(self, db):
+        """Non-recurring dates (deadlines) use the exact date."""
+        in_3_days = (date.today() + timedelta(days=3)).strftime("%Y-%m-%d")
+        async with aiosqlite.connect(db) as conn:
+            await conn.execute(
+                "INSERT INTO facts (owner_id, text, visibility, kind, status, event_date, recurring) "
+                "VALUES (1, 'Project deadline', 'private', 'working', 'active', ?, 0)",
+                (in_3_days,),
+            )
+            await conn.commit()
+
+        today = date.today()
+        results = await _find_date_facts(db, 1, today, lookahead_days=7)
+        assert len(results) == 1
 
     @pytest.mark.asyncio
     async def test_ignores_archived(self, db):
+        tomorrow = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
         async with aiosqlite.connect(db) as conn:
             await conn.execute(
-                "INSERT INTO facts (owner_id, text, visibility, kind, status, archived_at) "
-                "VALUES (1, 'DOB: 1992-03-15', 'private', 'core', 'active', ?)",
-                (_to_iso(datetime.now(timezone.utc)),),
+                "INSERT INTO facts (owner_id, text, visibility, kind, status, event_date, recurring, archived_at) "
+                "VALUES (1, 'Old birthday', 'private', 'core', 'active', ?, 1, ?)",
+                (tomorrow, _to_iso(datetime.now(timezone.utc))),
             )
             await conn.commit()
 
-        results = await _find_date_facts(db, 1)
+        today = date.today()
+        results = await _find_date_facts(db, 1, today, lookahead_days=7)
         assert len(results) == 0
+
+    @pytest.mark.asyncio
+    async def test_ignores_facts_without_event_date(self, db):
+        """Facts without event_date are NOT scanned (no regex fallback)."""
+        async with aiosqlite.connect(db) as conn:
+            await conn.execute(
+                "INSERT INTO facts (owner_id, text, visibility, kind, status) "
+                "VALUES (1, 'Partner birthday: 2027-01-20', 'private', 'core', 'active')",
+            )
+            await conn.commit()
+
+        today = date.today()
+        results = await _find_date_facts(db, 1, today, lookahead_days=7)
+        # No event_date column set → not found (LLM must set it during extraction)
+        assert len(results) == 0
+
+    @pytest.mark.asyncio
+    async def test_today_injection(self, db):
+        """A date matching today produces a TODAY marker."""
+        today_str = date.today().strftime("%Y-%m-%d")
+        async with aiosqlite.connect(db) as conn:
+            await conn.execute(
+                "INSERT INTO facts (owner_id, text, visibility, kind, status, event_date, recurring) "
+                "VALUES (1, 'Wedding anniversary', 'private', 'core', 'active', ?, 1)",
+                (today_str,),
+            )
+            await conn.commit()
+
+        injections = await get_proactive_injections(db, 1)
+        assert any("TODAY" in line for line in injections)
 
 
 class TestStaleActive:
@@ -133,9 +175,9 @@ class TestProactiveInjections:
         tomorrow = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
         async with aiosqlite.connect(db) as conn:
             await conn.execute(
-                "INSERT INTO facts (owner_id, text, visibility, kind, status) "
-                "VALUES (1, ?, 'private', 'core', 'active')",
-                (f"Partner birthday: {tomorrow}",),
+                "INSERT INTO facts (owner_id, text, visibility, kind, status, event_date, recurring) "
+                "VALUES (1, 'Partner birthday', 'private', 'core', 'active', ?, 1)",
+                (tomorrow,),
             )
             await conn.commit()
 
@@ -160,3 +202,26 @@ class TestProactiveInjections:
     async def test_no_injections_when_clean(self, db):
         injections = await get_proactive_injections(db, 1)
         assert injections == []
+
+    @pytest.mark.asyncio
+    async def test_multiple_injections(self, db):
+        """Both date and conflict injections can fire together."""
+        tomorrow = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
+        old_date = _to_iso(datetime.now(timezone.utc) - timedelta(days=10))
+        async with aiosqlite.connect(db) as conn:
+            await conn.execute(
+                "INSERT INTO facts (owner_id, text, visibility, kind, status, event_date, recurring) "
+                "VALUES (1, 'Birthday', 'private', 'core', 'active', ?, 1)",
+                (tomorrow,),
+            )
+            await conn.execute(
+                "INSERT INTO facts (owner_id, text, visibility, kind, status, intensity, created_at) "
+                "VALUES (1, 'Ongoing fight', 'private', 'working', 'active', 0.9, ?)",
+                (old_date,),
+            )
+            await conn.commit()
+
+        injections = await get_proactive_injections(db, 1, conflict_stale_days=5)
+        assert len(injections) == 2
+        assert any("TOMORROW" in line for line in injections)
+        assert any("Unresolved" in line for line in injections)

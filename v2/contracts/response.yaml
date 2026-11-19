@@ -24,6 +24,8 @@ tasks:
                 text: { type: string, required: true, max_length: 200, description: "One fact, one sentence." }
                 kind: { type: string, enum: [working, core], default: working }
                 intensity: { type: number, min: 0.0, max: 1.0, default: 0.5, description: "How strongly the user feels about this." }
+                date: { type: string, format: "YYYY-MM-DD", required: false, description: "If the fact has a date (birthday, deadline), extract it here." }
+                recurring: { type: boolean, required: false, default: false, description: "True for birthdays/anniversaries that repeat yearly." }
             - op: revise
               fields:
                 id: { type: integer, required: true, description: "ID from existing knowledge shown in context." }
@@ -64,6 +66,8 @@ tasks:
           text: { type: string, max_length: 200 }
           kind: { type: string, enum: [working, core], default: working }
           intensity: { type: number, min: 0.0, max: 1.0, default: 0.5 }
+          date: { type: string, format: "YYYY-MM-DD", required: false, description: "If the fact contains a specific date (birthday, anniversary, deadline), extract it here. null otherwise." }
+          recurring: { type: boolean, required: false, default: false, description: "True for recurring dates (birthdays, anniversaries). False for one-time deadlines." }
       updates:
         type: array
         items:

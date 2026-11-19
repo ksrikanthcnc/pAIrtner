@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS facts (
     intensity   REAL DEFAULT 0.5,
     model       TEXT,
     metadata    TEXT,
+    event_date  TEXT,
+    recurring   INTEGER DEFAULT 0,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -442,6 +444,14 @@ async def init_db(db_path: str) -> None:
         if "metadata" not in fact_columns:
             await db.execute(
                 "ALTER TABLE facts ADD COLUMN metadata TEXT"
+            )
+        if "event_date" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN event_date TEXT"
+            )
+        if "recurring" not in fact_columns:
+            await db.execute(
+                "ALTER TABLE facts ADD COLUMN recurring INTEGER DEFAULT 0"
             )
 
         # Create memory indexes (after migration)

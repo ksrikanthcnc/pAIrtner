@@ -156,18 +156,17 @@ def _format_facts(label: str, facts: list[str]) -> str:
 def _format_history(
     messages: list[tuple[str, str] | tuple[str, str, str]], limit: int = 6,
 ) -> str:
-    """Format recent conversation with time markers for session gap awareness.
+    """Format recent conversation with absolute timestamps and gap markers.
 
-    When timestamps are available (3-tuples), messages are annotated with
-    relative time labels so the LLM can distinguish a fresh continuation from
-    a stale context gap.
+    Uses absolute timestamps (not relative like '5h ago') so the prompt
+    doesn't go stale if cached or reused.  The LLM has ``Current time:``
+    in the system prompt and can compute recency itself.
     """
     if not messages:
         return ""
     p = pack.current()
     recent = messages[-limit:]
     lines: list[str] = []
-    now = datetime.now(timezone.utc)
     prev_ts: datetime | None = None
 
     for entry in recent:
@@ -182,9 +181,9 @@ def _format_history(
             if prev_ts and ts and (ts - prev_ts).total_seconds() > 7200:
                 gap = _humanize_gap(ts - prev_ts)
                 lines.append(f"--- {gap} gap ---")
-            rel = _relative_time(ts, now) if ts else ""
-            if rel:
-                lines.append(f"[{rel}] {prefix}: {content}")
+            ts_label = _format_timestamp(ts) if ts else ""
+            if ts_label:
+                lines.append(f"[{ts_label}] {prefix}: {content}")
             else:
                 lines.append(f"{prefix}: {content}")
             prev_ts = ts
@@ -207,24 +206,13 @@ def _parse_msg_ts(raw: str) -> datetime | None:
         return None
 
 
-def _relative_time(ts: datetime, now: datetime) -> str:
-    """Return a human-readable relative time like '5 min ago' or '3 hours ago'."""
-    delta = now - ts
-    secs = int(delta.total_seconds())
-    if secs < 0:
-        return "just now"
-    if secs < 60:
-        return "just now"
-    if secs < 3600:
-        mins = secs // 60
-        return f"{mins} min ago"
-    if secs < 86400:
-        hours = secs // 3600
-        return f"{hours}h ago"
-    days = secs // 86400
-    if days == 1:
-        return "yesterday"
-    return f"{days}d ago"
+def _format_timestamp(ts: datetime) -> str:
+    """Format a timestamp as 'YYYY-MM-DD HH:MM' for the LLM prompt.
+
+    Absolute format — never goes stale.  The LLM has 'Current time:' in
+    the system prompt and can compute recency itself.
+    """
+    return ts.strftime("%Y-%m-%d %H:%M")
 
 
 def _humanize_gap(delta: timedelta) -> str:

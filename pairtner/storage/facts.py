@@ -31,15 +31,18 @@ async def add_fact(
     intensity: float = 0.5,
     model: str | None = None,
     metadata: str | None = None,
+    event_date: str | None = None,
+    recurring: bool = False,
 ) -> int:
     """Insert a fact; return its id."""
     return await _execute(
         db_path,
         "INSERT INTO facts (owner_id, text, visibility, source, category, fact_type, "
-        "source_message_id, source_ids, intensity, model, metadata) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "source_message_id, source_ids, intensity, model, metadata, event_date, recurring) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (owner_id, text, visibility, source, category, fact_type,
-         source_message_id, source_ids, intensity, model, metadata),
+         source_message_id, source_ids, intensity, model, metadata,
+         event_date, 1 if recurring else 0),
     )
 
 
