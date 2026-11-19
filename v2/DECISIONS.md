@@ -273,3 +273,16 @@ The screenshot showed the critical problem: after a 6-hour gap, the bot treated 
 - Recent messages dominated by emotional thread → LLM continued that thread
 
 Fix: timestamps + gap markers + current time = LLM sees the conversation as two distinct sessions separated by hours, not one continuous thread.
+
+
+## LLM-Driven Dates, Absolute Timestamps, LAN Access (Decision 58-62)
+
+58. **No regex for dates.** Date detection is fully LLM-driven. The extraction contract includes `date` (YYYY-MM-DD) and `recurring` (boolean) fields. The LLM sets them during fact extraction. Proactive injection queries the structured `event_date` column directly — no parsing of prose text. Eliminates false positives and makes date handling extensible (any date the LLM can identify, not just regex patterns).
+
+59. **Absolute timestamps in prompt.** Changed from relative (`[5h ago]`) to absolute (`[2026-11-19 08:30]`). Relative timestamps go stale if the prompt is cached, logged, or reused. The LLM has `Current time:` in the system prompt and can compute recency itself.
+
+60. **LAN access via `--lan` flag.** `uv run python dev/localtest/run_local.py --lan` binds to `0.0.0.0` instead of `127.0.0.1`. Prints the LAN IP for easy Android access. Default remains localhost-only for security.
+
+61. **"Save privately" button** is the pAIrtner bot's own UI: saves the bot's response as a private fact (only the user sees it). "Pass it on gently" drafts a relay. This is the v1 memory system. Auto-save (append-only raw log) is separate and always on.
+
+62. **Multiple iterations for weaker models.** For local models that miss extraction on first pass, a verification/refinement loop: extract → pass results back → "did you miss anything?" Cheap second pass. Not built yet, noted for when we move extraction to local Qwen.
