@@ -3,8 +3,32 @@ from __future__ import annotations
 
 import difflib
 import json
+import re
 
 from tests.golden_prompts import GOLDEN_PATH, collect
+
+# The "Current time:" line is dynamic — normalize it before comparison.
+_TIME_RE = re.compile(r"Current time: \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC")
+_TIME_PLACEHOLDER = "Current time: XXXX-XX-XX XX:XX UTC"
+# Relative timestamps in history like "[21h ago]", "[5 min ago]", "[yesterday]", "[3d ago]"
+_REL_TIME_RE = re.compile(r"\[(\d+[hd] ago|\d+ min ago|just now|yesterday)\]")
+_REL_PLACEHOLDER = "[TIME]"
+# Gap markers like "--- 2 hours gap ---"
+_GAP_RE = re.compile(r"--- \d+ (?:min|hours?|days?) gap ---")
+_GAP_PLACEHOLDER = "--- GAP ---"
+
+
+def _normalize(prompts: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+    """Replace dynamic time stamps so golden comparison is stable."""
+    out: dict[str, dict[str, str]] = {}
+    for case_id, parts in prompts.items():
+        out[case_id] = {}
+        for k, v in parts.items():
+            v = _TIME_RE.sub(_TIME_PLACEHOLDER, v)
+            v = _REL_TIME_RE.sub(_REL_PLACEHOLDER, v)
+            v = _GAP_RE.sub(_GAP_PLACEHOLDER, v)
+            out[case_id][k] = v
+    return out
 
 
 def _diff(case_id: str, expected: dict, actual: dict) -> str:
@@ -21,8 +45,8 @@ def _diff(case_id: str, expected: dict, actual: dict) -> str:
 
 
 async def test_prompts_match_golden_snapshot():
-    expected = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
-    actual = await collect()
+    expected = _normalize(json.loads(GOLDEN_PATH.read_text(encoding="utf-8")))
+    actual = _normalize(await collect())
 
     missing = sorted(set(expected) - set(actual))
     extra = sorted(set(actual) - set(expected))

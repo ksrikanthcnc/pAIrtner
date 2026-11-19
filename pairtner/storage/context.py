@@ -95,7 +95,10 @@ async def get_user_context_data(
         ]
 
     recent = await get_recent_messages(db_path, user_id)
-    recent_messages = [(m["role"], m["content"]) for m in reversed(recent)]
+    recent_messages = [
+        (m["role"], m["content"], m.get("created_at", ""))
+        for m in reversed(recent)
+    ]
 
     return {
         "user_name": user.get("name") or "",

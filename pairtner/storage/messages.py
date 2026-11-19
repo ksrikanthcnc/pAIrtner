@@ -25,10 +25,13 @@ async def log_message(
 async def get_recent_messages(
     db_path: str, user_id: int, limit: int = 10
 ) -> list[dict[str, Any]]:
-    """Return the last *limit* messages for a user (most recent first)."""
+    """Return the last *limit* messages for a user (most recent first).
+
+    Includes ``created_at`` so the prompt can show time gaps between messages.
+    """
     return await _fetch_all(
         db_path,
-        "SELECT role, content FROM messages WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+        "SELECT role, content, created_at FROM messages WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
         (user_id, limit),
     )
 

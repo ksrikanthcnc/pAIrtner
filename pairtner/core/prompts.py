@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 from pairtner import pack
 
@@ -25,7 +26,7 @@ class UserContext:
     partner_name: str | None = None
     private_facts: list[str] = field(default_factory=list)
     shared_facts: list[str] = field(default_factory=list)
-    recent_messages: list[tuple[str, str]] = field(default_factory=list)
+    recent_messages: list[tuple[str, str] | tuple[str, str, str]] = field(default_factory=list)
     lang: str = "en"
     profile_summary: str = ""
 
@@ -152,17 +153,88 @@ def _format_facts(label: str, facts: list[str]) -> str:
     return f"\n## {label}\n{items}\n"
 
 
-def _format_history(messages: list[tuple[str, str]], limit: int = 6) -> str:
-    """Format recent conversation (only the user's own history)."""
+def _format_history(
+    messages: list[tuple[str, str] | tuple[str, str, str]], limit: int = 6,
+) -> str:
+    """Format recent conversation with time markers for session gap awareness.
+
+    When timestamps are available (3-tuples), messages are annotated with
+    relative time labels so the LLM can distinguish a fresh continuation from
+    a stale context gap.
+    """
     if not messages:
         return ""
     p = pack.current()
     recent = messages[-limit:]
-    lines = []
-    for role, content in recent:
+    lines: list[str] = []
+    now = datetime.now(timezone.utc)
+    prev_ts: datetime | None = None
+
+    for entry in recent:
+        role = entry[0]
+        content = entry[1]
+        ts_str = entry[2] if len(entry) > 2 else ""  # type: ignore[misc]
         prefix = p.s("history_assistant" if role == "assistant" else "history_user")
-        lines.append(f"{prefix}: {content}")
+
+        if ts_str:
+            ts = _parse_msg_ts(ts_str)
+            # Insert a gap marker if >2 hours since previous message
+            if prev_ts and ts and (ts - prev_ts).total_seconds() > 7200:
+                gap = _humanize_gap(ts - prev_ts)
+                lines.append(f"--- {gap} gap ---")
+            rel = _relative_time(ts, now) if ts else ""
+            if rel:
+                lines.append(f"[{rel}] {prefix}: {content}")
+            else:
+                lines.append(f"{prefix}: {content}")
+            prev_ts = ts
+        else:
+            lines.append(f"{prefix}: {content}")
+
     return f"\n## {p.s('label_recent_conversation')}\n" + "\n".join(lines) + "\n"
+
+
+def _parse_msg_ts(raw: str) -> datetime | None:
+    """Parse a message timestamp from the DB (ISO or SQLite default format)."""
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError):
+        return None
+
+
+def _relative_time(ts: datetime, now: datetime) -> str:
+    """Return a human-readable relative time like '5 min ago' or '3 hours ago'."""
+    delta = now - ts
+    secs = int(delta.total_seconds())
+    if secs < 0:
+        return "just now"
+    if secs < 60:
+        return "just now"
+    if secs < 3600:
+        mins = secs // 60
+        return f"{mins} min ago"
+    if secs < 86400:
+        hours = secs // 3600
+        return f"{hours}h ago"
+    days = secs // 86400
+    if days == 1:
+        return "yesterday"
+    return f"{days}d ago"
+
+
+def _humanize_gap(delta: timedelta) -> str:
+    """Describe a time gap between messages in human terms."""
+    secs = int(delta.total_seconds())
+    if secs < 3600:
+        return f"{secs // 60} min"
+    if secs < 86400:
+        return f"{secs // 3600} hours"
+    return f"{secs // 86400} days"
 
 
 def _format_smart_context(smart_ctx: SmartContext, recent_days: int = 7) -> str:
@@ -268,10 +340,12 @@ def build_system_prompt(
     """Base system prompt shared across prompt types.
 
     Optionally appends voice, task, and dampening instructions.
+    Includes current UTC time for temporal awareness.
     """
     p = pack.current()
     _trace(p, "system")
-    parts = [_head(p), p.contract() + "\n"]
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    parts = [_head(p), f"Current time: {now}\n\n" + p.contract() + "\n"]
     style = _style_section(p, voice_text, dampening_instruction)
     if style:
         parts.append(style.lstrip("\n"))

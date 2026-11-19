@@ -179,6 +179,52 @@ async def test_message_log(test_db):
     # Most recent first
     assert msgs[0]["content"] == "Hi there!"
     assert msgs[1]["content"] == "Hello"
+    # created_at is now included
+    assert "created_at" in msgs[0]
+    assert msgs[0]["created_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_recent_messages_timestamp_in_prompt(test_db):
+    """Timestamps are formatted with relative time in _format_history."""
+    from pairtner.core.prompts import _format_history
+
+    await create_user(test_db, 11, "TimeTester")
+    await log_message(test_db, 11, "user", "morning msg")
+    await log_message(test_db, 11, "assistant", "good morning")
+
+    msgs = await get_recent_messages(test_db, 11)
+    tuples = [
+        (m["role"], m["content"], m.get("created_at", ""))
+        for m in reversed(msgs)
+    ]
+    output = _format_history(tuples)
+    # Should contain the messages
+    assert "morning msg" in output
+    assert "good morning" in output
+    # Should contain time markers (just now or min ago)
+    assert "[" in output  # relative time markers are bracketed
+
+
+@pytest.mark.asyncio
+async def test_format_history_gap_marker():
+    """A 6-hour gap between messages produces a gap marker."""
+    from datetime import datetime, timedelta, timezone
+    from pairtner.core.prompts import _format_history
+
+    now = datetime.now(timezone.utc)
+    old = (now - timedelta(hours=6)).isoformat()
+    recent = (now - timedelta(minutes=1)).isoformat()
+
+    msgs = [
+        ("user", "old message", old),
+        ("assistant", "old reply", old),
+        ("user", "new message", recent),
+    ]
+    output = _format_history(msgs)
+    assert "gap" in output  # gap marker present
+    assert "old message" in output
+    assert "new message" in output
 
 
 @pytest.mark.asyncio
