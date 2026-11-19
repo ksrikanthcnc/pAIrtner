@@ -92,8 +92,6 @@ CREATE TABLE IF NOT EXISTS facts (
                                    'monthly','bimonthly','quarterly',
                                    'semiannual','yearly')),
     status          TEXT NOT NULL DEFAULT 'active',
-    fact_type       TEXT DEFAULT 'stable'
-                    CHECK(fact_type IN ('transient','situational','stable')),
     intensity       REAL DEFAULT 0.5,
     -- source tracking
     msg_source      TEXT DEFAULT 'user'
@@ -101,6 +99,7 @@ CREATE TABLE IF NOT EXISTS facts (
     -- nudge system
     nudge_target_id INTEGER REFERENCES users(tg_id),    -- partner to nudge (NULL = no nudge)
     nudge_type      TEXT,               -- appreciation|attention|communication|support|quality_time|conflict_prevention
+    nudge_suggestion TEXT,              -- LLM-generated generic guidance (no private content, safe for partner prompt)
     nudge_cooldown_h INTEGER DEFAULT 24, -- min hours before nudge can fire
     nudge_ttl_h     INTEGER,            -- hours until nudge expires if undelivered (per nudge_type)
     nudge_status    TEXT DEFAULT 'pending'
