@@ -816,3 +816,34 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 274. **Camouflage question bank.** Maintained as a prompt file: `packs/default/random_questions.md`. ~50 questions across categories: gratitude, energy, hobbies, goals, fun, learning, reflection. The bot picks 2-3 per week per user. When a nudge needs to fire, it replaces one of the random slots. The user never knows the difference.
 
 275. **Abuse handling is professional referral only.** The bot provides: National DV Hotline (1-800-799-7233), Crisis Text Line (text HOME to 741741), local resources based on user's country. It says "I'm not equipped to help with this, but these people are." It does NOT attempt to mediate, investigate, or nudge the abuser. This is a safety boundary, not a feature gap.
+
+
+## Dropped Sensitivity, Symmetric Nudging, Structural Isolation Explained (Decision 276-289)
+
+276. **DROPPED sensitivity column entirely.** Visibility alone handles everything. The bot's purpose is to help the relationship — withholding nudges when someone is considering divorce is ABANDONING the relationship. Generic therapeutic nudges ("be more attentive", "plan something special") are always safe and always helpful. The only rule: never reveal the specific private fact.
+
+277. **Affair: symmetric nudging.** If Alice has a crush because she feels neglected, nudge Bob to be more loving. The bot addresses the ROOT CAUSE (feeling neglected) not the symptom (crush). Bob never hears about the crush, just gets general relationship-strengthening suggestions. This is simple, symmetric, better therapy.
+
+278. **Abuse handling: included, minimal code.** Just prompt instructions + professional referral numbers. Not hard to implement, irresponsible to omit. No extra code — just persona prompt lines. If abuse detected: provide DV hotline, crisis text line. Continue being supportive. Don't probe the accused partner unprompted.
+
+279. **Dark thoughts: bot presence is the value.** People won't call helplines. The bot being there, validating, gently encouraging help IS the intervention. Helpline numbers are the safety net. The bot subtly makes the partner more attentive through general nudges. This is realistic, not protocol-driven.
+
+280. **Camouflage questions: dynamic, not fixed 2-3/week.** Scale with user activity: quiet users (1-3 msgs/week) get 1 Q/week. Normal (4-10) get 2-3. Active (10+) get 3-5. Bot picks natural moments within existing conversations ("by the way, what made you smile today?") rather than cold-messaging.
+
+281. **User topic suppression.** "Don't talk about XYZ" → stored in user_meta as suppressed_topic. Engine excludes from proactive injections and nudges for that user. Facts still stored for context, just never surfaced. Partner unaffected. User can un-suppress anytime. Simple string match + LLM judgment.
+
+282. **Structural isolation EXPLAINED.** The ENGINE (Python code) has access to ALL facts in the database. The LLM does NOT — it only sees what the engine puts in its prompt. When talking to Bob, Alice's private facts are NOT IN THE PROMPT. The LLM literally cannot leak what it doesn't have. This is code-level isolation, not prompt-level ("don't reveal secrets"). Unbreakable by prompt injection because there's nothing to inject about.
+
+283. **Nudges are pre-computed by the engine.** The engine reads Alice's private fact ("feels neglected"). It generates a generic nudge suggestion ("encourage appreciation") with no specific content. Only the nudge suggestion enters Bob's prompt, not Alice's private fact. The LLM sees "encourage appreciation" and weaves it naturally. The specific trigger is never in the prompt.
+
+284. **Validation call: start without it.** Structural isolation is sufficient. If private facts aren't in the prompt, the LLM can't leak them. The validation call was defense-in-depth for inference/hallucination edge cases. Start without it, add if injection testing reveals leaks from contextual inference. Don't pay the latency cost upfront.
+
+285. **If validation needed later: dynamic trigger, not every message.** Cheap keyword check: "does response mention partner?" + "does relationship have private facts?" If both yes → validate. ~10-20% of messages, not 100%. Or just add it as a configurable option (`privacy.validation_call: true`) for paranoid users.
+
+286. **Privacy model is now just visibility + structural isolation.** Two things: (1) `visibility` column controls what enters the partner's prompt. Private = excluded. nudge_eligible = included. shareable = relayable. (2) Engine-level context builder enforces the boundary. That's it. No sensitivity tiers, no output filters, no validation calls (initially). Simple.
+
+287. **Abuse referral numbers in persona prompt.** US: National DV Hotline 1-800-799-7233, Crisis Text Line (HOME to 741741), 988 Suicide & Crisis Lifeline. International: maintain a locale-aware list in config. The bot mentions them naturally when relevant, not as a protocol dump.
+
+288. **User can opt into/out of partner nudging.** During onboarding or anytime via /settings: "Would you like me to gently help bring up things that matter to you with your partner? I'll never reveal what you told me — just steer the conversation naturally." If user says no → their private facts generate zero nudges. If yes (default) → standard nudge behavior. Respects autonomy.
+
+289. **Schema v2 updated: sensitivity column removed.** One fewer column, one fewer concept. Privacy is structural (engine) + visibility (column). Clean.

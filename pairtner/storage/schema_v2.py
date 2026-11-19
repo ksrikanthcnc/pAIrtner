@@ -16,7 +16,9 @@ Changes from v1 (22 tables → 17 + FTS5):
 - Added: relationship_id on facts (replaces couple_id; links to relationships)
 - Added: msg_source column (user|bot|system) — extract facts from bot responses too
 - Added: nudge lifecycle (pending→delivered→cancelled→expired) with TTL per type
-- Added: sensitivity column (normal|sensitive|critical) for private fact safety
+- Simplified: visibility alone drives behavior. Dropped sensitivity column entirely —
+  structural isolation (private facts excluded from partner's LLM prompt at engine
+  level) is the real safety mechanism. Sensitivity was redundant gatekeeping.
 - Added: user_profiles.default_interaction_mode (solution|vent|adaptive, default vent)
 - Simplified: dropped self_nudge/probe_partner flags — visibility alone drives
   LLM behavior (private = engage owner + probe partner on topic; nudge_eligible
@@ -92,8 +94,6 @@ CREATE TABLE IF NOT EXISTS facts (
     status          TEXT NOT NULL DEFAULT 'active',
     fact_type       TEXT DEFAULT 'stable'
                     CHECK(fact_type IN ('transient','situational','stable')),
-    sensitivity     TEXT DEFAULT 'normal'
-                    CHECK(sensitivity IN ('normal','critical')),
     intensity       REAL DEFAULT 0.5,
     -- source tracking
     msg_source      TEXT DEFAULT 'user'
