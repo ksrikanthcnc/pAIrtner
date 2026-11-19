@@ -386,3 +386,31 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 88. **Gemini 2.0 Flash Lite deprecated.** Google returns 404 with redirect to gemini-3.5-flash-lite. Update all model references.
 
 89. **LLM comparison validated.** Qwen3 8B (local) produces 7 facts vs Gemini 3.5 Flash Lite's 4 facts on same input. Both valid JSON, both reasonable. Local models are viable. Quality gap smaller than expected.
+
+
+## Benchmark, Boundaries, Debug Mode, Privacy (Decision 90-99)
+
+90. **Benchmark framework built.** `dev/benchmark/seed_db.py` creates a hypothetical 3-month DB (42 messages, ground truth). `run_benchmark.py` tests any model and scores against ground truth. Results saved as JSON.
+
+91. **Benchmark results:**
+    | Model | Alice accuracy | Bob accuracy | Latency |
+    |---|---|---|---|
+    | Qwen3 8B (local) | 73% (11/15) | 29% (4/14) | 28-52s |
+    | Gemini 3.5 Flash Lite | 80% (12/15) | 57% (8/14) | 7-9s |
+    Key finding: both models miss cross-user facts. Bob's extraction doesn't find "Alice works as PM" because it only sees Bob's messages. This is by design (privacy), but means the knowledge is per-user.
+
+92. **Consolidation boundaries are creation-date based, not content-date.** A weekly episode created on day 28 becomes monthly-eligible on day 58. No content-date overlap. Clean separation.
+
+93. **Consolidation schedule is explicit, not heuristic.** Weekly = `days_since_last >= 7` from user_meta. Monthly = `days_since_last >= 30`. Quarterly = monthly episodes aged 90+. Logged in maintenance loop. No "lucky hunch."
+
+94. **Quality checks: keep structural, warn on subjective.** Structural: min 8 words per episode, source_ids coverage check. Subjective: warn in logs, don't auto-reject. User can inspect via debug mode.
+
+95. **Debug mode for users.** Add `/debug` command showing: fact count by kind/status, top-5 scored facts, recent episodes, FTS5 search test. Helps users understand what's stored without reading raw DB.
+
+96. **Privacy model confirmed solid.** Facts default to `private` visibility. Private facts NEVER sent to partner's prompt. Verified by 8+ tests: `test_prompt_excludes_partner_private_facts`, `test_partner_private_facts_never_leak_in_any_prompt_type`, `test_whatdoyouknow_shows_only_own_facts`, etc. Sensitive scenario (wanting partner to exercise) is handled: extracted as private fact, partner never sees it.
+
+97. **Dynamic pagination for search.** LLM can pass `limit` to search. Start with 5, ask for 10/20 next page. One parameter on existing FTS5.
+
+98. **Episodes are always multi-row per consolidation run.** 20 facts → 3-5 topic-grouped episodes, each with own source_ids. A 1-year mega-summary in one row would make raw msg retrieval impossible. Cross-topic connections handled by LLM at retrieval time.
+
+99. **No lighter models available to test.** All local Ollama models are 5-18GB (8B+ params). Need to pull a smaller model (qwen3:1.7b or gemma3:4b) for floor testing. Parked — not urgent since Qwen3 8B works well enough.
