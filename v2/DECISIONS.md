@@ -321,3 +321,22 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 73. **Any fact should be retrievable with enough effort.** Two retrieval paths: (1) scoring-based pre-loaded context, (2) FTS5 search on-demand. Combined = safety net. Test plan: plant facts at various ages, verify retrieval via both paths independently and combined.
 
 74. **Stress test before cascading.** Build a stress test with 6-12 months of simulated data. Test weekly consolidation alone first. If context quality degrades at scale, THEN implement monthly/quarterly layers. Don't build cascading speculatively.
+
+
+## Stress Test Results & Cascading Implementation (Decision 75-76)
+
+75. **Stress test results (1 year, no cascading):**
+    - 1835 working facts seeded → 362 weekly episodes after consolidation
+    - Context window (1200 words) fits 187/402 facts = 46% coverage
+    - 55% of episodes invisible to LLM = information loss confirmed
+    - Scoring works correctly: old uncited facts score near 0, core always 1.0
+    - Context build stays <100ms even at scale
+    - **Conclusion: cascading consolidation is needed, not optional.**
+
+76. **Cascading consolidation implemented and wired:**
+    - `run_cascading_consolidation()` in consolidation.py
+    - Monthly: consolidates weekly episodes >30d old → fewer monthly episodes
+    - Quarterly: consolidates monthly episodes >90d old → broad overviews
+    - Episodes tagged with metadata `{"level": "weekly|monthly|quarterly"}`
+    - Maintenance loop runs cascading monthly (30d interval via user_meta)
+    - Tested: 88 weekly episodes → 18 monthly episodes (5x compression)
