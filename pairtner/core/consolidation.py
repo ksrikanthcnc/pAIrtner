@@ -185,7 +185,15 @@ def _parse_episodes(result: dict[str, Any]) -> list[dict[str, Any]]:
 async def _find_consolidation_candidates(
     db_path: str, user_id: int, cfg: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Find working facts eligible for consolidation."""
+    """Find working facts eligible for weekly consolidation.
+
+    Two paths:
+    1. Resolved/outdated facts (any age) — these are done, compress them.
+    2. Active stale facts (90d+ with no citations) — forgotten, auto-archive.
+
+    The cascading layer (monthly/quarterly) handles EPISODE age bounds.
+    Weekly consolidation is about FACT lifecycle, not time windows.
+    """
     now = datetime.now(timezone.utc)
     all_facts = await db_mod.get_active_facts(db_path, user_id)
     candidates = []
@@ -198,7 +206,7 @@ async def _find_consolidation_candidates(
         if kind != "working":
             continue
 
-        # Resolved or outdated facts are candidates
+        # Resolved or outdated facts are always candidates
         if status in ("resolved", "outdated"):
             candidates.append(f)
             continue
@@ -227,8 +235,9 @@ async def _find_consolidation_candidates(
 # ---------------------------------------------------------------------------
 
 CASCADING_CONFIG = {
-    "monthly_age_days": 30,    # consolidate weekly episodes older than 30d
-    "quarterly_age_days": 90,  # consolidate monthly episodes older than 90d
+    "monthly_age_days": 30,     # consolidate weekly episodes older than 30d
+    "monthly_max_age_days": 90, # but not older than 90d (those go to quarterly)
+    "quarterly_age_days": 90,   # consolidate monthly episodes older than 90d
     "min_episodes_for_cascade": 3,
 }
 
@@ -287,9 +296,10 @@ async def run_cascading_consolidation(
     cfg = {**CASCADING_CONFIG, **(config or {})}
     result: dict[str, list[dict[str, Any]]] = {"monthly": [], "quarterly": []}
 
-    # --- Monthly: consolidate old weekly episodes ---
+    # --- Monthly: consolidate old weekly episodes (30d-90d) ---
     monthly_candidates = await _find_episode_candidates(
         db_path, user_id, level="weekly", age_days=cfg["monthly_age_days"],
+        max_age_days=cfg.get("monthly_max_age_days"),
     )
     if len(monthly_candidates) >= cfg["min_episodes_for_cascade"]:
         monthly_eps = await _consolidate_episodes(
@@ -324,11 +334,15 @@ async def run_cascading_consolidation(
 
 async def _find_episode_candidates(
     db_path: str, user_id: int, level: str, age_days: int,
+    max_age_days: int | None = None,
 ) -> list[dict[str, Any]]:
     """Find episodes of a given level that are old enough to cascade.
 
     Episodes are tagged by their metadata level field (weekly/monthly).
     Episodes without a level tag are assumed weekly (backward compat).
+
+    age_days: minimum age to be eligible
+    max_age_days: maximum age (exclusive). None = no upper bound.
     """
     now = datetime.now(timezone.utc)
     all_facts = await db_mod.get_active_facts(db_path, user_id)
@@ -363,7 +377,8 @@ async def _find_episode_candidates(
         except (ValueError, TypeError):
             continue
 
-        if (now - created_dt).days >= age_days:
+        fact_age = (now - created_dt).days
+        if fact_age >= age_days and (max_age_days is None or fact_age < max_age_days):
             candidates.append(f)
 
     return candidates

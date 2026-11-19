@@ -193,8 +193,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_approve": "✅ Approve",
         "btn_edit": "✏️ Edit",
         "btn_discard": "❌ Discard",
-        "btn_save": "💾 Save privately",
-        "btn_relay": "💌 Pass it on gently",
+        "btn_save": "🤫 Keep to myself",
+        "btn_relay": "💬 Share with partner",
 
         # Approval flow
         "approved": "✅ Approved! It will be delivered in ~{minutes} minutes.",

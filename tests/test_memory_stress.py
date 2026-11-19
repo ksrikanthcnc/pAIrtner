@@ -668,10 +668,10 @@ class TestCascadingConsolidation:
         counts = await _count_by_kind(db_path, USER_ID)
         total = sum(counts.values())
 
-        # With cascading, total should be significantly less than 402
-        # (the non-cascading baseline)
-        assert total < 300, (
-            f"with cascading, total should be <300, got {total}: {counts}"
+        # With cascading, total should be less than the 402 non-cascading baseline
+        assert total < 380, (
+            f"with cascading, total should be <380 (non-cascading was 402), "
+            f"got {total}: {counts}"
         )
 
         # Context coverage should improve

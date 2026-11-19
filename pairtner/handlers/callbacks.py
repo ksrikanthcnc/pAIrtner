@@ -144,7 +144,7 @@ class CallbacksMixin:
     async def _cb_choose_save(
         self, user_id: int, data: str, lang: str
     ) -> list[BotResponse]:
-        """User chose to save privately instead of relaying."""
+        """User chose to keep to themselves instead of relaying."""
         choice_id = data.split(":")[1]
         self._relay_choices.pop(choice_id, None)
         return [BotResponse(t(lang, "save_done"))]

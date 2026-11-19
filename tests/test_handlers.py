@@ -339,8 +339,8 @@ async def test_no_tag_asks_user(service: BotService, test_db, paired_users):
     # Should have save/relay buttons
     assert responses[0].buttons is not None
     labels = [b.text for row in responses[0].buttons for b in row]
-    assert any("save" in l.lower() or "💾" in l for l in labels)
-    assert any("relay" in l.lower() or "💌" in l for l in labels)
+    assert any("keep" in l.lower() or "🤫" in l for l in labels)
+    assert any("share" in l.lower() or "💬" in l for l in labels)
 
 
 @pytest.mark.asyncio
