@@ -895,3 +895,18 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 309. **The complete nudge flow (no engine text interpretation).** (1) Alice sends message. (2) LLM extracts fact + generates nudge_suggestion in one pass. (3) Engine stores both fields. (4) When building Bob's prompt, engine copies nudge_suggestion text (not fact text). (5) Bob's LLM sees the suggestion, weaves naturally. All content decisions happen in step 2 by the LLM. Engine is pure plumbing in steps 3-4.
 
 310. **Extraction contract now includes nudge_suggestion.** Optional field in memory_ops. LLM fills it only for facts that should trigger partner nudges. Text must be generic enough that no private detail can be inferred. The extraction prompt includes examples of good vs bad suggestions.
+
+
+## Core Facts Redefined, Growth Problem Solved (Decision 311-316)
+
+311. **Core = literal biographical facts ONLY.** Name, DOB, anniversary, kids' names, job title, married since, languages. The test: "could this go on a profile card?" If yes → core. If no → working. This makes core self-bounding — there are only so many identity facts about a person (~15-25, growing by maybe 1-2/month).
+
+312. **DROPPED core fact cap of 30.** Not needed anymore. Core facts are naturally bounded by the finite set of biographical data about a person. If the count reaches 40+, the extraction prompt is too aggressive, not the storage system.
+
+313. **Preferences, suppressions, situations → working, not core.** "Don't bring up mother-in-law" is a working fact with high intensity. It decays naturally (21-day halflife). If the user reinforces it → citation count rises, stays prominent. If they stop mentioning it → fades from context. The decay IS the proper handling. Temporary preferences fade. Permanent ones get reinforced by repetition.
+
+314. **Core facts are NOT consolidated or summarized.** They're atomic identity bits. "DOB: March 15 1992" doesn't get summarized. Core stays as-is forever, updated only when the real fact changes (new job, name change) or deleted via /forget.
+
+315. **User can delete any fact via /forget.** Works for core and working. Sets archived_at, excluded from all future prompts. Raw message never deleted (rebuild source). "I want you to forget my mother's name" → archived, gone from context.
+
+316. **The extraction prompt must enforce core strictness.** Explicit instruction: "Only mark `core` for identity-level biographical facts: name, date of birth, anniversary, children's names, job title, relationship duration, languages. Everything else — emotions, preferences, situations, complaints, opinions, temporary states — is `working`."
