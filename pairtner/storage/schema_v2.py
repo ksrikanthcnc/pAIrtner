@@ -5,7 +5,12 @@ Changes from v1:
 - Merged: partner_perceptions + user_patterns + interaction_scores → analysis_results
 - Merged: user_goals + shared_goals → goals
 - Dropped: fact_summaries (replaced by v2 consolidation episodes in facts table)
-- All else: unchanged
+- Dropped: category column (LLM categorizes inconsistently; FTS5 handles discovery)
+- Changed: kind='episode' → explicit kind per level (daily, weekly, monthly, quarterly, yearly)
+- Changed: visibility default 'private' → 'nudge_eligible' (therapeutic nudging is the default)
+- Added: couple_id on facts (couple-level summaries)
+- Added: msg_source column (user|bot|system) — extract facts from bot responses too
+- Added: nudge columns (nudge_target_id, nudge_type, nudge_cooldown_h, nudge_delivered_at)
 """
 
 from __future__ import annotations
@@ -41,13 +46,23 @@ CREATE TABLE IF NOT EXISTS facts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_id        INTEGER NOT NULL REFERENCES users(tg_id),
     text            TEXT NOT NULL,
-    visibility      TEXT NOT NULL CHECK(visibility IN ('private', 'shared')),
-    source          TEXT,
-    kind            TEXT NOT NULL DEFAULT 'working',
+    visibility      TEXT NOT NULL DEFAULT 'nudge_eligible'
+                    CHECK(visibility IN ('private', 'nudge_eligible', 'shareable')),
+    kind            TEXT NOT NULL DEFAULT 'working'
+                    CHECK(kind IN ('working','core','daily','weekly','monthly',
+                                   'quarterly','yearly')),
     status          TEXT NOT NULL DEFAULT 'active',
     fact_type       TEXT DEFAULT 'stable' CHECK(fact_type IN ('transient','situational','stable')),
-    category        TEXT DEFAULT NULL,
     intensity       REAL DEFAULT 0.5,
+    -- ownership & visibility
+    couple_id       TEXT,                   -- non-NULL for couple-level summaries
+    msg_source      TEXT DEFAULT 'user'     -- who said it: user|bot|system
+                    CHECK(msg_source IN ('user','bot','system')),
+    -- nudge system
+    nudge_target_id INTEGER REFERENCES users(tg_id),  -- partner to nudge (NULL = no nudge)
+    nudge_type      TEXT,                   -- appreciation|attention|communication|support|quality_time|conflict_prevention
+    nudge_cooldown_h INTEGER DEFAULT 24,    -- hours before nudge can fire
+    nudge_delivered_at TIMESTAMP,           -- when the nudge was actually delivered
     -- lifecycle
     expires_at      TIMESTAMP,
     archived_at     TIMESTAMP,
@@ -59,9 +74,9 @@ CREATE TABLE IF NOT EXISTS facts (
     last_cited_at   TIMESTAMP,
     -- provenance
     source_message_id INTEGER REFERENCES messages(id),
-    source_ids      TEXT,           -- JSON array of source fact IDs (for episodes)
+    source_ids      TEXT,           -- JSON array of source fact/summary IDs
     model           TEXT,           -- which LLM extracted this
-    metadata        TEXT,           -- JSON: {level: weekly|monthly|quarterly, fact_count: N, ...}
+    metadata        TEXT,           -- JSON: {period, resolved, ongoing, new, narrative, ...}
     -- proactive
     event_date      TEXT,           -- ISO date for date-based reminders
     recurring       INTEGER DEFAULT 0,
@@ -302,6 +317,9 @@ CREATE INDEX IF NOT EXISTS idx_facts_owner_visibility ON facts(owner_id, visibil
 CREATE INDEX IF NOT EXISTS idx_facts_owner_created ON facts(owner_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_facts_kind ON facts(owner_id, kind);
 CREATE INDEX IF NOT EXISTS idx_facts_status ON facts(owner_id, status);
+CREATE INDEX IF NOT EXISTS idx_facts_couple ON facts(couple_id, kind);
+CREATE INDEX IF NOT EXISTS idx_facts_nudge ON facts(nudge_target_id, nudge_delivered_at)
+    WHERE nudge_target_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_messages_user_created ON messages(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_relay_sender_status ON relay_queue(sender_id, status);
 CREATE INDEX IF NOT EXISTS idx_relay_status_send ON relay_queue(status, send_after);

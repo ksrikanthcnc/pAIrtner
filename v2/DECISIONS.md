@@ -645,3 +645,38 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 196. **TODO.md updated with v2 build queue.** 11 items in priority order: unified summary function → context window composer → consolidation update → schema migration → LLM search → proactive pokes → chat import → 4B prompt → benchmark viewer → debug commands → configurable intervals.
 
 197. **PWA memory viewer and scheduler dashboard tracked.** Added to P1 in TODO.md. REST API endpoints exist for most data. Build when the core memory engine is stable.
+
+
+## Summary Kinds, Couple Summaries, Nudge System, Bot Facts (Decision 198-213)
+
+198. **kind='episode' replaced with explicit level kinds.** `kind IN ('working', 'core', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly')`. No more JSON extraction for basic queries. `WHERE kind='weekly'` instead of `WHERE kind='episode' AND json_extract(metadata,'$.level')='weekly'`.
+
+199. **Couple-level summaries: YES.** Three passes per period: Alice's, Bob's, and a combined couple summary. Couple summary captures the relationship dynamic: "disconnect on chores — Alice feels unheard, Bob unaware." This is where the bot's mediation value lives. Stored with `owner_id=NULL, couple_id='alice_bob'`.
+
+200. **`couple_id` added to facts table.** Per-user facts: `owner_id=user, couple_id=NULL`. Couple summaries: `owner_id=NULL, couple_id=pair_id`. Indexed for efficient couple-level queries.
+
+201. **Proactive therapeutic nudging replaces explicit relay for insights.** Instead of "want me to tell Bob?", the bot subtly steers Bob during his next casual conversation. No attribution ("Alice told me"), just therapeutic guidance ("when's the last time you complimented Alice?"). This is the bot's core value as a relationship therapist — it sees both sides and steers each one.
+
+202. **Nudge lifecycle:** (1) Extraction tags fact as nudge-eligible: `{nudge_target_id, nudge_type, nudge_cooldown_h}`. (2) After cooldown (min 24h), the nudge becomes eligible for injection. (3) During target's next conversation, engine injects nudge suggestion into system prompt. (4) LLM weaves it naturally. (5) Mark delivered, track outcome.
+
+203. **Nudge types:** appreciation, attention, communication, support, quality_time, conflict_prevention. These map to relationship therapy categories. The LLM classifies during extraction. Configurable vocabulary.
+
+204. **Visibility revised to three levels.** `private` (strictly private, bot never acts on it toward partner), `nudge_eligible` (DEFAULT — bot can subtly steer partner without attribution), `shareable` (user explicitly offered for relay). Old `shared` → split between `nudge_eligible` and `shareable`.
+
+205. **Nudge cooldown prevents attribution.** Minimum 24h between fact extraction and nudge delivery. If Alice vents at 9am, Bob doesn't get nudged until at least 9am tomorrow. For high-severity facts (near breakup), cooldown may be longer. Configurable per nudge_type.
+
+206. **Explicit relay still exists alongside nudges.** Relay = user-initiated, attributed message. Nudge = bot-initiated, unattributed therapeutic steering. Both coexist. A user can say "tell Bob" (relay) OR the bot can notice a pattern and nudge Bob itself (nudge). Different tools for different situations.
+
+207. **Bot responses ARE fact sources.** Extract facts from both user AND bot messages. Tag with `msg_source='user'|'bot'`. Bot facts track advice given ("advised I-statement technique"), suggestions made, commitments requested. Prevents broken-record advice. Enables advice outcome tracking.
+
+208. **Advice outcome tracking (future).** Bot suggests I-statements in week 33. Tracks whether the topic (chore balance) improves, worsens, or stagnates over weeks 34-37. Feeds back: "I-statements didn't work for this couple, try different approach." Requires bot-source facts + temporal analysis.
+
+209. **De-escalation mode.** Both partners upset simultaneously (angry messages from both within a short window) → bot switches to validation-only, shorter messages, no suggestions, just emotional holding. Don't mediate during a live fight. Trigger: both users' recent messages have high negative intensity.
+
+210. **Relationship health trajectory (internal).** Not a user-facing score (reductive). Internal metric based on Gottman ratios, conflict frequency, resolution rates, communication patterns. Used to adjust bot behavior: declining → more proactive, gentler tone, more check-ins. Improving → more casual, celebrate wins.
+
+211. **Summaries include bot-source facts.** A weekly summary notes both what was discussed AND what the bot advised: "Discussed chore imbalance (ongoing). Bot suggested I-statements. Alice tried it Thursday — partial success." This gives continuity to the therapeutic relationship.
+
+212. **`category` column DROPPED from schema.** Decision 52 confirmed. FTS5 + scoring handles discovery. Consolidation LLM groups thematically. One less field to fill wrong.
+
+213. **Schema v2 updated with all new columns.** kind CHECK constraint, couple_id, msg_source, nudge columns (nudge_target_id, nudge_type, nudge_cooldown_h, nudge_delivered_at), visibility default changed to 'nudge_eligible'. New indexes: idx_facts_couple, idx_facts_nudge.
