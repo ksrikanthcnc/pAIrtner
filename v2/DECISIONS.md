@@ -454,3 +454,26 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 115. **`/debug` = full level, dropped episodes = `/warnings` level.** Two separate commands: `/debug` shows complete knowledge state, `/warnings` shows only quality issues (dropped episodes, coverage warnings, schedule skips).
 
 116. **Privacy isolation for sensitive facts confirmed.** Every fact defaults to `private`. 8+ tests verify Alice's private facts NEVER appear in Bob's prompt across all prompt types. Sensitive info (e.g., "wish partner would exercise") stays private and the LLM uses indirect hints only.
+
+
+## Retry, Benchmarks, Style, Server Recovery (Decision 117-126)
+
+117. **Tier simplification confirmed — fixed calendar windows, not "since last run."** If server was down 2 months: run 2 separate monthly passes (month 1 data, then month 2 data), NOT one giant pass grabbing everything since last run. Each pass produces similarly-sized episodes. No accumulation, no "grab whatever's left."
+
+118. **Sparse data: skip if below threshold.** If a weekly window has <3 resolved facts, skip consolidation for that window. Those facts carry into the next window. Prevents creating micro-episodes from thin data.
+
+119. **Dense data: batch within a window.** If a weekly window has >20 resolved facts, split into 2+ LLM calls (~10 each). Each batch produces its own episodes. Consistent quality regardless of activity level.
+
+120. **Message splitting is Telegram-specific only.** `_split_message()` lives in `telegram_adapter.py`, not a shared utility. REST and WebSocket adapters have no message size limit.
+
+121. **gemma3:4b (4B params) = 0% extraction.** Can't produce valid JSON for our contract at all. Empty response. Quality floor established: **minimum 8B params** (Qwen3 8B = 73%, Gemini Flash Lite = 80%).
+
+122. **User style/tone handled via `/style` command.** Mood presets (stressed/happy/angry/reflective) control `response_length` (short/normal/long) and dampening intensity. Voice presets control communication style. Already built — no change needed.
+
+123. **Telegram retry on failed sends.** `_retry_send()` wraps all `bot.send_message` and `bot.send_document` calls. 3 attempts with exponential backoff (1s, 2s, 4s). Handles `RetryAfter` (rate limit) with server-specified wait. After 3 failures: log error, move on.
+
+124. **Telegram offline: user msgs buffered ~24h, bot replies retried 3x then lost.** Long-polling means Telegram queues user messages while bot is offline. On reconnect, bot processes all buffered messages and generates responses. If a response send fails after 3 retries, it's logged and lost — the user can re-send their message.
+
+125. **Dead-letter queue for permanently failed sends: parked.** A proper retry queue (persist failed responses to DB, retry on next startup) is a bigger feature. Current behavior is acceptable for MVP — transient failures are retried, permanent ones are logged.
+
+126. **Server recovery with fixed-window consolidation.** After 2 months offline, the maintenance loop runs immediately. The weekly job detects weeks 1-8 are all unprocessed. It runs 8 separate weekly passes (one per week), then monthly runs 2 passes (one per month). Each pass is bounded and produces consistent-size episodes.
