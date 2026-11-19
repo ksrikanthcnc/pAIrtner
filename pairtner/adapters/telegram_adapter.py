@@ -55,6 +55,7 @@ def _split_message(text: str, limit: int = _TG_MSG_LIMIT) -> list[str]:
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
+from telegram.error import NetworkError, RetryAfter, TimedOut
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -73,6 +74,32 @@ from .base import BaseAdapter
 from .loops import start_background_loops
 
 logger = logging.getLogger(__name__)
+
+_MAX_SEND_RETRIES = 3
+
+
+async def _retry_send(coro_factory, *, retries: int = _MAX_SEND_RETRIES):
+    """Retry a Telegram send call with exponential backoff.
+
+    *coro_factory* is a zero-arg callable that returns a fresh awaitable each time
+    (needed because an awaited coroutine can't be re-awaited).
+    """
+    for attempt in range(retries):
+        try:
+            return await coro_factory()
+        except RetryAfter as e:
+            wait = e.retry_after + 1
+            logger.warning("Telegram rate-limited, retrying in %ds", wait)
+            await asyncio.sleep(wait)
+        except (NetworkError, TimedOut) as e:
+            if attempt == retries - 1:
+                logger.error("Telegram send failed after %d retries: %s", retries, e)
+                return None
+            backoff = 2 ** attempt
+            logger.warning("Telegram send error (attempt %d/%d), retry in %ds: %s",
+                           attempt + 1, retries, backoff, e)
+            await asyncio.sleep(backoff)
+    return None
 
 
 class TelegramAdapter(BaseAdapter):
@@ -178,20 +205,20 @@ class TelegramAdapter(BaseAdapter):
             fname, content = document
             doc = BytesIO(content.encode("utf-8"))
             doc.name = fname
-            await self._app.bot.send_document(
+            await _retry_send(lambda: self._app.bot.send_document(
                 chat_id=int(user_id), document=doc, caption=text[:1024],
-            )
+            ))
         else:
             parts = _split_message(text)
             for i, part in enumerate(parts):
                 # Attach buttons only to the last chunk
                 mk = markup if i == len(parts) - 1 else None
-                await self._app.bot.send_message(
+                await _retry_send(lambda p=part, m=mk: self._app.bot.send_message(
                     chat_id=int(user_id),
-                    text=part,
-                    reply_markup=mk,
+                    text=p,
+                    reply_markup=m,
                     parse_mode="HTML",
-                )
+                ))
 
     async def send_typing(self, user_id: int | str) -> None:
         if self._app:
@@ -222,19 +249,19 @@ class TelegramAdapter(BaseAdapter):
             fname, content = response.document
             doc = BytesIO(content.encode("utf-8"))
             doc.name = fname
-            await bot.send_document(
+            await _retry_send(lambda: bot.send_document(
                 chat_id=target, document=doc, caption=response.text[:1024],
-            )
+            ))
         else:
             parts = _split_message(response.text)
             for i, part in enumerate(parts):
                 mk = markup if i == len(parts) - 1 else None
-                await bot.send_message(
+                await _retry_send(lambda p=part, m=mk: bot.send_message(
                     chat_id=target,
-                    text=part,
-                    reply_markup=mk,
+                    text=p,
+                    reply_markup=m,
                     parse_mode="HTML",
-                )
+                ))
 
     # ── background tasks ─────────────────────────────────────────────────
 

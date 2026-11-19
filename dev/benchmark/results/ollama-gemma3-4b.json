@@ -1,0 +1,110 @@
+{
+  "provider": "ollama",
+  "model": "gemma3:4b",
+  "timestamp": "2026-11-19T10:02:15.754069+00:00",
+  "alice": {
+    "facts": [],
+    "latency_sec": 6.744244708039332,
+    "scores": {
+      "core": {
+        "total": 9,
+        "hits": 0,
+        "misses": 9,
+        "hit_details": [],
+        "miss_details": [
+          "Alice is 32 years old",
+          "Bob is 34 years old",
+          "They have been married for 6 years",
+          "They have a 5-year-old son named Max",
+          "Alice works as a product manager",
+          "Bob is a software engineer",
+          "They live in San Francisco",
+          "Alice's birthday is March 15",
+          "Bob's mother's name is Helen"
+        ],
+        "accuracy": 0.0
+      },
+      "working_ongoing": {
+        "total": 4,
+        "hits": 0,
+        "misses": 4,
+        "hit_details": [],
+        "miss_details": [
+          "Alice feels Bob works too many hours",
+          "Bob feels Alice dismisses his work stress",
+          "They disagree about screen time for Max",
+          "Both want to move to a bigger apartment"
+        ],
+        "accuracy": 0.0
+      },
+      "sensitive": {
+        "total": 2,
+        "hits": 0,
+        "misses": 2,
+        "hit_details": [],
+        "miss_details": [
+          "Alice wishes Bob would exercise more but doesn't want to hurt his feelings",
+          "Bob is secretly saving for a surprise anniversary trip"
+        ],
+        "accuracy": 0.0
+      },
+      "overall": {
+        "total": 15,
+        "hits": 0,
+        "accuracy": 0.0
+      }
+    }
+  },
+  "bob": {
+    "facts": [],
+    "latency_sec": 1.5041419580229558,
+    "scores": {
+      "core": {
+        "total": 9,
+        "hits": 0,
+        "misses": 9,
+        "hit_details": [],
+        "miss_details": [
+          "Alice is 32 years old",
+          "Bob is 34 years old",
+          "They have been married for 6 years",
+          "They have a 5-year-old son named Max",
+          "Alice works as a product manager",
+          "Bob is a software engineer",
+          "They live in San Francisco",
+          "Alice's birthday is March 15",
+          "Bob's mother's name is Helen"
+        ],
+        "accuracy": 0.0
+      },
+      "working_ongoing": {
+        "total": 4,
+        "hits": 0,
+        "misses": 4,
+        "hit_details": [],
+        "miss_details": [
+          "Alice feels Bob works too many hours",
+          "Bob feels Alice dismisses his work stress",
+          "They disagree about screen time for Max",
+          "Both want to move to a bigger apartment"
+        ],
+        "accuracy": 0.0
+      },
+      "sensitive": {
+        "total": 1,
+        "hits": 0,
+        "misses": 1,
+        "hit_details": [],
+        "miss_details": [
+          "Alice is worried about Bob's drinking on weekends"
+        ],
+        "accuracy": 0.0
+      },
+      "overall": {
+        "total": 14,
+        "hits": 0,
+        "accuracy": 0.0
+      }
+    }
+  }
+}
