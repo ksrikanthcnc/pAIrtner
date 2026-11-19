@@ -477,3 +477,20 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 125. **Dead-letter queue for permanently failed sends: parked.** A proper retry queue (persist failed responses to DB, retry on next startup) is a bigger feature. Current behavior is acceptable for MVP — transient failures are retried, permanent ones are logged.
 
 126. **Server recovery with fixed-window consolidation.** After 2 months offline, the maintenance loop runs immediately. The weekly job detects weeks 1-8 are all unprocessed. It runs 8 separate weekly passes (one per week), then monthly runs 2 passes (one per month). Each pass is bounded and produces consistent-size episodes.
+
+
+## Schema Audit, Consolidation Clarifications (Decision 127-133)
+
+127. **22 tables is too many.** Audit shows ~16 needed after merging: 3 relay tables → 1, 3 analysis tables (perceptions/patterns/interactions) → 1, 2 goal tables → 1, `fact_summaries` droppable (replaced by v2 episodes). Not urgent — refactor task.
+
+128. **Consolidation = creating episodes. Same thing.** Weekly consolidation reads resolved working facts, LLM groups by theme, outputs = episodes stored in `facts` table with `kind='episode'`. "Weekly episode" is the output of "weekly consolidation."
+
+129. **Flow confirmed:** LLM extracts → working facts → LLM marks resolved over time → weekly consolidation → weekly episodes → monthly cascading → monthly episodes → quarterly → quarterly episodes. Each level archives its inputs. All in one `facts` table — `kind` + `metadata.level` distinguishes them.
+
+130. **Sparse weeks: leave resolved facts as-is.** Don't create 1-2 fact episodes (wasteful LLM call, no real compression). Stragglers caught by the 90d uncited auto-age path or quarterly sweep.
+
+131. **Each tier only touches its own level.** Weekly handles working facts only. Monthly handles weekly episodes only. Quarterly handles monthly episodes only. No tier reaches down past its own. The one exception: 90d+ uncited active working facts are caught by weekly as stragglers.
+
+132. **LLM has NO search tool.** Context is pre-loaded by the scoring engine (top-K by score + FTS5 per-message matches). The LLM cannot proactively search memory. v2.1 feature: add a `search_query` field to the LLM contract for two-pass retrieval (RAG-style).
+
+133. **`fact_summaries` table is v1 dead code.** Monthly summaries for dashboard display, replaced by v2 consolidation episodes. Safe to drop when cleaning up.
