@@ -154,9 +154,12 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
     def _choice_buttons(
         self, choice_id: str, lang: str
     ) -> list[list[InlineButton]]:
-        """Build save / relay inline buttons for a plain-message reply."""
+        """Build relay button for a plain-message reply with a draft.
+
+        Only one action: share with partner. Dismissing (no click) is
+        the implicit 'keep to myself' — no button needed for the default.
+        """
         return [[
-            InlineButton(t(lang, "btn_save"), f"cs:{choice_id}"),
             InlineButton(t(lang, "btn_relay"), f"cr:{choice_id}"),
         ]]
 

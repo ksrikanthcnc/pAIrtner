@@ -179,8 +179,8 @@ async def test_consolidation_multiple_episodes(test_db):
     from tests.conftest import MockLLMClient
     llm = MockLLMClient(responses=[{
         "episodes": [
-            {"text": "Work stress period.", "source_ids": ids_a},
-            {"text": "Home maintenance issues.", "source_ids": ids_b},
+            {"text": "Alice dealt with several work stress issues during this period, including deadlines and conflicts.", "source_ids": ids_a},
+            {"text": "Home maintenance tasks accumulated and caused some frustration between the partners.", "source_ids": ids_b},
         ],
     }])
 

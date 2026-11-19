@@ -336,10 +336,10 @@ async def test_no_tag_asks_user(service: BotService, test_db, paired_users):
 
     responses = await service.handle_message(a_id, "Alice", "I need to tell my partner something")
     assert len(responses) == 1
-    # Should have save/relay buttons
+    # Should have relay button (just one — dismissing is implicit "keep to myself")
     assert responses[0].buttons is not None
     labels = [b.text for row in responses[0].buttons for b in row]
-    assert any("keep" in l.lower() or "🤫" in l for l in labels)
+    assert len(labels) == 1, f"expected 1 button, got {labels}"
     assert any("share" in l.lower() or "💬" in l for l in labels)
 
 

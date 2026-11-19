@@ -208,7 +208,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "yolo_auto_sent": "Auto-sending in ~{minutes} min (yolo mode). /yolo off to review first.",
 
         # Ask user (no tag)
-        "ask_action": "What would you like to do with this?",
+        "ask_action": "Would you like to share this with your partner?",
 
         # Misc
         "save_done": "💾 Saved privately.",

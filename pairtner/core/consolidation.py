@@ -101,6 +101,11 @@ async def run_consolidation(
             if not text or len(source_ids) < cfg["min_memories_for_episode"]:
                 continue
 
+            # Quality check: reject overly short summaries
+            if len(text.split()) < 8:
+                log.info("consolidation: skipping too-short episode: %r", text[:60])
+                continue
+
             # Validate source_ids are from our candidates
             valid_ids = [sid for sid in source_ids if sid in candidate_ids]
             if len(valid_ids) < cfg["min_memories_for_episode"]:
@@ -154,6 +159,18 @@ async def run_consolidation(
             log.info(
                 "consolidation: user %s — episode from %d facts: %s",
                 user_id, len(valid_ids), text[:80],
+            )
+
+        # Log coverage: what fraction of candidates were included in episodes
+        covered_ids = set()
+        for ep in episodes_created:
+            covered_ids.update(ep.get("source_ids", []))
+        coverage = len(covered_ids) / len(candidates) if candidates else 0
+        if coverage < 0.5 and len(candidates) >= 6:
+            log.warning(
+                "consolidation: low coverage for user %s — %d/%d facts (%d%%) "
+                "included in episodes. Consider adjusting min_memories_for_episode.",
+                user_id, len(covered_ids), len(candidates), int(coverage * 100),
             )
 
     except Exception:
