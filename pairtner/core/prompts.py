@@ -207,12 +207,32 @@ def _parse_msg_ts(raw: str) -> datetime | None:
 
 
 def _format_timestamp(ts: datetime) -> str:
-    """Format a timestamp as 'YYYY-MM-DD HH:MM' for the LLM prompt.
+    """Format a timestamp as relative time for the LLM prompt.
 
-    Absolute format — never goes stale.  The LLM has 'Current time:' in
-    the system prompt and can compute recency itself.
+    Relative format saves LLM computation — 'Current time:' is already
+    in the system prompt as an absolute reference if needed.
     """
-    return ts.strftime("%Y-%m-%d %H:%M")
+    now = datetime.now(timezone.utc)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    delta = now - ts
+    secs = int(delta.total_seconds())
+    if secs < 0:
+        return "just now"
+    if secs < 60:
+        return "just now"
+    if secs < 3600:
+        return f"{secs // 60}m ago"
+    if secs < 86400:
+        return f"{secs // 3600}h ago"
+    days = secs // 86400
+    if days == 1:
+        return "yesterday"
+    if days < 7:
+        return f"{days}d ago"
+    if days < 30:
+        return f"{days // 7}w ago"
+    return f"{days // 30}mo ago"
 
 
 def _humanize_gap(delta: timedelta) -> str:

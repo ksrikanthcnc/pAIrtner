@@ -295,3 +295,29 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 64. **"Save privately" button** is ONLY about the relay draft — dismissing the suggestion to forward something to the partner. Facts are auto-saved by memory_ops on every message. The user never manually saves facts. Clarified in DECISIONS.md for future agents.
 
 65. **Docker always binds 0.0.0.0** inside the container (container networking requires it). Host-side binding is controlled by the `ports:` mapping in docker-compose. REST_BIND variable controls the host interface.
+
+
+## Relay Flow, Prompt Timing, Cascading Strategy (Decision 66-74)
+
+66. **Relay flow clarified.** LLM generates `relay_draft` in same response as `reply` + `memory_ops`. Buttons shown: "Share with partner" (schedules relay) / "Keep to myself" (dismisses draft). No second LLM call needed. LLM can also return empty `relay_draft` for casual messages where relay makes no sense.
+
+67. **LLM controls relay suggestion, never auto-sends.** The LLM decides whether to propose a relay and writes the draft, but the user ALWAYS approves before delivery. The LLM can explicitly say "no relay" by returning empty relay_draft.
+
+68. **Relative time OK in prompts for token efficiency.** Store absolute (ISO) in DB. Show relative (`[3h ago]`, `[2d ago]`) in the prompt since `Current time:` is already in the system prompt as absolute reference. Saves the LLM from computing time differences. Reverting decision 59 (absolute in prompt) back to relative.
+
+69. **Paging is score-based, not offset-based.** Context builder picks top-K facts by relevance_score. That IS paging — the LLM gets a window into the knowledge base, ranked by importance. For explicit search (v2.1 "search my memory" tool), that would be offset/limit paging with a query.
+
+70. **Without episodes, many memory calls needed.** 500 individual working facts competing for 30 context slots = poor coverage. Episodes compress 10-20 facts into 1, so 30 slots cover 300-600 facts worth of information. Fewer LLM calls, better coverage, lower cost.
+
+71. **Our architecture IS agentic memory.** Scoring + episodes + archival = the same tier architecture as MemGPT/Letta. The difference: we do pre-conversation context building (engine selects facts before LLM sees the message). Adding FTS5 search tool (v2.1) makes us fully agentic (LLM can search on-demand mid-conversation).
+
+72. **Cascading consolidation strategy (concrete).** NOT refresh-all-weekly. Age-band based:
+    - Day 1-7: raw working facts (no consolidation)
+    - Day 8-30: weekly episodes (consolidate resolved facts older than 7d)
+    - Day 31-90: monthly episodes (consolidate weekly episodes older than 30d)
+    - Day 91+: quarterly episodes (consolidate monthly episodes older than 90d)
+    Each level only touches its own tier's old entries. Jobs run weekly but act on different age bands. A 1-year-old important fact lives as a quarterly episode. Today's stuff stays as raw working facts.
+
+73. **Any fact should be retrievable with enough effort.** Two retrieval paths: (1) scoring-based pre-loaded context, (2) FTS5 search on-demand. Combined = safety net. Test plan: plant facts at various ages, verify retrieval via both paths independently and combined.
+
+74. **Stress test before cascading.** Build a stress test with 6-12 months of simulated data. Test weekly consolidation alone first. If context quality degrades at scale, THEN implement monthly/quarterly layers. Don't build cascading speculatively.

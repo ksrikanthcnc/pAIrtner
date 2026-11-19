@@ -10,6 +10,9 @@ from tests.golden_prompts import GOLDEN_PATH, collect
 # The "Current time:" line is dynamic — normalize it before comparison.
 _TIME_RE = re.compile(r"Current time: \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC")
 _TIME_PLACEHOLDER = "Current time: XXXX-XX-XX XX:XX UTC"
+# Relative timestamps like "[3h ago]", "[5m ago]", "[2d ago]", "[yesterday]", "[1w ago]", "[2mo ago]"
+_REL_TIME_RE = re.compile(r"\[(?:just now|\d+[mhdw] ago|yesterday|\d+mo ago)\]")
+_REL_PLACEHOLDER = "[REL_TIME]"
 # Absolute timestamps in history like "[2026-11-19 02:43]"
 _ABS_TIME_RE = re.compile(r"\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\]")
 _ABS_PLACEHOLDER = "[XXXX-XX-XX XX:XX]"
@@ -25,6 +28,7 @@ def _normalize(prompts: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
         out[case_id] = {}
         for k, v in parts.items():
             v = _TIME_RE.sub(_TIME_PLACEHOLDER, v)
+            v = _REL_TIME_RE.sub(_REL_PLACEHOLDER, v)
             v = _ABS_TIME_RE.sub(_ABS_PLACEHOLDER, v)
             v = _GAP_RE.sub(_GAP_PLACEHOLDER, v)
             out[case_id][k] = v
