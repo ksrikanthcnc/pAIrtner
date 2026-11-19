@@ -559,3 +559,34 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
   3. FTS5 matches for current message
   4. Relevant period summaries (weekly for last month, monthly for last quarter, quarterly for older)
   5. Proactive injections (dates + old uncited facts as subtle pokes)
+
+
+## Corrected Consolidation Model, Scoring Simplification (Decision 161-174)
+
+161. **CORRECTED: Weekly summaries DO archive raw facts.** Summaries replace raw facts, not sit alongside. After weekly summary, source working facts get archived. Ongoing topics survive IN the summary text ("work stress continued, ongoing since week 28"). Without archiving, 1000+ raw facts overwhelm the 20-slot context window in a year.
+
+162. **Topic survival across summary levels is LLM-driven.** The LLM decides what's worth carrying from weekly → monthly → quarterly. Trivial mentions drop naturally. Important ongoing topics survive because the LLM recognizes them. This is the core value of LLM-based consolidation vs rule-based.
+
+163. **Raw messages are NEVER deleted.** They're the immutable rebuild source. If a summary drops something important, a full rebuild from raw messages recovers it. This is the safety net for LLM discretion.
+
+164. **No separate status tags in summaries.** The LLM expresses resolution naturally through language: "interview went well" (resolved), "screen time still a friction" (ongoing). Status tags in the consolidation prompt help the LLM know what's done, but summaries themselves are plain narrative.
+
+165. **"Over-indexes on conflict" — FIXING it.** The old resolved-only model literally optimized for "problems that get solved." New model summarizes ALL activity, giving casual positive moments equal treatment with conflicts.
+
+166. **Proactive injection sources:** (1) structured event_date column (dates, deadlines), (2) old uncited active facts (proactive pokes), (3) summary-referenced topics. Only (3) relies on summaries; (1) and (2) are direct DB queries.
+
+167. **DROPPED: fact_count as scoring factor.** It's metadata only (debugging, transparency). Does not affect ranking. An episode from 12 facts doesn't score higher than one from 2. Scoring formula: kind × decay × status × intensity × citations. Nothing else.
+
+168. **DROPPED: priority flag.** Redundant with intensity. Intensity (0.0-1.0) already captures importance. "#important" from user sets intensity=1.0. One signal, not two.
+
+169. **Daily summaries: activity-based, not forced.** Create a daily summary only if the day had ≥5 messages. Otherwise, raw facts stay until the weekly summary picks them up. Avoids wasting LLM calls on "we had pizza" days.
+
+170. **Logarithmic decay intervals confirmed:** Day 0-7: raw facts. After 7d: weekly summary (archives raw). After 30d: monthly (archives weekly). After 90d: quarterly (archives monthly). After 365d: yearly (archives quarterly). Similar to spaced repetition intervals.
+
+171. **Ongoing facts don't "fade naturally" — they get carried forward in summaries.** If work stress is mentioned every week, every weekly summary includes it, every monthly references it. It fades only when the LLM stops including it — because the conversations stopped mentioning it.
+
+172. **fact_count ≠ importance, it's complexity/breadth.** A 50-message conversation covering 6 topics produces 8 facts. An episode's fact_count says "derived from 8 facts" = breadth, not weight. NOT a scoring factor.
+
+173. **Context window composer: design done (decision 160), implementation pending.** Multi-source: core always, top-K working facts, FTS5 matches, period summaries (weekly for recent, monthly for older, quarterly for oldest), proactive injections. Next build task.
+
+174. **No forced schedule for daily — use ≥5 message threshold.** Aligns with activity-based rather than calendar-forced. Busy days get summarized next-day. Quiet days stay as raw facts for weekly pickup.
