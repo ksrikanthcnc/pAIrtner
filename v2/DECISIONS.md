@@ -251,3 +251,25 @@ This is the authoritative reference. The other v2/*.md files should be updated t
 3. Knowledge table + Memory API v2 (1 session)
 4. Wire into existing bot (1 session)
 5. Ship. Iterate based on real usage.
+
+
+## Temporal Awareness (Decision 53-57)
+
+53. **Timestamps in context.** `get_recent_messages` now returns `created_at`. The prompt formatter shows relative times (`[5 min ago]`, `[6h ago]`) and gap markers (`--- 6 hours gap ---`) when >2 hours pass between messages. Fixes the duo_keep bug where "hows she doing recently?" after a 6-hour gap was misinterpreted as a continuation of the previous emotional thread.
+
+54. **Current time in system prompt.** `build_system_prompt` includes `Current time: YYYY-MM-DD HH:MM UTC` so the LLM has temporal grounding. Enables time-aware responses ("it's been a while since we talked").
+
+55. **All storage is UTC.** Display and date comparisons (e.g. proactive birthday checks) use local time. Consistent throughout.
+
+56. **Date regex is production code** (`core/proactive.py`), not test-only. Scoped to proactive injection — scans core facts for date keywords (birthday, anniversary, deadline, DOB). Not on the hot path.
+
+57. **PWA memory panel** — not built yet. Listed as future work. The REST API endpoints for it already exist from v1.
+
+## Session Gap Awareness
+
+The screenshot showed the critical problem: after a 6-hour gap, the bot treated "hows she doing recently?" (asking about the partner) as if the user was expressing sadness. Root causes:
+- No timestamps → LLM sees flat message list with no temporal markers
+- No "current time" → LLM can't compute "recently" relative to anything
+- Recent messages dominated by emotional thread → LLM continued that thread
+
+Fix: timestamps + gap markers + current time = LLM sees the conversation as two distinct sessions separated by hours, not one continuous thread.
