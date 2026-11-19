@@ -564,3 +564,122 @@ class TestScalePerformance:
                 f"expected majority of old working facts to score low, "
                 f"got {low_scored}/{len(ws)} below 0.1 (avg={avg:.3f})"
             )
+
+
+
+class TestCascadingConsolidation:
+    """Test cascading: weekly -> monthly -> quarterly."""
+
+    async def test_monthly_consolidation(self, stress_db):
+        """Monthly consolidation compresses old weekly episodes."""
+        from pairtner.core.consolidation import (
+            run_consolidation, run_cascading_consolidation,
+        )
+
+        # Step 1: Create weekly episodes via normal consolidation
+        await _mark_old_facts_resolved(stress_db, USER_ID, older_than_days=7)
+        llm = _make_consolidation_mock()
+        weekly_eps = await run_consolidation(stress_db, llm, USER_ID)
+
+        # Make weekly episodes 35 days old (eligible for monthly)
+        old_date = (
+            datetime.now(timezone.utc) - timedelta(days=35)
+        ).isoformat()
+        async with aiosqlite.connect(stress_db) as db:
+            for ep in weekly_eps:
+                await db.execute(
+                    "UPDATE facts SET created_at = ? WHERE id = ?",
+                    (old_date, ep["id"]),
+                )
+            await db.commit()
+
+        before = await _count_by_kind(stress_db, USER_ID)
+
+        # Step 2: Run cascading consolidation
+        llm2 = _make_consolidation_mock()
+        result = await run_cascading_consolidation(stress_db, llm2, USER_ID)
+
+        after = await _count_by_kind(stress_db, USER_ID)
+
+        assert len(result["monthly"]) > 0, "should create monthly episodes"
+        # Total episodes should decrease (many weekly -> fewer monthly)
+        assert after.get("episode", 0) < before.get("episode", 0), (
+            f"episodes should decrease: before={before}, after={after}"
+        )
+
+    async def test_cascading_stabilizes_1y(self, tmp_path):
+        """After 1 year with cascading, total facts stay bounded."""
+        from pairtner.core.consolidation import (
+            run_consolidation, run_cascading_consolidation,
+        )
+
+        db_path = await _create_db(tmp_path)
+        await _seed_core_facts(db_path, USER_ID)
+        await _seed_working_facts(db_path, USER_ID, num_days=365, facts_per_day=5)
+        await _simulate_citations(db_path, USER_ID, num_sessions=100)
+
+        # First: do the initial big consolidation (resolve all old + consolidate)
+        await _mark_old_facts_resolved(db_path, USER_ID, older_than_days=7)
+        llm = _make_consolidation_mock()
+        initial_eps = await run_consolidation(db_path, llm, USER_ID)
+
+        # Now age ALL episodes progressively and run cascading multiple times
+        # to simulate what would happen over real time
+        async with aiosqlite.connect(db_path) as db:
+            # Make half the episodes 35+ days old (monthly eligible)
+            eps_rows = await db.execute_fetchall(
+                "SELECT id FROM facts WHERE owner_id = ? AND kind = 'episode' "
+                "AND archived_at IS NULL ORDER BY id",
+                (USER_ID,),
+            )
+            ep_ids = [r[0] for r in eps_rows]
+            mid = len(ep_ids) // 2
+            old_1mo = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+            old_3mo = (datetime.now(timezone.utc) - timedelta(days=100)).isoformat()
+
+            # First half: 3 months old (quarterly eligible)
+            for eid in ep_ids[:mid // 2]:
+                await db.execute(
+                    "UPDATE facts SET created_at = ? WHERE id = ?", (old_3mo, eid),
+                )
+            # Second quarter: 1 month old (monthly eligible)
+            for eid in ep_ids[mid // 2:mid]:
+                await db.execute(
+                    "UPDATE facts SET created_at = ? WHERE id = ?", (old_1mo, eid),
+                )
+            await db.commit()
+
+        # Run cascading 3 times (simulating 3 monthly cycles)
+        for _ in range(3):
+            llm2 = _make_consolidation_mock()
+            result = await run_cascading_consolidation(db_path, llm2, USER_ID)
+
+            # After first monthly pass, age the new monthly episodes for quarterly
+            if result["monthly"]:
+                old_q = (datetime.now(timezone.utc) - timedelta(days=95)).isoformat()
+                async with aiosqlite.connect(db_path) as db:
+                    for ep in result["monthly"]:
+                        await db.execute(
+                            "UPDATE facts SET created_at = ? WHERE id = ?",
+                            (old_q, ep["id"]),
+                        )
+                    await db.commit()
+
+        counts = await _count_by_kind(db_path, USER_ID)
+        total = sum(counts.values())
+
+        # With cascading, total should be significantly less than 402
+        # (the non-cascading baseline)
+        assert total < 300, (
+            f"with cascading, total should be <300, got {total}: {counts}"
+        )
+
+        # Context coverage should improve
+        api = MemoryAPI(db_path)
+        ctx = await api.get_scored_context(USER_ID, budget_words=1200)
+        coverage = ctx.facts_included / total if total > 0 else 0
+
+        assert coverage > 0.4, (
+            f"context should cover >40% of facts, got {coverage:.0%} "
+            f"({ctx.facts_included}/{total})"
+        )

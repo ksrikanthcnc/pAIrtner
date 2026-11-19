@@ -128,6 +128,7 @@ async def run_consolidation(
                 fact_type="stable",
                 source_ids=json.dumps(raw_msg_ids) if raw_msg_ids else None,
                 model=getattr(llm, '_last_model', None),
+                metadata=json.dumps({"level": "weekly"}),
             )
 
             # Set kind to episode
@@ -219,3 +220,232 @@ async def _find_consolidation_candidates(
             candidates.append(f)
 
     return candidates
+
+
+# ---------------------------------------------------------------------------
+# Cascading consolidation: monthly + quarterly
+# ---------------------------------------------------------------------------
+
+CASCADING_CONFIG = {
+    "monthly_age_days": 30,    # consolidate weekly episodes older than 30d
+    "quarterly_age_days": 90,  # consolidate monthly episodes older than 90d
+    "min_episodes_for_cascade": 3,
+}
+
+MONTHLY_SYSTEM = """You are a knowledge consolidation engine. Given a set of weekly episode summaries,
+merge them into a broader monthly summary. Combine themes, track how situations evolved.
+
+Respond with ONLY valid JSON:
+{
+  "episodes": [
+    {
+      "text": "A concise 2-3 sentence summary covering the themes from these episodes.",
+      "source_ids": [101, 102, 105]
+    }
+  ]
+}
+
+Rules:
+- Merge related episodes (e.g. multiple work-stress episodes → one work theme summary).
+- Track evolution ("started stressed about interview → got the job → settling in").
+- Keep key details, drop redundant ones.
+- Write in third person.
+"""
+
+QUARTERLY_SYSTEM = """You are a knowledge consolidation engine. Given monthly episode summaries,
+create a broad quarterly overview. Focus on major themes and how they evolved.
+
+Respond with ONLY valid JSON:
+{
+  "episodes": [
+    {
+      "text": "A concise summary of the major themes and evolution over this quarter.",
+      "source_ids": [201, 202]
+    }
+  ]
+}
+
+Rules:
+- Maximum 2-3 episodes per quarter (very compressed).
+- Track major arcs, not individual events.
+- Important details (decisions, outcomes, unresolved tensions) survive; daily noise does not.
+- Write in third person.
+"""
+
+
+async def run_cascading_consolidation(
+    db_path: str,
+    llm: LLMClient,
+    user_id: int,
+    config: dict[str, Any] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Run cascading consolidation: monthly (from weekly episodes) and
+    quarterly (from monthly episodes).
+
+    Returns {"monthly": [...], "quarterly": [...]}.
+    """
+    cfg = {**CASCADING_CONFIG, **(config or {})}
+    result: dict[str, list[dict[str, Any]]] = {"monthly": [], "quarterly": []}
+
+    # --- Monthly: consolidate old weekly episodes ---
+    monthly_candidates = await _find_episode_candidates(
+        db_path, user_id, level="weekly", age_days=cfg["monthly_age_days"],
+    )
+    if len(monthly_candidates) >= cfg["min_episodes_for_cascade"]:
+        monthly_eps = await _consolidate_episodes(
+            db_path, user_id, monthly_candidates, llm,
+            system_prompt=MONTHLY_SYSTEM, target_level="monthly",
+            min_sources=cfg["min_episodes_for_cascade"],
+        )
+        result["monthly"] = monthly_eps
+        log.info(
+            "cascading: user %s — %d monthly episodes from %d weekly",
+            user_id, len(monthly_eps), len(monthly_candidates),
+        )
+
+    # --- Quarterly: consolidate old monthly episodes ---
+    quarterly_candidates = await _find_episode_candidates(
+        db_path, user_id, level="monthly", age_days=cfg["quarterly_age_days"],
+    )
+    if len(quarterly_candidates) >= cfg["min_episodes_for_cascade"]:
+        quarterly_eps = await _consolidate_episodes(
+            db_path, user_id, quarterly_candidates, llm,
+            system_prompt=QUARTERLY_SYSTEM, target_level="quarterly",
+            min_sources=cfg["min_episodes_for_cascade"],
+        )
+        result["quarterly"] = quarterly_eps
+        log.info(
+            "cascading: user %s — %d quarterly episodes from %d monthly",
+            user_id, len(quarterly_eps), len(quarterly_candidates),
+        )
+
+    return result
+
+
+async def _find_episode_candidates(
+    db_path: str, user_id: int, level: str, age_days: int,
+) -> list[dict[str, Any]]:
+    """Find episodes of a given level that are old enough to cascade.
+
+    Episodes are tagged by their metadata level field (weekly/monthly).
+    Episodes without a level tag are assumed weekly (backward compat).
+    """
+    now = datetime.now(timezone.utc)
+    all_facts = await db_mod.get_active_facts(db_path, user_id)
+    candidates = []
+
+    for f in all_facts:
+        kind = f.get("kind") or "working"
+        if kind != "episode":
+            continue
+
+        # Determine episode level from metadata
+        ep_level = "weekly"  # default
+        meta = f.get("metadata")
+        if meta:
+            try:
+                meta_dict = json.loads(meta) if isinstance(meta, str) else meta
+                ep_level = meta_dict.get("level", "weekly")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        if ep_level != level:
+            continue
+
+        # Check age
+        created = f.get("created_at")
+        if not created:
+            continue
+        try:
+            created_dt = datetime.fromisoformat(created)
+            if created_dt.tzinfo is None:
+                created_dt = created_dt.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            continue
+
+        if (now - created_dt).days >= age_days:
+            candidates.append(f)
+
+    return candidates
+
+
+async def _consolidate_episodes(
+    db_path: str,
+    user_id: int,
+    candidates: list[dict[str, Any]],
+    llm: LLMClient,
+    system_prompt: str,
+    target_level: str,
+    min_sources: int = 3,
+) -> list[dict[str, Any]]:
+    """Consolidate a list of episodes into higher-level ones."""
+    episodes_created: list[dict[str, Any]] = []
+
+    # Build prompt
+    fact_lines = []
+    for f in candidates:
+        fact_lines.append(f"[{f['id']}] {f['text']}")
+    user_msg = f"Episodes to consolidate into {target_level} summaries:\n" + "\n".join(fact_lines)
+
+    try:
+        result = await llm.generate(user_msg, system_prompt)
+        raw_episodes = _parse_episodes(result)
+        if not raw_episodes:
+            return episodes_created
+
+        candidate_ids = {f["id"] for f in candidates}
+
+        for ep in raw_episodes:
+            text = ep.get("text", "").strip()
+            source_ids = ep.get("source_ids", [])
+            if not text or len(source_ids) < min_sources:
+                continue
+
+            valid_ids = [sid for sid in source_ids if sid in candidate_ids]
+            if len(valid_ids) < min_sources:
+                continue
+
+            # Collect provenance from source episodes
+            raw_msg_ids: list[int] = []
+            for sid in valid_ids:
+                fact = next((f for f in candidates if f["id"] == sid), None)
+                if fact:
+                    sids = fact.get("source_ids")
+                    if sids:
+                        try:
+                            raw_msg_ids.extend(json.loads(sids))
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+
+            # Create the higher-level episode
+            meta = json.dumps({"level": target_level})
+            episode_id = await db_mod.add_fact(
+                db_path, user_id, text, "private",
+                fact_type="stable",
+                source_ids=json.dumps(raw_msg_ids) if raw_msg_ids else None,
+                metadata=meta,
+            )
+
+            # Set kind to episode
+            async with aiosqlite.connect(db_path) as db:
+                await db.execute(
+                    "UPDATE facts SET kind = 'episode', status = 'active' WHERE id = ?",
+                    (episode_id,),
+                )
+                await db.commit()
+
+            # Archive the source episodes
+            for sid in valid_ids:
+                await db_mod.archive_fact(db_path, sid)
+
+            episodes_created.append({
+                "id": episode_id,
+                "text": text,
+                "level": target_level,
+                "source_count": len(valid_ids),
+            })
+
+    except Exception:
+        log.exception("cascading consolidation failed for user %s", user_id)
+
+    return episodes_created
