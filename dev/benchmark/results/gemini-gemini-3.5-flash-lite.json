@@ -1,0 +1,201 @@
+{
+  "provider": "gemini",
+  "model": "gemini-3.5-flash-lite",
+  "timestamp": "2026-11-19T07:40:16.697361+00:00",
+  "alice": {
+    "facts": [
+      {
+        "text": "Alice is 32 years old, married to Bob for 6 years, and they have a 5-year-old son named Max.",
+        "kind": "core",
+        "intensity": 0.2
+      },
+      {
+        "text": "Alice works as a product manager and Bob is a software engineer; they recently moved to San Francisco.",
+        "kind": "core",
+        "intensity": 0.2
+      },
+      {
+        "text": "Alice feels stressed that Bob is working until midnight and she feels like he is choosing work over their family.",
+        "kind": "working",
+        "intensity": 0.8
+      },
+      {
+        "text": "Alice wishes Bob would work out more, but hesitates to say anything for fear of hurting his feelings.",
+        "kind": "working",
+        "intensity": 0.5
+      },
+      {
+        "text": "Alice and Bob frequently argue about screen time because Bob lets Max watch the iPad for hours.",
+        "kind": "working",
+        "intensity": 0.7
+      },
+      {
+        "text": "Alice and Bob are planning a trip to Tahoe next month to try to reconnect.",
+        "kind": "working",
+        "intensity": 0.4
+      },
+      {
+        "text": "Alice's birthday is on March 15.",
+        "kind": "core",
+        "intensity": 0.1
+      },
+      {
+        "text": "Alice has noticed that Bob has been drinking more on weekends and is unsure if she should address it.",
+        "kind": "working",
+        "intensity": 0.6
+      },
+      {
+        "text": "Alice and Bob both agree that they need more space and that Max needs his own room.",
+        "kind": "working",
+        "intensity": 0.3
+      }
+    ],
+    "latency_sec": 7.365286750020459,
+    "scores": {
+      "core": {
+        "total": 9,
+        "hits": 9,
+        "misses": 0,
+        "hit_details": [
+          "Alice is 32 years old",
+          "Bob is 34 years old",
+          "They have been married for 6 years",
+          "They have a 5-year-old son named Max",
+          "Alice works as a product manager",
+          "Bob is a software engineer",
+          "They live in San Francisco",
+          "Alice's birthday is March 15",
+          "Bob's mother's name is Helen"
+        ],
+        "miss_details": [],
+        "accuracy": 1.0
+      },
+      "working_ongoing": {
+        "total": 4,
+        "hits": 2,
+        "misses": 2,
+        "hit_details": [
+          "Bob feels Alice dismisses his work stress",
+          "They disagree about screen time for Max"
+        ],
+        "miss_details": [
+          "Alice feels Bob works too many hours",
+          "Both want to move to a bigger apartment"
+        ],
+        "accuracy": 0.5
+      },
+      "sensitive": {
+        "total": 2,
+        "hits": 1,
+        "misses": 1,
+        "hit_details": [
+          "Alice wishes Bob would exercise more but doesn't want to hurt his feelings"
+        ],
+        "miss_details": [
+          "Bob is secretly saving for a surprise anniversary trip"
+        ],
+        "accuracy": 0.5
+      },
+      "overall": {
+        "total": 15,
+        "hits": 12,
+        "accuracy": 0.8
+      }
+    }
+  },
+  "bob": {
+    "facts": [
+      {
+        "text": "User's name is Bob, age 34.",
+        "kind": "core",
+        "intensity": 0.2
+      },
+      {
+        "text": "Been together with Alice for 8 years, married for 6.",
+        "kind": "core",
+        "intensity": 0.3
+      },
+      {
+        "text": "Bob's mother Helen thinks they need help communicating.",
+        "kind": "working",
+        "intensity": 0.5
+      },
+      {
+        "text": "Alice does not take Bob's work stress seriously.",
+        "kind": "working",
+        "intensity": 0.6
+      },
+      {
+        "text": "Bob is saving up for a surprise anniversary trip for Alice.",
+        "kind": "working",
+        "intensity": 0.4
+      },
+      {
+        "text": "Bob and Alice disagree on screen time for their 5-year-old son Max, who uses an iPad.",
+        "kind": "working",
+        "intensity": 0.6
+      },
+      {
+        "text": "They want to move to a bigger place because their current apartment is too small.",
+        "kind": "working",
+        "intensity": 0.5
+      },
+      {
+        "text": "Finding a bigger apartment has been difficult due to an insane housing market.",
+        "kind": "working",
+        "intensity": 0.7
+      }
+    ],
+    "latency_sec": 9.326542916998733,
+    "scores": {
+      "core": {
+        "total": 9,
+        "hits": 5,
+        "misses": 4,
+        "hit_details": [
+          "Alice is 32 years old",
+          "Bob is 34 years old",
+          "They have been married for 6 years",
+          "They have a 5-year-old son named Max",
+          "Bob's mother's name is Helen"
+        ],
+        "miss_details": [
+          "Alice works as a product manager",
+          "Bob is a software engineer",
+          "They live in San Francisco",
+          "Alice's birthday is March 15"
+        ],
+        "accuracy": 0.5555555555555556
+      },
+      "working_ongoing": {
+        "total": 4,
+        "hits": 3,
+        "misses": 1,
+        "hit_details": [
+          "Bob feels Alice dismisses his work stress",
+          "They disagree about screen time for Max",
+          "Both want to move to a bigger apartment"
+        ],
+        "miss_details": [
+          "Alice feels Bob works too many hours"
+        ],
+        "accuracy": 0.75
+      },
+      "sensitive": {
+        "total": 1,
+        "hits": 0,
+        "misses": 1,
+        "hit_details": [],
+        "miss_details": [
+          "Alice is worried about Bob's drinking on weekends"
+        ],
+        "accuracy": 0.0
+      },
+      "overall": {
+        "total": 14,
+        "hits": 8,
+        "accuracy": 0.5714285714285714
+      }
+    }
+  }
+}

@@ -1,0 +1,255 @@
+{
+  "provider": "ollama",
+  "model": "qwen3:8b",
+  "timestamp": "2026-11-19T07:39:51.350973+00:00",
+  "alice": {
+    "facts": [
+      {
+        "text": "Alice is 32 years old",
+        "kind": "core",
+        "intensity": 0.5
+      },
+      {
+        "text": "Alice is married to Bob",
+        "kind": "core",
+        "intensity": 0.5
+      },
+      {
+        "text": "Alice and Bob have a 5-year-old son named Max",
+        "kind": "core",
+        "intensity": 0.5
+      },
+      {
+        "text": "Alice and Bob moved to San Francisco for her product manager job",
+        "kind": "working",
+        "intensity": 0.6
+      },
+      {
+        "text": "Bob is a software engineer",
+        "kind": "working",
+        "intensity": 0.5
+      },
+      {
+        "text": "Alice has a product launch deadline with high stress",
+        "kind": "working",
+        "intensity": 0.9
+      },
+      {
+        "text": "Alice feels Bob doesn't understand her stress",
+        "kind": "working",
+        "intensity": 0.7
+      },
+      {
+        "text": "Alice wishes Bob would work out more",
+        "kind": "working",
+        "intensity": 0.6
+      },
+      {
+        "text": "Max had a stomach bug requiring Alice to take time off work",
+        "kind": "working",
+        "intensity": 0.7
+      },
+      {
+        "text": "Bob allows Max to watch iPad for extended periods",
+        "kind": "working",
+        "intensity": 0.6
+      },
+      {
+        "text": "Alice and Bob are planning a Tahoe trip to reconnect",
+        "kind": "working",
+        "intensity": 0.5
+      },
+      {
+        "text": "Alice's birthday is March 15",
+        "kind": "working",
+        "intensity": 0.4
+      },
+      {
+        "text": "Bob has been drinking more on weekends",
+        "kind": "working",
+        "intensity": 0.6
+      },
+      {
+        "text": "Alice feels Bob prioritizes work over their relationship",
+        "kind": "working",
+        "intensity": 0.8
+      },
+      {
+        "text": "Alice and Bob need more space, specifically Max's own room",
+        "kind": "working",
+        "intensity": 0.6
+      }
+    ],
+    "latency_sec": 51.94242179195862,
+    "scores": {
+      "core": {
+        "total": 9,
+        "hits": 9,
+        "misses": 0,
+        "hit_details": [
+          "Alice is 32 years old",
+          "Bob is 34 years old",
+          "They have been married for 6 years",
+          "They have a 5-year-old son named Max",
+          "Alice works as a product manager",
+          "Bob is a software engineer",
+          "They live in San Francisco",
+          "Alice's birthday is March 15",
+          "Bob's mother's name is Helen"
+        ],
+        "miss_details": [],
+        "accuracy": 1.0
+      },
+      "working_ongoing": {
+        "total": 4,
+        "hits": 2,
+        "misses": 2,
+        "hit_details": [
+          "Bob feels Alice dismisses his work stress",
+          "They disagree about screen time for Max"
+        ],
+        "miss_details": [
+          "Alice feels Bob works too many hours",
+          "Both want to move to a bigger apartment"
+        ],
+        "accuracy": 0.5
+      },
+      "sensitive": {
+        "total": 2,
+        "hits": 0,
+        "misses": 2,
+        "hit_details": [],
+        "miss_details": [
+          "Alice wishes Bob would exercise more but doesn't want to hurt his feelings",
+          "Bob is secretly saving for a surprise anniversary trip"
+        ],
+        "accuracy": 0.0
+      },
+      "overall": {
+        "total": 15,
+        "hits": 11,
+        "accuracy": 0.7333333333333333
+      }
+    }
+  },
+  "bob": {
+    "facts": [
+      {
+        "text": "Bob is 34",
+        "kind": "core",
+        "intensity": 0.8
+      },
+      {
+        "text": "Bob and Alice have been together 8 years",
+        "kind": "core",
+        "intensity": 0.7
+      },
+      {
+        "text": "Bob and Alice are married 6 years",
+        "kind": "core",
+        "intensity": 0.7
+      },
+      {
+        "text": "Bob and Alice are experiencing communication issues",
+        "kind": "working",
+        "intensity": 0.6
+      },
+      {
+        "text": "Bob's manager opposes remote work setup",
+        "kind": "working",
+        "intensity": 0.5
+      },
+      {
+        "text": "Alice dismisses Bob's work stress",
+        "kind": "working",
+        "intensity": 0.6
+      },
+      {
+        "text": "Bob is saving for an anniversary trip",
+        "kind": "working",
+        "intensity": 0.5
+      },
+      {
+        "text": "Alice restricts Max's iPad usage",
+        "kind": "working",
+        "intensity": 0.5
+      },
+      {
+        "text": "Bob and Alice want a larger apartment",
+        "kind": "working",
+        "intensity": 0.6
+      },
+      {
+        "text": "Remote work conflict resolved",
+        "kind": "working",
+        "intensity": 0.4
+      },
+      {
+        "text": "Launch stress has subsided",
+        "kind": "working",
+        "int,ensity": 0.5
+      },
+      {
+        "text": "Alice undervalues Bob's work challenges",
+        "kind": "working",
+        "intensity": 0.6
+      },
+      {
+        "text": "Apartment market is excessively competitive",
+        "kind": "working",
+        "intensity": 0.8
+      }
+    ],
+    "latency_sec": 28.520011665998027,
+    "scores": {
+      "core": {
+        "total": 9,
+        "hits": 3,
+        "misses": 6,
+        "hit_details": [
+          "Alice is 32 years old",
+          "Bob is 34 years old",
+          "They have been married for 6 years"
+        ],
+        "miss_details": [
+          "They have a 5-year-old son named Max",
+          "Alice works as a product manager",
+          "Bob is a software engineer",
+          "They live in San Francisco",
+          "Alice's birthday is March 15",
+          "Bob's mother's name is Helen"
+        ],
+        "accuracy": 0.3333333333333333
+      },
+      "working_ongoing": {
+        "total": 4,
+        "hits": 1,
+        "misses": 3,
+        "hit_details": [
+          "Bob feels Alice dismisses his work stress"
+        ],
+        "miss_details": [
+          "Alice feels Bob works too many hours",
+          "They disagree about screen time for Max",
+          "Both want to move to a bigger apartment"
+        ],
+        "accuracy": 0.25
+      },
+      "sensitive": {
+        "total": 1,
+        "hits": 0,
+        "misses": 1,
+        "hit_details": [],
+        "miss_details": [
+          "Alice is worried about Bob's drinking on weekends"
+        ],
+        "accuracy": 0.0
+      },
+      "overall": {
+        "total": 14,
+        "hits": 4,
+        "accuracy": 0.2857142857142857
+      }
+    }
+  }
+}
