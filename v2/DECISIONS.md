@@ -527,3 +527,35 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 147. **Scoring formula includes episode `fact_count`.** `score = kind_weight × decay × status × intensity × citations × fact_count_boost`. An episode summarizing 15 facts scores higher than one summarizing 2.
 
 148. **Flow confirmed: calendar periods.** Week 33 (Mon-Sun), July, Q2. Not ≥7d/≥30d/≥90d. Each consolidation pass processes exactly one named period. Server catches up by running missed periods individually.
+
+
+## Redesigned Consolidation Model (Decision 149-160)
+
+149. **FUNDAMENTAL SHIFT: Consolidation summarizes ALL activity, not just resolved facts.** Weekly summary covers everything discussed that week: ongoing tensions, new topics, resolved items, casual mentions. Raw facts stay active — summaries are additive parallel context, not replacements that archive sources.
+
+150. **Real couples talk doesn't follow the resolved/unresolved model.** Most facts (work stress, recurring frustrations, communication patterns) never get cleanly resolved. They fade, resurface, evolve. The system must handle "forever active" facts as the norm, not the exception.
+
+151. **Both use cases: daily companion AND conflict mediator.** The memory system serves casual check-ins ("how was Max's recital?") equally with conflict mediation. Not optimized for either at the expense of the other.
+
+152. **Proactive pokes replace /review command.** During casual conversations, the bot subtly surfaces old uncited facts as natural conversation topics. "A while back you mentioned X. Is that still on your mind?" Better UX than a formal `/review` command. Can also happen during weekly check-ins.
+
+153. **Unified flow: nothing skips a level.** Every fact goes through: active → captured in weekly summary → monthly rollup → quarterly rollup. No direct jumps from week to quarter. Ensures consistent granularity at every level.
+
+154. **Daily consolidation: NO.** Not enough activity. Weekly is the minimum useful cadence. But daily CHECK-INS (proactive conversation starters) are separate from consolidation.
+
+155. **Weekly summaries don't archive source facts.** They're a PARALLEL compressed view. Raw working facts continue their lifecycle independently. Weekly summaries serve older context retrieval (what happened 2 months ago) without needing to load 200 individual facts.
+
+156. **Monthly archives weekly summaries (not facts). Quarterly archives monthly.** Each higher level compresses its lower-level summaries. Raw facts are never archived by the consolidation pipeline — only by the user (/forget) or LLM (marking resolved, which just changes status, not archives).
+
+157. **Priority flag: normal|high|critical.** In addition to intensity (emotional weight). A single mention of "thinking about divorce" is intensity=0.9 AND priority=critical. The LLM can set it, and the user can flag with `#important`. Different from fact_count — one mention can be critical.
+
+158. **Don't tell LLM about FTS5.** LLM just returns `search_query: "anniversary plans"` in plain language. The engine handles tokenization, sanitization, and BM25 ranking. Keep the LLM contract simple.
+
+159. **USER_FLOWS.md created.** 10 typical flows documented: casual check-in, ongoing tension, conflict mediation, proactive pokes, weekly check-in, import/cold start, model switching, sensitive info, escalating conflict, long-term retrieval.
+
+160. **Context window composition (redesigned):**
+  1. ALL core facts (always)
+  2. Top-K active working facts by score
+  3. FTS5 matches for current message
+  4. Relevant period summaries (weekly for last month, monthly for last quarter, quarterly for older)
+  5. Proactive injections (dates + old uncited facts as subtle pokes)
