@@ -114,8 +114,13 @@ def _fts_query(message: str) -> str:
 
 
 class ContextComposer:
-    def __init__(self, db_path: str, budgets: dict[str, int] | None = None):
+    def __init__(
+        self, db_path: str, budgets: dict[str, int] | None = None,
+        *, llm: Any = None, two_pass_threshold: int = 200,
+    ):
         self.db_path = db_path
+        self.llm = llm
+        self.two_pass_threshold = two_pass_threshold
         self.budgets = {**DEFAULT_BUDGETS, **(budgets or {})}
 
     async def build_context(
@@ -171,6 +176,7 @@ class ContextComposer:
             if current_message:
                 ctx.fts_matches = await self._fts(
                     db, user_id, current_message, included_ids, ctx.core_facts, b["fts"],
+                    relationship_id=relationship_id,
                 )
 
             # 4. Partner facts: structurally restricted to non-private.
@@ -256,10 +262,18 @@ class ContextComposer:
     async def _fts(
         self, db: aiosqlite.Connection, user_id: int, message: str,
         exclude_ids: set[int], core_texts: list[str], cap: int,
+        relationship_id: str | None = None,
     ) -> list[str]:
         q = _fts_query(message)
         if not q:
             return []
+        if self.llm is not None:
+            reranked = await self._two_pass(db, user_id, message, relationship_id)
+            if reranked is not None:
+                core = set(core_texts)
+                out = [r["text"] for r in reranked
+                       if r["id"] not in exclude_ids and r["text"] not in core]
+                return _apply_word_cap(out, cap)
         try:
             async with db.execute(
                 "SELECT f.id, f.text FROM facts_fts JOIN facts f ON f.id = facts_fts.rowid "
@@ -274,6 +288,31 @@ class ContextComposer:
         core = set(core_texts)
         out = [r["text"] for r in rows if r["id"] not in exclude_ids and r["text"] not in core]
         return _apply_word_cap(out, cap)
+
+    async def _two_pass(
+        self, db: aiosqlite.Connection, user_id: int, message: str,
+        relationship_id: str | None,
+    ) -> list[dict[str, Any]] | None:
+        """LLM-reranked FTS matches when the user has many facts, else None.
+
+        Own facts only (the partner section is composed separately), so the
+        structural partner-isolation guarantee is unchanged.
+        """
+        from pairtner.core.search_v2 import two_pass_search
+
+        async with db.execute(
+            "SELECT COUNT(*) FROM facts WHERE owner_id = ? AND archived_at IS NULL",
+            (user_id,),
+        ) as cur:
+            count = (await cur.fetchone())[0]
+        if count <= self.two_pass_threshold:
+            return None
+        results = await two_pass_search(
+            self.db_path, self.llm, user_id, message, relationship_id,
+            top_k=10, own_only=True, kinds=("working", "core"),
+        )
+        # two_pass_search already falls back to FTS order if the LLM fails.
+        return results
 
 
 def _next_occurrence(event_date: str, recurring: bool, today: date) -> date | None:

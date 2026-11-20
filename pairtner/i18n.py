@@ -426,6 +426,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "search_no_query": "Usage: /search <query>",
         "search_no_results": "🔍 No results found. Try different keywords.",
         "search_results_header": "🔍 <b>Search Results</b> ({count} found)\n\n",
+        "search_result_item_v2": "  #{id} {snippet} <i>({kind}, {badge})</i>\n",
+        "search_page_footer": "\nPage {page} of {pages} -- /search {query} page {next}",
+        "search_page_footer_last": "\nPage {page} of {pages}",
+        "search_results_header_v2": "🔍 <b>Search Results</b> ({total} found)\n\n",
         "search_result_item": "  {id}. [{date}] {snippet} <i>({category})</i>\n",
 
         # Nudges (FEAT-001 batch4)

@@ -104,6 +104,8 @@ def test_route_table_decisions_are_explicit():
         ("GET", "/api/v1/memory/stats"): False,
         ("GET", "/api/v1/memory/recency"): False,
         ("GET", "/api/v1/memory/search"): False,
+        ("GET", "/api/search"): False,
+        ("POST", "/api/search/rerank"): False,
     }
     static = [r for r in ROUTES if r.handler == "_static"]
     assert static and all(r.public and r.method == "GET" for r in static)

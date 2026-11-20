@@ -180,7 +180,10 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
                 if await cur.fetchone() is None:
                     return None  # no v2 relationship row yet: stay on v1
         try:
-            composed = await ContextComposer(self.db_path).build_context(
+            composed = await ContextComposer(
+                self.db_path, llm=self.llm,
+                two_pass_threshold=self.config.search_two_pass_threshold,
+            ).build_context(
                 user_id, relationship_id, text,
             )
         except aiosqlite.OperationalError as exc:

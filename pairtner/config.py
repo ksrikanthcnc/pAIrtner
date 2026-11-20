@@ -58,6 +58,8 @@ class Config:
     db_path: str = "pairtner.db"
     heavy_daily_cap: int = 10
     allowed_user_ids: frozenset[int] = field(default_factory=frozenset)
+    admin_user_ids: frozenset[int] = field(default_factory=frozenset)
+    search_two_pass_threshold: int = 200
     llm_provider: str = "gemini"
     llm_base_url: str = ""
     llm_api_key: str = ""
@@ -278,6 +280,11 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         int(uid.strip()) for uid in allowed_raw.split(",") if uid.strip()
     )
 
+    admin_raw = os.getenv("ADMIN_USER_IDS", "")
+    admin_user_ids = frozenset(
+        int(uid.strip()) for uid in admin_raw.split(",") if uid.strip()
+    )
+
     return Config(
         telegram_token=token,
         gemini_api_key=gemini_api_key,
@@ -293,6 +300,10 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
             os.getenv("HEAVY_DAILY_CAP", str(yaml_cfg.get("heavy_daily_cap", 10)))
         ),
         allowed_user_ids=allowed_user_ids,
+        admin_user_ids=admin_user_ids,
+        search_two_pass_threshold=int(os.getenv(
+            "SEARCH_TWO_PASS_THRESHOLD",
+            str(yaml_cfg.get("search_two_pass_threshold", 200)))),
         llm_provider=llm_provider,
         llm_base_url=llm_base_url,
         llm_api_key=llm_api_key,

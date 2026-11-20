@@ -245,6 +245,22 @@ Search facts by text (FTS5 when available, LIKE fallback).
 {"facts": [...], "count": 3}
 ```
 
+### `GET /api/search?q=<query>&page=1&per_page=10&kind=working`
+
+Paginated FTS5 search (no LLM). Optional `kind` (`core`|`working`), `relationship_id`, and `user_id` (must be the caller unless the caller is in `ADMIN_USER_IDS`). Partner facts appear only when not private.
+
+```json
+{"results": [{"id": 1, "text": "...", "kind": "working", "visibility": "private", "score": 0.4}], "page": 1, "per_page": 10, "total": 23, "has_more": true}
+```
+
+### `POST /api/search/rerank`
+
+Two-pass search (FTS5 top 50, then LLM picks top 15). Admin only (`ADMIN_USER_IDS`), otherwise `403 admin_required`. Body: `{"query": "...", "user_id": 123, "relationship_id": "..."}` (`user_id` and `relationship_id` optional). Falls back to FTS5 order if the LLM fails (`relevance_reason: "fts_fallback"`).
+
+```json
+{"results": [{"id": 1, "text": "...", "kind": "working", "score": 0.4, "relevance_reason": "llm_rerank"}], "count": 1}
+```
+
 ### Static client files (no auth)
 
 `GET /`, `/index.html`, `/duo.html`, `/app.js`, `/render.js`, `/sw.js`, `/style.css`, `/manifest.webmanifest`, `/icons/icon-192.png`, `/icons/icon-512.png`, `/icons/icon.svg`. This is a fixed list; any other path is `404 not_found`.
@@ -281,6 +297,9 @@ With `ALLOWED_USER_IDS` set on the server, registration also needs an explicit a
 | 400 | `invalid_data` | `data` missing, blank, or over 256 chars |
 | 400 | `invalid_query` | Bad `after` or `wait` |
 | 400 | `missing_query` | Search query parameter `q` is empty or missing |
+| 400 | `invalid_kind` | `kind` is not `core` or `working` |
+| 403 | `forbidden` | Searching another user or a relationship you are not in |
+| 403 | `admin_required` | Endpoint needs a user in `ADMIN_USER_IDS` |
 | 400 | `invalid_id` | Message id missing or not a positive integer |
 | 401 | `unauthorized` | Bad or missing token (response has `WWW-Authenticate`) |
 | 403 | `not_allowed` | Id not in `ALLOWED_USER_IDS` |

@@ -19,6 +19,13 @@ from pairtner.core.mediate import filter_perceptions, parse_window, since_timest
 from pairtner.core.profile_updater import process_llm_extras
 from pairtner.core.prompts import build_mediate_prompt, build_tell_prompt
 from pairtner.core.search import search_facts
+from pairtner.core.search_v2 import paginated_search
+
+import re
+
+import aiosqlite
+
+from pairtner.storage.schema_v2 import make_relationship_id
 
 from .models import BotResponse, InlineButton, format_fact_date, format_relative_time, parse_tags
 
@@ -34,6 +41,18 @@ _CATEGORY_I18N: dict[str | None, str] = {
     "other": "cat_other",
     None: "cat_other",
 }
+
+
+SEARCH_PAGE_SIZE = 5
+_PAGE_ARG_RE = re.compile(r"^(.*?)\s+page\s+(\d+)\s*$", re.I | re.S)
+
+
+def _split_page_arg(arg: str) -> tuple[str, int]:
+    """Split ``"<query> page N"`` into (query, N); N defaults to 1."""
+    m = _PAGE_ARG_RE.match(arg)
+    if m and m.group(1).strip():
+        return m.group(1).strip(), max(1, int(m.group(2)))
+    return arg, 1
 
 
 class CommandsMixin:
@@ -1099,23 +1118,53 @@ class CommandsMixin:
         if not query or not query.strip():
             return [BotResponse(t(lang, "search_no_query"))]
 
-        results = await search_facts(self.db_path, user_id, query.strip())
+        query, page = _split_page_arg(query.strip())
+        if not query:
+            return [BotResponse(t(lang, "search_no_query"))]
+
+        relationship_id = await self._search_relationship_id(user_id)
+        data = await paginated_search(
+            self.db_path, user_id, query, relationship_id,
+            page=page, per_page=SEARCH_PAGE_SIZE,
+        )
+        results = data["results"]
         if not results:
             return [BotResponse(t(lang, "search_no_results"))]
 
-        parts = [t(lang, "search_results_header", count=len(results))]
+        total = data["total"]
+        pages = max(1, -(-total // SEARCH_PAGE_SIZE))
+        parts = [t(lang, "search_results_header_v2", total=total)]
         for fact in results:
-            category = fact.get("category") or "other"
-            date = format_relative_time(fact.get("created_at"))
             snippet = fact["text"][:120]
             if len(fact["text"]) > 120:
                 snippet += "…"
+            badge = "🔒 private" if fact["visibility"] == "private" else "👥 shared"
             parts.append(t(
-                lang, "search_result_item",
-                id=fact["id"], snippet=snippet, date=date, category=category,
+                lang, "search_result_item_v2",
+                id=fact["id"], snippet=snippet, kind=fact["kind"], badge=badge,
             ))
+        if data["has_more"]:
+            parts.append(t(
+                lang, "search_page_footer",
+                page=data["page"], pages=pages, query=query, next=data["page"] + 1,
+            ))
+        elif pages > 1:
+            parts.append(t(lang, "search_page_footer_last", page=data["page"], pages=pages))
 
         return [BotResponse("".join(parts))]
+
+    async def _search_relationship_id(self, user_id: int) -> str | None:
+        """Relationship id for a paired v2 user, else None (v1 scoping)."""
+        user = await db_mod.get_user(self.db_path, user_id)
+        partner_id = (user or {}).get("partner_id")
+        if not partner_id:
+            return None
+        rel_id = make_relationship_id(user_id, partner_id)
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT 1 FROM relationships WHERE id = ?", (rel_id,)
+            ) as cur:
+                return rel_id if await cur.fetchone() else None
 
     # ── /conflicts ───────────────────────────────────────────────────────
 

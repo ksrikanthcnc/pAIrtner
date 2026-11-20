@@ -108,6 +108,9 @@ ROUTES: tuple[Route, ...] = (
     Route("GET", "/api/v1/memory/stats", False, "_memory_stats"),
     Route("GET", "/api/v1/memory/recency", False, "_memory_recency"),
     Route("GET", "/api/v1/memory/search", False, "_memory_search"),
+    # Search v2
+    Route("GET", "/api/search", False, "_search"),
+    Route("POST", "/api/search/rerank", False, "_search_rerank", needs_json=True),
 ) + tuple(Route("GET", p, True, "_static") for p in STATIC_FILES)
 
 _ROUTE_INDEX: dict[tuple[str, str], Route] = {(r.method, r.path): r for r in ROUTES}
@@ -438,6 +441,67 @@ class RestApi:
         api = MemoryAPI(self.db_path)
         facts = await api.search(uid, q, limit=limit)
         return _json(200, {"facts": [f.to_dict() for f in facts], "count": len(facts)})
+
+    def _search_target(self, uid: int, raw: Any, *, admin_only: bool = False) -> int:
+        """Resolve the user_id a search acts for; others' data needs admin."""
+        is_admin = uid in self.config.admin_user_ids
+        if admin_only and not is_admin:
+            raise ApiError(403, "admin_required")
+        if raw is None or raw == "":
+            return uid
+        try:
+            target = int(raw)
+        except (TypeError, ValueError):
+            raise ApiError(400, "invalid_query")
+        if target != uid and not is_admin:
+            raise ApiError(403, "forbidden")
+        return target
+
+    async def _search(self, *, uid: int, query: dict[str, str], **_: Any) -> Response:
+        """Paginated FTS5 search (no LLM)."""
+        from pairtner.core.search_v2 import paginated_search
+
+        q = query.get("q", "").strip()
+        if not q:
+            raise ApiError(400, "missing_query")
+        target = self._search_target(uid, query.get("user_id"))
+        try:
+            page = int(query.get("page", "1"))
+            per_page = int(query.get("per_page", "10"))
+        except ValueError:
+            raise ApiError(400, "invalid_query")
+        kind = query.get("kind") or None
+        if kind not in (None, "core", "working"):
+            raise ApiError(400, "invalid_kind")
+        try:
+            data = await paginated_search(
+                self.db_path, target, q, query.get("relationship_id") or None,
+                page=page, per_page=per_page, kind_filter=kind,
+            )
+        except PermissionError:
+            raise ApiError(403, "forbidden")
+        return _json(200, data)
+
+    async def _search_rerank(
+        self, *, uid: int, body: dict[str, Any], **_: Any,
+    ) -> Response:
+        """Two-pass (FTS5 -> LLM) search. Admin only: it spends LLM calls."""
+        from pairtner.core.search_v2 import two_pass_search
+
+        target = self._search_target(uid, body.get("user_id"), admin_only=True)
+        q = body.get("query")
+        if not isinstance(q, str) or not q.strip():
+            raise ApiError(400, "missing_query")
+        rel = body.get("relationship_id")
+        if rel is not None and not isinstance(rel, str):
+            raise ApiError(400, "invalid_query")
+        try:
+            results = await two_pass_search(
+                self.db_path, self.service.llm, target, q.strip(), rel or None,
+            )
+        except PermissionError:
+            raise ApiError(403, "forbidden")
+        return _json(200, {"results": results, "count": len(results)})
 
     async def _history(self, *, uid: int, query: dict[str, str], **_: Any) -> Response:
         """Return the full message history for a user (oldest first, with timestamps)."""
