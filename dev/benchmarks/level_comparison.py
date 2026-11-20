@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import math
+import os
 import random
 import re
 import shutil
@@ -38,7 +39,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _llm import ROOT  # noqa: E402,F401  (puts repo root on sys.path)
+from _llm import ROOT, call_llm  # noqa: E402,F401  (puts repo root on sys.path)
 
 from pairtner.core import summary as summ  # noqa: E402
 from pairtner.db import create_user, init_db, set_partner  # noqa: E402
@@ -344,6 +345,27 @@ class MockLLM:
         return f"item #{fid}"
 
 
+class RealLLM:
+    """Adapter: summary engine's ``generate(message, system)`` -> _llm.call_llm."""
+
+    def __init__(self, provider: str, model: str):
+        self.provider, self.model = provider, model
+        self.calls = 0
+        self.calls_by_level: dict[str, int] = {}
+
+    async def generate(self, user_content: str, system_prompt: str, model=None, api_key_override=None):
+        self.calls += 1
+        ptype = user_content.split()[1] if user_content.startswith("Period:") else "?"
+        self.calls_by_level[ptype] = self.calls_by_level.get(ptype, 0) + 1
+        try:
+            raw = await call_llm(self.provider, self.model, system_prompt, user_content,
+                                 json_mode=True, temperature=0.3)
+        except Exception as exc:  # network/model errors -> unparseable -> summary skipped
+            print(f"  LLM error ({ptype}): {exc!r}", file=sys.stderr)
+            return {"reply": ""}
+        return {"reply": raw}
+
+
 # --------------------------------------------------------------------------
 # Simulation + metrics
 # --------------------------------------------------------------------------
@@ -409,10 +431,10 @@ def _refs_in(conn: sqlite3.Connection, live_only: bool, kinds: tuple[str, ...] |
 
 
 async def run_config(name: str, levels: list[str], template: str, stats: GenStats,
-                     workdir: Path, days: int) -> RunResult:
+                     workdir: Path, days: int, llm=None) -> RunResult:
     db_path = str(workdir / f"{name}.db")
     shutil.copy(template, db_path)
-    llm = MockLLM(stats.intensity)
+    llm = llm or MockLLM(stats.intensity)
     res = RunResult(name=name, levels=levels)
     checkpoint_day = START + timedelta(weeks=16)  # right after the quiet period
     ctx_samples: list[int] = []
@@ -568,19 +590,50 @@ def report(a: RunResult, b: RunResult, stats: GenStats) -> None:
           "real LLM summaries may differ.")
 
 
+def dump_summaries(db_path: str) -> str:
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT kind, json_extract(metadata,'$.period'), owner_id, archived_at IS NOT NULL, text "
+            "FROM facts WHERE kind IN ('daily','weekly','monthly','quarterly','yearly') "
+            "ORDER BY owner_id, json_extract(metadata,'$.start'), kind").fetchall()
+    finally:
+        conn.close()
+    order = {k: i for i, k in enumerate(LEVELS_5)}
+    rows.sort(key=lambda r: (r[2], order[r[0]], r[1]))
+    return "\n".join(f"### {NAMES.get(o, o)} / {k} {p}{' (archived)' if a else ''}\n{t}\n"
+                     for k, p, o, a, t in rows)
+
+
 async def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--months", type=int, default=6)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--keep", action="store_true", help="keep the temp DBs and print their path")
+    ap.add_argument("--provider", default="mock", help="mock (default), ollama or gemini")
+    ap.add_argument("--model", default="gemma3:4b")
+    ap.add_argument("--dump", help="write summaries (real LLM run) to this markdown file")
     args = ap.parse_args()
 
-    tmp = tempfile.TemporaryDirectory(prefix="level-cmp-")
+    tmp = tempfile.TemporaryDirectory(prefix="level-cmp-", dir=os.environ.get("KIROCREW_SCRATCH"))
     workdir = Path(tmp.name)
     template = str(workdir / "template.db")
     print(f"Generating {args.months} months of couple data (seed={args.seed}) ...")
     stats = await generate_couple_data(template, months=args.months, seed=args.seed)
     days = args.months * 28 + 14  # run past the last week so final periods close
+
+    if args.provider != "mock":
+        print(f"Running 5-level consolidation with {args.provider}:{args.model} ...")
+        llm = RealLLM(args.provider, args.model)
+        r5 = await run_config("five", LEVELS_5, template, stats, workdir, days, llm=llm)
+        print(f"LLM calls: {llm.calls} {llm.calls_by_level}; summaries: {r5.summaries_by_level}")
+        out = dump_summaries(str(workdir / "five.db"))
+        if args.dump:
+            Path(args.dump).write_text(out)
+            print(f"summaries written to {args.dump}")
+        else:
+            print(out)
+        return
 
     print("Running 5-level consolidation ...")
     r5 = await run_config("five", LEVELS_5, template, stats, workdir, days)
