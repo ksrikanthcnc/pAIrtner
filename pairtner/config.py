@@ -164,6 +164,14 @@ class Config:
     context_recent_days: int = 7
     context_max_relevant_facts: int = 20
 
+    # Model capability tuning (v2)
+    # Adjusts summary batching and prompt complexity for weaker/stronger models.
+    # "low" = small models (gemma3:4b, phi3-mini): smaller batches, simpler prompts
+    # "medium" = mid models (qwen3:8b, gemma3:12b): default settings
+    # "high" = large models (qwen3:27b, gemini-flash): larger batches, richer prompts
+    model_capability: str = "medium"
+    summary_batch_size: int = 0  # 0 = auto based on model_capability (low=10, med=20, high=40)
+
     # Voice auto-adaptation (FEAT-002 batch5)
     voice_auto_learn: bool = True
     voice_learn_after_messages: int = 10

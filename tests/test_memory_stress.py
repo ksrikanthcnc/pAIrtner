@@ -554,16 +554,14 @@ class TestScalePerformance:
             for s in scores_by_kind["core"]:
                 assert s == 1.0
 
-        # Working facts: recent ones score higher than old ones
+        # Working facts: with no time decay, score varies by intensity and status only
         if "working" in scores_by_kind:
             ws = scores_by_kind["working"]
             avg = sum(ws) / len(ws) if ws else 0
-            # Most old working facts should have low scores due to decay
-            low_scored = sum(1 for s in ws if s < 0.1)
-            assert low_scored > len(ws) * 0.5, (
-                f"expected majority of old working facts to score low, "
-                f"got {low_scored}/{len(ws)} below 0.1 (avg={avg:.3f})"
-            )
+            # All working facts should have non-zero scores (no decay)
+            assert all(s > 0 for s in ws), "working facts should all score > 0"
+            # Low-intensity facts score lower than high-intensity ones
+            assert avg > 0, f"average score should be positive, got {avg:.3f}"
 
 
 

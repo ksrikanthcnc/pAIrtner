@@ -187,10 +187,9 @@ _STATUS_WEIGHT: dict[str, float] = {
 def compute_relevance_score(fact_row: dict[str, Any]) -> float:
     """Compute the relevance score for a fact.
 
-    score = status_weight × recency × intensity × citation_boost
+    score = status_weight × intensity × citation_boost
     Core facts always score 1.0 (permanent axioms).
-    Working facts: simple linear recency decay over 14 days.
-    Summaries are handled separately (not ranked by this score).
+    No time decay -- summaries handle the time dimension.
     """
     kind = fact_row.get("kind") or "working"
     status = fact_row.get("status") or "active"
@@ -204,13 +203,7 @@ def compute_relevance_score(fact_row: dict[str, Any]) -> float:
     if kind == "core":
         return 1.0
 
-    # Simple linear recency: 1.0 at day 0, 0.0 at day 14+
-    # Working facts get summarized within ~7 days, so 14-day window is generous.
-    created = fact_row.get("created_at") or ""
-    age_days = _age_in_days(created)
-    recency = max(0.05, 1.0 - age_days / 14.0)  # floor at 0.05 so old facts aren't invisible
-
-    score = recency * status_w * intensity * citation_boost
+    score = status_w * intensity * citation_boost
     return min(score, 1.0)  # cap at 1.0
 
 

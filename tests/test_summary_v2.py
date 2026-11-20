@@ -113,14 +113,14 @@ async def test_sparse_window_skipped(db_path):
 
 @pytest.mark.asyncio
 async def test_dense_window_batched(db_path):
-    add_facts(db_path, 25)
+    add_facts(db_path, 45)  # above BATCH_THRESHOLD of 40 for medium capability
     llm = MockLLMClient([resp("a"), resp("b"), resp("c")])
     fid = await create_summary(db_path, llm, ALICE, "weekly", "2026-W47", REL)
     assert fid
-    assert len(llm.calls) == 3  # 10 + 10 + 5
+    assert len(llm.calls) == 3  # 20 + 20 + 5 (BATCH_SIZE=20 for medium)
     meta = json.loads(facts_of(db_path, "weekly")[0]["metadata"])
     assert meta["resolved"] == ["r-a", "r-b", "r-c"]
-    assert len(json.loads(facts_of(db_path, "weekly")[0]["source_ids"])) == 25
+    assert len(json.loads(facts_of(db_path, "weekly")[0]["source_ids"])) == 45
     assert all(r["archived_at"] for r in _sql(db_path, "SELECT archived_at FROM facts WHERE kind='working'"))
 
 

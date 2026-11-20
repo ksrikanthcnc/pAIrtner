@@ -57,11 +57,15 @@ class TestScoring:
         new = {"kind": "core", "status": "active", "citation_count": 0, "created_at": _now_iso()}
         assert compute_relevance_score(old) == compute_relevance_score(new) == 1.0
 
-    def test_working_decays_with_age(self):
-        recent = {"kind": "working", "status": "active", "citation_count": 0, "created_at": _now_iso()}
+    def test_working_no_time_decay(self):
+        """Scoring no longer decays with age — summaries handle the time dimension."""
+        recent = {"kind": "working", "status": "active", "citation_count": 0,
+                  "intensity": 0.5, "created_at": _now_iso()}
         old_dt = datetime.now(timezone.utc) - timedelta(days=42)
-        old = {"kind": "working", "status": "active", "citation_count": 0, "created_at": _to_iso(old_dt)}
-        assert compute_relevance_score(recent) > compute_relevance_score(old)
+        old = {"kind": "working", "status": "active", "citation_count": 0,
+               "intensity": 0.5, "created_at": _to_iso(old_dt)}
+        # Same intensity + status = same score (no time decay)
+        assert compute_relevance_score(recent) == compute_relevance_score(old)
 
     def test_citation_boost(self):
         base = {"kind": "working", "status": "active", "citation_count": 0, "created_at": _now_iso()}
@@ -80,10 +84,13 @@ class TestScoring:
         assert compute_relevance_score(active) > compute_relevance_score(resolved)
         assert compute_relevance_score(resolved) > compute_relevance_score(outdated)
 
-    def test_episode_kind_weight(self):
-        episode = {"kind": "episode", "status": "active", "citation_count": 0, "created_at": _now_iso()}
-        working = {"kind": "working", "status": "active", "citation_count": 0, "created_at": _now_iso()}
-        assert compute_relevance_score(episode) > compute_relevance_score(working)
+    def test_episode_and_working_equal_score(self):
+        """Kind weight removed in v2 — scoring is intensity × status × citations."""
+        episode = {"kind": "episode", "status": "active", "citation_count": 0,
+                   "intensity": 0.5, "created_at": _now_iso()}
+        working = {"kind": "working", "status": "active", "citation_count": 0,
+                   "intensity": 0.5, "created_at": _now_iso()}
+        assert compute_relevance_score(episode) == compute_relevance_score(working)
 
     def test_age_in_days_empty(self):
         assert _age_in_days("") == 0.0

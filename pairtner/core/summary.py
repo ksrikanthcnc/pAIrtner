@@ -35,10 +35,13 @@ _DAYS = dict(SUMMARY_INTERVALS)
 _ORDER = [name for name, _ in SUMMARY_INTERVALS]
 
 MIN_ITEMS = 3
-BATCH_THRESHOLD = 20
-BATCH_SIZE = 10
+BATCH_THRESHOLD = 40   # summarize in one pass up to this many items
+BATCH_SIZE = 20        # beyond threshold, batches of this size
 DAILY_MIN_USER_MESSAGES = 10
 MAX_CATCHUP_PERIODS = 60
+
+# Per-capability overrides (config.model_capability)
+_CAPABILITY_BATCH = {"low": (20, 10), "medium": (40, 20), "high": (80, 40)}
 
 SUMMARY_SYSTEM = """You summarise a period of a relationship-coaching bot's memory for one person.
 Input is a list of memory items (facts, or lower-level summaries) from the period.
@@ -46,12 +49,13 @@ Return ONLY JSON:
 {"resolved": ["things that were settled"],
  "ongoing": ["things still open or unresolved"],
  "new": ["new developments, people, plans"],
- "narrative": "a short prose summary of the period"}
+ "narrative": "a prose summary of the period"}
 Rules:
+- Be COMPREHENSIVE. Every distinct topic in the input must appear in the output. Do not drop minor topics to stay brief.
 - Name concrete events, causes, and people (e.g. "argument about chore rota" not "a disagreement").
-- When many distinct topics appear, list ALL of them — do not drop minor topics to stay brief.
-- Keep each list item to one short sentence.
+- Each list item is one short sentence. Use as many items as needed to cover all topics.
 - Avoid generic wording like "fluctuating emotions" or "various concerns" — be specific.
+- The narrative should cover the full period's arc. Length is not limited — be thorough.
 - Do not invent details not present in the input."""
 
 
@@ -166,9 +170,11 @@ def _merge(parts: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 async def _summarise(llm: LLMClient, items: list[dict[str, Any]],
-                     period_type: str, period_id: str) -> dict[str, Any] | None:
-    batches = ([items] if len(items) <= BATCH_THRESHOLD
-               else [items[i:i + BATCH_SIZE] for i in range(0, len(items), BATCH_SIZE)])
+                     period_type: str, period_id: str,
+                     capability: str = "medium") -> dict[str, Any] | None:
+    threshold, bsize = _CAPABILITY_BATCH.get(capability, (BATCH_THRESHOLD, BATCH_SIZE))
+    batches = ([items] if len(items) <= threshold
+               else [items[i:i + bsize] for i in range(0, len(items), bsize)])
     parts: list[dict[str, Any]] = []
     for batch in batches:
         lines = [f"[{it['id']}] ({it['status']}) {it['text']}" for it in batch]
