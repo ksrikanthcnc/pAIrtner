@@ -47,7 +47,12 @@ Return ONLY JSON:
  "ongoing": ["things still open or unresolved"],
  "new": ["new developments, people, plans"],
  "narrative": "a short prose summary of the period"}
-Keep each list item to one short sentence. Do not invent details."""
+Rules:
+- Name concrete events, causes, and people (e.g. "argument about chore rota" not "a disagreement").
+- When many distinct topics appear, list ALL of them — do not drop minor topics to stay brief.
+- Keep each list item to one short sentence.
+- Avoid generic wording like "fluctuating emotions" or "various concerns" — be specific.
+- Do not invent details not present in the input."""
 
 
 # ---------------------------------------------------------------------------
