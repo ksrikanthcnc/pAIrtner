@@ -304,14 +304,34 @@ async def run_periodic_summaries(
             if ends:
                 cursor = date.fromisoformat(max(ends))
             else:
+                # Bootstrap: find the earliest relevant date from either
+                # unarchived working facts OR lower-level summary starts.
+                # Lower levels archive working facts, so relying only on
+                # unarchived facts would strand higher levels forever.
+                candidates: list[str] = []
                 async with db.execute(
                     "SELECT MIN(created_at) FROM facts WHERE owner_id=? AND kind='working' "
                     "AND archived_at IS NULL", (user_id,),
                 ) as cur:
                     first = (await cur.fetchone())[0]
-                if not first:
+                if first:
+                    candidates.append(first[:10])
+                # Also check lower-level summary start dates
+                lower = _ORDER[:_ORDER.index(period_type)]
+                lower_active = [lv for lv in lower if lv in active]
+                if lower_active:
+                    marks = ",".join("?" * len(lower_active))
+                    async with db.execute(
+                        f"SELECT MIN(json_extract(metadata,'$.start')) FROM facts "
+                        f"WHERE owner_id=? AND kind IN ({marks})",
+                        (user_id, *lower_active),
+                    ) as cur:
+                        low_first = (await cur.fetchone())[0]
+                    if low_first:
+                        candidates.append(low_first[:10])
+                if not candidates:
                     continue
-                cursor = date.fromisoformat(first[:10])
+                cursor = date.fromisoformat(min(candidates))
 
         # enumerate completed periods from cursor up to today
         pids: list[str] = []

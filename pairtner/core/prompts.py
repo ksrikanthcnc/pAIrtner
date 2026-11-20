@@ -349,8 +349,12 @@ def build_system_prompt(
     voice_text: str | None = None,
     task_text: str | None = None,
     dampening_instruction: str | None = None,
+    v2: bool = False,
 ) -> str:
     """Base system prompt shared across prompt types.
+
+    With ``v2=True`` the pack's v2 extraction contract is used (falls back
+    to the v1 contract when the pack has no ``extract_v2.md``).
 
     Optionally appends voice, task, and dampening instructions.
     Includes current UTC time for temporal awareness.
@@ -358,7 +362,8 @@ def build_system_prompt(
     p = pack.current()
     _trace(p, "system")
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    parts = [_head(p), f"Current time: {now}\n\n" + p.contract() + "\n"]
+    contract = p.contract_v2() if v2 else p.contract()
+    parts = [_head(p), f"Current time: {now}\n\n" + contract + "\n"]
     style = _style_section(p, voice_text, dampening_instruction)
     if style:
         parts.append(style.lstrip("\n"))
@@ -420,6 +425,7 @@ def build_chat_prompt_v2(
     p = pack.current()
     system = build_system_prompt(
         voice_text=voice_text, dampening_instruction=dampening_instruction,
+        v2=True,
     )
     _trace(p, "chat")
     if goals_text:

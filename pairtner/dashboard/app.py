@@ -17,7 +17,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Iterator
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from pairtner.dashboard import admin_actions, explorer, stats, store
+import json
+
+from pairtner.dashboard import admin_actions, explorer, stats, store, timeline_page
 from pairtner.dashboard.config import DashboardConfig
 from pairtner.dashboard.render import (
     SECURITY_HEADERS, Html, cards, esc, layout, link, svg_bars, table,
@@ -26,6 +28,7 @@ from pairtner.dashboard.security import (
     BEARER_SESSION, COOKIE_NAME, Authenticator,
 )
 from pairtner.dashboard.store import NotFound
+from pairtner.rest import timeline as timeline_api
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +37,8 @@ _TABLE_RE = re.compile(r"^/db/([A-Za-z0-9_]+)$")
 _USER_RE = re.compile(r"^/users/(\d+)$")
 _COUPLE_RE = re.compile(r"^/couples/(\d+:\d+)$")
 _CLEAR_USER_RE = re.compile(r"^/admin/clear-user/(\d+)$")
+_TIMELINE_PAGE_RE = re.compile(r"^/timeline/(\d+_\d+)$")
+_TIMELINE_API_RE = re.compile(r"^/api/admin/timeline/([^/]+)$")
 
 
 @dataclass
@@ -214,6 +219,10 @@ class DashboardApp:
             return self._conversation(ctx, couple_id)
         if path == "/queue":
             return self._queue(ctx)
+        if m := _TIMELINE_PAGE_RE.match(path):
+            return self._timeline_page(ctx, m.group(1), query)
+        if m := _TIMELINE_API_RE.match(path):
+            return self._timeline_json(m.group(1), query)
         if path == "/db":
             with self._ro() as c:
                 tables = explorer.tables(c)
@@ -328,7 +337,8 @@ class DashboardApp:
         with self._ro() as c:
             events = stats.couple_timeline(c, couple_id, self.config.show_raw_text)
         body = (f"<p>Members: {link(f'/users/{a}', a)}, {link(f'/users/{b}', b)}"
-                f" · {link(f'/conversations/{couple_id}', '💬 View Conversation')}</p>"
+                f" · {link(f'/conversations/{couple_id}', '💬 View Conversation')}"
+                f" · {link(f'/timeline/{a}_{b}', '🕒 Timeline')}</p>"
                 "<h2>Timeline</h2>" + self._timeline_table(events))
         return self._page(ctx, f"Couple {couple_id}", body, "/couples")
 
@@ -387,6 +397,47 @@ class DashboardApp:
 
         return self._page(ctx, f"Conversation: {user_a} ↔ {user_b}",
                           style + body, "/couples")
+
+    def _timeline_events(self, rid: str, query: dict[str, str]):
+        """Shared by the JSON endpoint and the page: (events, limit, before, has_more)."""
+        if not timeline_api.REL_RE.match(rid):
+            raise NotFound(f"bad relationship id: {rid!r}")
+        limit = timeline_api.parse_limit(query.get("limit"))
+        before = timeline_api.parse_before(query.get("before"))
+        types = timeline_api.parse_types(query.get("types"))
+        try:
+            with self._ro() as c:
+                if not timeline_api.relationship_exists(c, rid):
+                    raise NotFound(f"no such relationship: {rid}")
+                events = timeline_api.build_timeline(
+                    c, rid, limit=limit + 1, before=before, types=types,
+                    show_raw=self.config.show_raw_text)
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc) or "no such column" in str(exc):
+                raise NotFound("timeline needs the v2 schema") from exc
+            raise
+        has_more = len(events) > limit
+        return events[-limit:] if has_more else events, limit, before, has_more
+
+    def _timeline_json(self, rid: str, query: dict[str, str]) -> Response:
+        try:
+            events, _, _, _ = self._timeline_events(rid, query)
+        except timeline_api.BadRequest as exc:
+            return Response(400, json.dumps({"error": str(exc)}).encode(),
+                            "application/json; charset=utf-8")
+        except NotFound as exc:
+            return Response(404, json.dumps({"error": str(exc)}).encode(),
+                            "application/json; charset=utf-8")
+        return Response(200, json.dumps(events).encode(), "application/json; charset=utf-8")
+
+    def _timeline_page(self, ctx: "_Ctx", rid: str, query: dict[str, str]) -> Response:
+        try:
+            events, limit, before, has_more = self._timeline_events(rid, query)
+        except timeline_api.BadRequest as exc:
+            return self._error(400, str(exc))
+        body = timeline_page.render_timeline(
+            rid, events, limit=limit, before=before, has_more=has_more)
+        return self._page(ctx, f"Timeline {rid}", body, "/couples")
 
     def _queue(self, ctx: "_Ctx") -> Response:
         with self._ro() as c:

@@ -32,6 +32,7 @@ MANIFEST_NAME = "pack.yaml"
 DEFAULT_PACK_PATH = "packs/default"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+OPTIONAL_CONTRACT_V2 = "extract_v2.md"
 REQUIRED_FILES = ("persona", "contract", "blocks", "strings", "voices", "tasks")
 REQUIRED_BLOCKS = ("role", "not_therapy", "tone")
 REQUIRED_TASKS = ("nudge", "appreciation", "summarize", "therapy_export")
@@ -174,6 +175,7 @@ class _State:
     manifest: dict[str, Any]
     persona: str
     contract: str
+    contract_v2: str
     blocks: dict[str, str]
     strings: dict[str, str]
     voices: dict[str, str]
@@ -277,6 +279,10 @@ class Pack:
 
         persona = self._read_text(paths["persona"], hashes)
         contract = self._read_text(paths["contract"], hashes)
+        v2_path = self.root / OPTIONAL_CONTRACT_V2
+        contract_v2 = (
+            self._read_text(v2_path, hashes) if v2_path.is_file() else contract
+        )
         blocks = self._read_dir(paths["blocks"], "blocks", hashes)
         for block in REQUIRED_BLOCKS:
             if block not in blocks:
@@ -309,7 +315,7 @@ class Pack:
         digest = "\n".join(f"{rel}:{h}" for rel, h in sorted(hashes.items()))
         return _State(
             name=name, version=version, manifest=manifest, persona=persona,
-            contract=contract, blocks=blocks, strings=strings, voices=voices,
+            contract=contract, contract_v2=contract_v2, blocks=blocks, strings=strings, voices=voices,
             tasks=tasks, file_hashes=dict(sorted(hashes.items())),
             pack_hash=_sha256(digest.encode("utf-8")),
         )
@@ -365,7 +371,7 @@ class Pack:
 
     def _watched(self) -> list[Path]:
         """Paths whose stat is compared on every refresh()."""
-        watched = [self.root / MANIFEST_NAME]
+        watched = [self.root / MANIFEST_NAME, self.root / OPTIONAL_CONTRACT_V2]
         files = self._state.manifest.get("files") or {}
         for key in REQUIRED_FILES:
             rel = files.get(key)
@@ -444,6 +450,10 @@ class Pack:
 
     def contract(self) -> str:
         return self._state.contract
+
+    def contract_v2(self) -> str:
+        """The v2 extraction contract; falls back to :meth:`contract`."""
+        return self._state.contract_v2
 
     def block(self, name: str) -> str:
         try:
