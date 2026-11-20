@@ -580,3 +580,108 @@ class TagsMixin:
             logging.getLogger(__name__).exception(
                 "Background analysis failed for user %s", user_id,
             )
+
+    # ── /dryrun and /debug ──────────────────────────────────────────────
+
+    async def _run_dryrun(
+        self, user_id: int, text: str, show_debug: bool = False,
+    ) -> list[BotResponse]:
+        """Run the full pipeline without any DB writes.
+
+        /dryrun: returns only the bot reply (incognito for one message).
+        /debug:  same + shows extracted facts, visibility, nudges, context used.
+        """
+        from pairtner.core.memory import parse_memory_ops, parse_settings_ops
+
+        if not text:
+            return [BotResponse("Usage: /dryrun <message> or /debug <message>")]
+
+        lang = await self._get_lang(user_id)
+
+        # Build context (reads DB, no writes)
+        ctx = await self._build_ctx(user_id, current_message=text)
+        voice_text, damp_instr = await self._get_enriched_style(user_id)
+        partner_summary = await self._get_partner_summary(user_id)
+        goals_text = await self._get_goals_text(user_id)
+        smart_ctx = await build_smart_context(
+            self.db_path, user_id, text, self.config,
+        )
+        system, content = build_chat_prompt(
+            ctx, text, voice_text=voice_text,
+            dampening_instruction=damp_instr,
+            partner_summary=partner_summary,
+            goals_text=goals_text,
+            smart_ctx=smart_ctx,
+        )
+
+        # Call LLM (the only external cost -- one LLM call)
+        api_key = await self._get_couple_api_key(user_id)
+        result = await self.llm.generate(content, system, api_key_override=api_key)
+
+        # --- NO DB WRITES from here ---
+        reply = result.get("reply", "")
+
+        if not show_debug:
+            # /dryrun: just the reply, marked as dry run
+            return [BotResponse(f"🧪 *Dry run* (nothing saved)\n\n{reply}")]
+
+        # /debug: full diagnostic output
+        parts = [f"🔬 *Debug mode* (nothing saved)\n\n**Bot reply:**\n{reply}"]
+
+        # Parse memory ops (but don't apply them)
+        memory_ops_raw = result.get("memory_ops", [])
+        if memory_ops_raw:
+            user_facts = await db_mod.get_active_facts(self.db_path, user_id)
+            user_fact_ids = {f["id"] for f in user_facts}
+            ops = parse_memory_ops(
+                memory_ops_raw, user_fact_ids, v2=True,
+            )
+            if ops:
+                facts_lines = []
+                for op in ops:
+                    if op.op == "add":
+                        vis_icon = {"private": "🔒", "nudge_eligible": "🔔",
+                                    "shareable": "👥"}.get(op.visibility, "❓")
+                        line = f"  {vis_icon} `{op.kind}` {op.text}"
+                        if op.nudge_suggestion:
+                            line += f"\n    → nudge: {op.nudge_suggestion}"
+                        facts_lines.append(line)
+                    elif op.op == "status":
+                        facts_lines.append(f"  📝 fact #{op.id} → {op.status}")
+                    elif op.op == "cancel_nudge":
+                        facts_lines.append(f"  ❌ cancel nudge #{op.id}: {op.why}")
+                parts.append("**Facts extracted:**\n" + "\n".join(facts_lines))
+            else:
+                parts.append("**Facts extracted:** none")
+        else:
+            parts.append("**Facts extracted:** none")
+
+        # Settings ops
+        settings_raw = result.get("settings_ops", [])
+        if settings_raw:
+            s_ops = parse_settings_ops(settings_raw)
+            if s_ops:
+                parts.append("**Settings changes:**\n" + "\n".join(
+                    f"  ⚙️ {s.key} → {s.value}" for s in s_ops
+                ))
+
+        # Context summary
+        ctx_lines = [
+            f"  Core facts: {len(ctx.private_facts)} items",
+            f"  Recent messages: {len(ctx.recent_messages)}",
+        ]
+        if ctx.shared_facts:
+            ctx_lines.append(f"  Shared facts: {len(ctx.shared_facts)}")
+        if smart_ctx:
+            ctx_lines.append(f"  Smart context: {smart_ctx.total_fact_count} total facts")
+        parts.append("**Context used:**\n" + "\n".join(ctx_lines))
+
+        return [BotResponse("\n\n".join(parts))]
+
+    async def handle_dryrun(self, user_id: int, text: str | None) -> list[BotResponse]:
+        """Handle /dryrun — full pipeline, no DB writes."""
+        return await self._run_dryrun(user_id, text or "", show_debug=False)
+
+    async def handle_debug(self, user_id: int, text: str | None) -> list[BotResponse]:
+        """Handle /debug — full pipeline, no DB writes, show internals."""
+        return await self._run_dryrun(user_id, text or "", show_debug=True)

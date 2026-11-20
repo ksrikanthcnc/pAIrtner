@@ -174,7 +174,7 @@ async def get_or_probe_capability(
             try:
                 ts = datetime.fromisoformat(cached_ts)
                 age_days = (datetime.now(timezone.utc) - ts.replace(tzinfo=timezone.utc)).days
-                if age_days > 30:
+                if age_days > 10:
                     logger.info("Model probe cache expired (%d days), re-probing", age_days)
                 else:
                     return cached_cap

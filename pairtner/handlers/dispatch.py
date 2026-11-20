@@ -49,6 +49,9 @@ class DispatchMixin:
             "help": lambda: self.handle_help(uid),
             "export": lambda: self.handle_export(uid, arg),
             "history": lambda: self.handle_history(uid, arg),
+            # Testing
+            "dryrun": lambda: self.handle_dryrun(uid, arg),
+            "debug": lambda: self.handle_debug(uid, arg),
             # Relay control
             "pause": lambda: self.handle_pause(uid),
             "resume": lambda: self.handle_resume(uid),
