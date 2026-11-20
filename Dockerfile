@@ -19,8 +19,9 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Application code and config
 COPY pairtner/ pairtner/
 COPY packs/ packs/
+COPY scripts/entrypoint.sh /entrypoint.sh
 COPY settings.yaml ./
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev && chmod +x /entrypoint.sh
 
 # SQLite DB lives on a shared volume
 ENV DB_PATH=/data/pairtner.db
@@ -32,4 +33,5 @@ EXPOSE 8080 8765
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/healthz' % os.environ.get('REST_PORT','8080'), timeout=3)" || exit 1
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["python", "-m", "pairtner"]
