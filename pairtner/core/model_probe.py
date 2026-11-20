@@ -31,8 +31,11 @@ _PROBE_INPUT = """Topics:
 _EXPECTED_TOPICS = 5
 
 
-async def probe_model(llm: Any) -> dict[str, Any]:
-    """Run a quick capability probe. Returns {capability, json_ok, topics_found, latency_ms}."""
+async def probe_model(llm: Any, provider: str = "", model: str = "") -> dict[str, Any]:
+    """Run a quick capability probe. Returns {capability, json_ok, topics_found, latency_ms, context_length}."""
+    # Try to detect context window size from the provider API
+    context_length = await _detect_context_length(provider, model)
+
     start = time.monotonic()
     try:
         result = await llm.generate(_PROBE_INPUT, _PROBE_SYSTEM)
@@ -40,7 +43,7 @@ async def probe_model(llm: Any) -> dict[str, Any]:
     except Exception as exc:
         logger.warning("Model probe failed: %s", exc)
         return {"capability": "low", "json_ok": False, "topics_found": 0,
-                "latency_ms": 0, "error": str(exc)}
+                "latency_ms": 0, "context_length": context_length, "error": str(exc)}
 
     reply = result.get("reply", "") if isinstance(result, dict) else str(result)
 
@@ -85,7 +88,50 @@ async def probe_model(llm: Any) -> dict[str, Any]:
         "json_ok": json_ok,
         "topics_found": topics_found,
         "latency_ms": latency_ms,
+        "context_length": context_length,
     }
+
+
+async def _detect_context_length(provider: str, model: str) -> int:
+    """Try to detect the model's context window size from the provider API.
+
+    Returns 0 if unknown. Known sources:
+    - Ollama: GET /api/show {name: model} -> model_info.context_length
+    - OpenAI-compat: typically not exposed
+    - Gemini: models.get -> inputTokenLimit
+    """
+    import urllib.request
+
+    if not model:
+        return 0
+
+    # Ollama
+    if provider in ("ollama", "") and not provider.startswith("gemini"):
+        try:
+            import json as _json
+            req = urllib.request.Request(
+                "http://localhost:11434/api/show",
+                data=_json.dumps({"name": model}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = _json.loads(resp.read())
+            # Ollama returns context length in model_info or parameters
+            ctx = data.get("model_info", {}).get("context_length")
+            if not ctx:
+                # Also check parameters string for num_ctx
+                params = data.get("parameters", "")
+                if "num_ctx" in params:
+                    for line in params.split("\n"):
+                        if "num_ctx" in line:
+                            ctx = int(line.split()[-1])
+            if ctx and isinstance(ctx, int):
+                return ctx
+        except Exception:
+            pass
+
+    return 0
 
 
 async def get_or_probe_capability(
@@ -114,17 +160,37 @@ async def get_or_probe_capability(
             row = await cur.fetchone()
         cached_model = dict(row)["value"] if row else None
 
-    # Use cache if model hasn't changed
+        async with db.execute(
+            "SELECT updated_at FROM user_meta WHERE user_id = ? AND key = 'model_capability'",
+            (user_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        cached_ts = dict(row)["updated_at"] if row else None
+
+    # Use cache if model hasn't changed and probe is <30 days old
     if cached_cap and cached_model == current_model and cached_cap in ("low", "medium", "high"):
-        return cached_cap
+        if cached_ts:
+            from datetime import datetime, timezone
+            try:
+                ts = datetime.fromisoformat(cached_ts)
+                age_days = (datetime.now(timezone.utc) - ts.replace(tzinfo=timezone.utc)).days
+                if age_days > 30:
+                    logger.info("Model probe cache expired (%d days), re-probing", age_days)
+                else:
+                    return cached_cap
+            except (ValueError, TypeError):
+                return cached_cap
+        else:
+            return cached_cap
 
     # Probe
-    result = await probe_model(llm)
+    result = await probe_model(llm, provider="", model=current_model)
     capability = result["capability"]
+    context_length = result.get("context_length", 0)
     logger.info(
-        "Model probe: capability=%s json_ok=%s topics=%d/%d latency=%dms model=%s",
+        "Model probe: capability=%s json_ok=%s topics=%d/%d latency=%dms ctx=%d model=%s",
         capability, result["json_ok"], result["topics_found"],
-        _EXPECTED_TOPICS, result["latency_ms"], current_model,
+        _EXPECTED_TOPICS, result["latency_ms"], context_length, current_model,
     )
 
     # Cache
@@ -139,6 +205,12 @@ async def get_or_probe_capability(
             "VALUES (?, 'model_capability_model', ?, CURRENT_TIMESTAMP)",
             (user_id, current_model),
         )
+        if context_length > 0:
+            await db.execute(
+                "INSERT OR REPLACE INTO user_meta (user_id, key, value, updated_at) "
+                "VALUES (?, 'model_context_length', ?, CURRENT_TIMESTAMP)",
+                (user_id, str(context_length)),
+            )
         await db.commit()
 
     return capability

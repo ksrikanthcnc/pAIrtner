@@ -102,13 +102,22 @@ async def test_source_facts_archived(db_path):
 
 
 @pytest.mark.asyncio
-async def test_sparse_window_skipped(db_path):
+async def test_sparse_window_not_skipped(db_path):
+    """Even 1-2 facts get summarized (MIN_ITEMS=1, no fact left behind)."""
     add_facts(db_path, 2)
+    llm = MockLLMClient([resp("sparse")])
+    fid = await create_summary(db_path, llm, ALICE, "weekly", "2026-W47", REL)
+    assert fid is not None  # summary created even for 2 facts
+    assert len(llm.calls) == 1
+    assert facts_of(db_path, "weekly") != []
+
+
+@pytest.mark.asyncio
+async def test_empty_window_skipped(db_path):
+    """Zero facts = no summary (can't summarize nothing)."""
     llm = MockLLMClient([resp()])
     assert await create_summary(db_path, llm, ALICE, "weekly", "2026-W47", REL) is None
     assert llm.calls == []
-    assert facts_of(db_path, "weekly") == []
-    assert all(r["archived_at"] is None for r in _sql(db_path, "SELECT archived_at FROM facts"))
 
 
 @pytest.mark.asyncio

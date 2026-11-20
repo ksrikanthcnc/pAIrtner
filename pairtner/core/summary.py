@@ -34,7 +34,7 @@ ACTIVE_INTERVALS: list[str] = ["daily", "weekly", "monthly", "quarterly", "yearl
 _DAYS = dict(SUMMARY_INTERVALS)
 _ORDER = [name for name, _ in SUMMARY_INTERVALS]
 
-MIN_ITEMS = 3
+MIN_ITEMS = 1          # every fact deserves a summary -- never skip a period with content
 BATCH_THRESHOLD = 40   # summarize in one pass up to this many items
 BATCH_SIZE = 20        # beyond threshold, batches of this size
 DAILY_MIN_USER_MESSAGES = 10
