@@ -154,7 +154,7 @@ def test_page_renders_and_escapes(srv, tmp_path):
     for needle in ("ev-msg", "ev-bot", "ev-fact", "ev-nudge", "ev-summary",
                    "ev-archive", "ev-setting", "f-nudge", "st-pending", "hi bot"):
         assert needle in html
-    assert "<script" not in html
+    assert html.count("<script") == html.count('<script src="/static/pwa.js" defer>')  # only the PWA loader
 
 
 def test_page_load_older_link(srv):

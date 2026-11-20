@@ -1,5 +1,74 @@
 # Deployment Guide
 
+## Docker deployment (bot + dashboard)
+
+Two services share one named volume (`pairtner-data`, SQLite at `/data/pairtner.db`):
+`pairtner-bot` (Telegram bot, background loops, REST API on 8080) and
+`pairtner-dashboard` (admin dashboard on 8765).
+
+### Prerequisites
+
+- Docker Engine with the Compose plugin
+- A `.env` file: `cp .env.example .env`, then set `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`, `DB_ENCRYPTION_KEY` and `DASHBOARD_TOKEN` (16+ chars)
+
+### Quick start
+
+```bash
+docker compose up -d --build
+docker compose ps
+# Dashboard: http://localhost:8765
+```
+
+Helpers: `scripts/start.sh`, `scripts/stop.sh`, `scripts/logs.sh`.
+
+### Windows (WSL)
+
+Install Docker Desktop with WSL integration (or Docker inside Ubuntu), clone the repo inside WSL or under `/mnt/c/...`, create `.env`, then edit `BOT_DIR` at the top of the scripts to the project's WSL path. Double-click:
+
+- `start-wsl.bat` starts the stack
+- `stop-wsl.bat` stops it
+- `logs-wsl.bat` follows the logs
+
+Dashboard: http://localhost:8765
+
+### Environment variables (Docker)
+
+| Variable | Description |
+|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather (this is the name the code reads) |
+| `GEMINI_API_KEY` | Gemini key |
+| `DB_PATH` | `/data/pairtner.db` (shared volume) |
+| `DB_ENCRYPTION_KEY` | Fernet key for encrypting stored keys |
+| `ADMIN_USER_IDS` / `ALLOWED_USER_IDS` | Comma-separated Telegram ids |
+| `LLM_PROVIDER` / `MODEL_DEFAULT` | `gemini` and model name |
+| `DASHBOARD_TOKEN` / `DASHBOARD_HOST` / `DASHBOARD_PORT` / `DASHBOARD_BIND` | Dashboard login token, listen address, port, host-side bind interface |
+| `ADAPTER` / `REST_HOST` / `REST_PORT` / `REST_BIND` | Adapter selection, REST listen address and port (8080), host-side bind interface |
+
+The full variable table is under "Environment variables" below.
+
+### Healthcheck and monitoring
+
+Both services expose `GET /healthz` and have Docker healthchecks.
+
+```bash
+docker compose ps                                   # shows (healthy)/(unhealthy)
+docker inspect --format '{{.State.Health.Status}}' $(docker compose ps -q pairtner-bot)
+docker compose logs -f pairtner-bot
+```
+
+### Backup strategy
+
+- The bot writes rotating backups to `./backups` on the host (bind mount).
+- Back up the DB volume manually:
+
+```bash
+docker run --rm -v couples-bot_pairtner-data:/data -v "$PWD/backups":/out alpine \
+  cp /data/pairtner.db /out/manual_$(date +%F).db
+```
+
+(The volume name is `<project-dir>_pairtner-data`; check `docker volume ls`.)
+- Copy `./backups` off the machine regularly.
+
 ## Docker
 
 ### Build and run

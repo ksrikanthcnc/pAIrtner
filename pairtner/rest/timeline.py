@@ -20,10 +20,11 @@ REL_RE = re.compile(r"^\d+_\d+$")
 WORKING_KINDS = ("working", "core")
 
 # Public filter names -> SQL branches they enable.
-TYPE_GROUPS = ("msg", "fact", "nudge", "summary", "archive", "setting")
+TYPE_GROUPS = ("msg", "fact", "nudge", "summary", "archive", "setting", "health")
 _ALIASES = {"message": "msg", "messages": "msg", "bot": "msg", "bot_reply": "msg",
             "facts": "fact", "nudges": "nudge", "summaries": "summary",
-            "archival": "archive", "archived": "archive", "settings": "setting"}
+            "archival": "archive", "archived": "archive", "settings": "setting",
+            "health_score": "health"}
 
 
 class BadRequest(ValueError):
@@ -138,6 +139,11 @@ def build_timeline(
             "c.config_key, c.config_value, NULL, NULL, NULL, NULL "
             "FROM relationship_config c WHERE c.relationship_id = ?", rid)
 
+    if "health" in types:
+        add("SELECT datetime(a.created_at), 'health', NULL, NULL, NULL, a.content, "
+            "NULL, NULL, NULL, a.id FROM analysis_results a "
+            "WHERE a.relationship_id = ? AND a.result_type = 'health_score'", rid)
+
     # The first SELECT of a UNION names the columns; pin them with an empty row set.
     names = ("SELECT NULL AS ts, NULL AS etype, NULL AS user_id, NULL AS name, NULL AS role, "
              "NULL AS text, NULL AS a, NULL AS b, NULL AS c, NULL AS d WHERE 0")
@@ -184,6 +190,15 @@ def build_timeline(
         elif t == "archival":
             ev.update(type="archival", kind=r["role"], text=text, status=r["a"],
                       user=r["name"])
+        elif t == "health":
+            try:
+                data = json.loads(r["text"])
+            except (TypeError, ValueError):
+                data = {}
+            dims = {k: v for k, v in data.items()
+                    if k not in ("total", "computed_at", "window_days")}
+            ev.update(type="health_score", total=data.get("total"), dimensions=dims,
+                      window_days=data.get("window_days"))
         else:
             ev.update(type="setting", key=r["role"], value=r["text"])
         events.append(ev)

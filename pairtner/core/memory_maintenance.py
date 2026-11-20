@@ -148,6 +148,14 @@ async def _run_v2_maintenance(db_path: str, llm: Any, user_id: int) -> None:
         except Exception:
             logger.warning("Couple summaries failed for rel %s", rid, exc_info=True)
 
+    # Weekly relationship health score (no LLM)
+    from pairtner.core.health_score import maybe_compute_weekly
+    for rid in rel_ids:
+        try:
+            await maybe_compute_weekly(db_path, rid)
+        except Exception:
+            logger.warning("Health score failed for rel %s", rid, exc_info=True)
+
     # Nudge cleanup (doesn't need LLM, always safe)
     await expire_stale_nudges(db_path, _ttl_config())
     max_active = _max_active_nudges()

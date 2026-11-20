@@ -11,7 +11,7 @@ CONFIG_SRC = (ROOT / "pairtner" / "config.py").read_text(encoding="utf-8")
 ENV_NAME = re.compile(r"`((?:REST|LOOPS|MEDIATE)_[A-Z_]+)`")
 ENV_DOCS = ("README.md", "DEPLOYMENT.md", "docs/REST_API.md", "settings.yaml")
 # Secrets are read at use time, outside Config.
-NOT_IN_CONFIG = {"REST_INVITE_CODE", "REST_ID_BASE"}
+NOT_IN_CONFIG = {"REST_INVITE_CODE", "REST_ID_BASE", "REST_BIND", "DASHBOARD_BIND"}
 
 
 def test_every_route_is_documented():
