@@ -353,27 +353,10 @@ class TagsMixin:
     async def _handle_plain(
         self, user_id: int, text: str
     ) -> list[BotResponse]:
-        """Plain message: answer a pending personality question, chat, then
-        optionally append the next personality question."""
-        from pairtner.features.personality import (
-            get_next_personality_question,
-            get_pending_question_id,
-            process_personality_answer,
-            should_ask_personality,
-        )
-        if await get_pending_question_id(self.db_path, user_id):
-            answered = await process_personality_answer(
-                self.db_path, user_id, text, self.llm,
-            )
-            if answered:
-                return [BotResponse(answered["confirmation"])]
-
+        """Plain message: chat normally. Personality preferences are inferred
+        from conversation by the LLM (no explicit questionnaire needed).
+        Users can set preferences anytime via natural language or /style."""
         responses = await self._handle_plain_core(user_id, text)
-
-        if responses and await should_ask_personality(self.db_path, user_id):
-            question = await get_next_personality_question(self.db_path, user_id)
-            if question:
-                responses[0].text += f"\n\nBy the way -- {question}"
         return responses
 
     async def _handle_plain_core(
