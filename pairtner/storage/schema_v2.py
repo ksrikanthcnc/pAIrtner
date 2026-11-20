@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS facts (
                     CHECK(kind IN ('working','core',
                                    'daily','triday','weekly','biweekly',
                                    'monthly','bimonthly','quarterly',
-                                   'semiannual','yearly')),
+                                   'semiannual','yearly',
+                                   'biennium','quinquennium','decade')),
     status          TEXT NOT NULL DEFAULT 'active',
     intensity       REAL DEFAULT 0.5,
     -- source tracking

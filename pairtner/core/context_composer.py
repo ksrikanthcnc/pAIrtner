@@ -49,6 +49,7 @@ def _assert_partner_safe(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 SUMMARY_KINDS: tuple[str, ...] = (
     "daily", "triday", "weekly", "biweekly", "monthly",
     "bimonthly", "quarterly", "semiannual", "yearly",
+    "biennium", "quinquennium", "decade",
 )
 _SUMMARY_RANK = {k: i for i, k in enumerate(SUMMARY_KINDS)}
 

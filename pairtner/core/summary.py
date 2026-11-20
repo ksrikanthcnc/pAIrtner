@@ -27,6 +27,7 @@ SUMMARY_INTERVALS: list[tuple[str, int]] = [
     ("daily", 1), ("triday", 3), ("weekly", 7), ("biweekly", 15),
     ("monthly", 30), ("bimonthly", 60), ("quarterly", 90),
     ("semiannual", 180), ("yearly", 365),
+    ("biennium", 730), ("quinquennium", 1825), ("decade", 3650),
 ]
 ACTIVE_INTERVALS: list[str] = ["daily", "weekly", "monthly", "quarterly", "yearly"]  # configurable
 
@@ -64,6 +65,12 @@ def period_id_for(period_type: str, d: date) -> str:
         return f"{d.year}-Q{(d.month - 1) // 3 + 1}"
     if period_type == "yearly":
         return f"{d.year}"
+    if period_type == "biennium":
+        return f"{d.year - d.year % 2}"  # 2024, 2026, 2028...
+    if period_type == "quinquennium":
+        return f"{d.year - d.year % 5}"  # 2020, 2025, 2030...
+    if period_type == "decade":
+        return f"{d.year - d.year % 10}s"  # 2020s, 2030s...
     if period_type in _DAYS:  # daily + rolling intervals: id = start date
         return d.isoformat()
     raise ValueError(f"unknown period_type {period_type!r}")
@@ -91,6 +98,15 @@ def period_window(period_type: str, period_id: str) -> tuple[date, date]:
         if period_type == "yearly":
             y = int(period_id)
             return date(y, 1, 1), date(y + 1, 1, 1)
+        if period_type == "biennium":
+            y = int(period_id)
+            return date(y, 1, 1), date(y + 2, 1, 1)
+        if period_type == "quinquennium":
+            y = int(period_id)
+            return date(y, 1, 1), date(y + 5, 1, 1)
+        if period_type == "decade":
+            y = int(period_id.rstrip("s"))
+            return date(y, 1, 1), date(y + 10, 1, 1)
         start = date.fromisoformat(period_id)
         return start, start + timedelta(days=_DAYS[period_type])
     except (TypeError, ValueError) as exc:
