@@ -159,6 +159,9 @@ class TelegramAdapter(BaseAdapter):
         app.add_handler(CommandHandler("conflicts", self._cmd_conflicts))
         app.add_handler(CommandHandler("timeline", self._cmd_timeline))
         app.add_handler(CommandHandler("usage", self._cmd_usage))
+        app.add_handler(CommandHandler("dryrun", self._cmd_dryrun))
+        app.add_handler(CommandHandler("debug", self._cmd_debug))
+        app.add_handler(CommandHandler("model", self._cmd_model))
         app.add_handler(CommandHandler("help", self._cmd_help))
         app.add_handler(CallbackQueryHandler(self._on_callback))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._on_message))
@@ -511,6 +514,33 @@ class TelegramAdapter(BaseAdapter):
             return
         arg = " ".join(ctx.args) if ctx.args else None
         responses = await self.service.handle_usage(user.id, arg)
+        for r in responses:
+            await self._send_response(ctx.bot, update.effective_chat.id, r)
+
+    async def _cmd_dryrun(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        user = update.effective_user
+        if not is_user_allowed(self.config, user.id):
+            return
+        arg = " ".join(ctx.args) if ctx.args else None
+        responses = await self.service.handle_dryrun(user.id, arg)
+        for r in responses:
+            await self._send_response(ctx.bot, update.effective_chat.id, r)
+
+    async def _cmd_debug(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        user = update.effective_user
+        if not is_user_allowed(self.config, user.id):
+            return
+        arg = " ".join(ctx.args) if ctx.args else None
+        responses = await self.service.handle_debug(user.id, arg)
+        for r in responses:
+            await self._send_response(ctx.bot, update.effective_chat.id, r)
+
+    async def _cmd_model(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        user = update.effective_user
+        if not is_user_allowed(self.config, user.id):
+            return
+        arg = " ".join(ctx.args) if ctx.args else None
+        responses = await self.service.handle_model(user.id, arg)
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 

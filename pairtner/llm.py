@@ -91,6 +91,25 @@ def parse_llm_response(raw: str) -> LLMResponse:
         }
 
 
+def _with_tool_calls(parsed: LLMResponse, tool_calls: list[dict[str, Any]] | None) -> LLMResponse:
+    if tool_calls:
+        parsed["tool_calls"] = tool_calls
+    return parsed
+
+
+def _to_gemini_tools(tools: list[dict[str, Any]]) -> list[Any]:
+    """Convert OpenAI-format tool definitions to a Gemini ``Tool`` list."""
+    decls = []
+    for t in tools:
+        fn = t.get("function", t)
+        decls.append(genai_types.FunctionDeclaration(
+            name=fn["name"],
+            description=fn.get("description", ""),
+            parameters_json_schema=fn.get("parameters"),
+        ))
+    return [genai_types.Tool(function_declarations=decls)]
+
+
 # ---------------------------------------------------------------------------
 # Protocol (for testing / mocking)
 # ---------------------------------------------------------------------------
@@ -105,6 +124,7 @@ class LLMClient(Protocol):
         system_prompt: str,
         model: str | None = None,
         api_key_override: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse: ...
 
 
@@ -153,6 +173,7 @@ class GeminiClient:
         system_prompt: str,
         model: str | None = None,
         api_key_override: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
         """Call Gemini and return parsed JSON response.
 
@@ -168,12 +189,12 @@ class GeminiClient:
 
         for candidate in models_to_try:
             try:
-                raw = await self._call(
+                raw, tcalls = await self._call_ex(
                     candidate, user_content, system_prompt,
-                    api_key_override=api_key_override,
+                    api_key_override=api_key_override, tools=tools,
                 )
                 await db_mod.increment_usage(self._db_path, candidate)
-                return parse_llm_response(raw)
+                return _with_tool_calls(parse_llm_response(raw), tcalls)
             except Exception as exc:
                 code = _get_error_code(exc)
                 if code == 429:
@@ -182,12 +203,12 @@ class GeminiClient:
                     await asyncio.sleep(delay)
                     # Retry once on the same model
                     try:
-                        raw = await self._call(
+                        raw, tcalls = await self._call_ex(
                             candidate, user_content, system_prompt,
-                            api_key_override=api_key_override,
+                            api_key_override=api_key_override, tools=tools,
                         )
                         await db_mod.increment_usage(self._db_path, candidate)
-                        return parse_llm_response(raw)
+                        return _with_tool_calls(parse_llm_response(raw), tcalls)
                     except Exception:
                         logger.warning("Retry on %s also failed, trying next", candidate)
                         continue
@@ -224,21 +245,55 @@ class GeminiClient:
         self, model: str, user_content: str, system_prompt: str,
         *, api_key_override: str | None = None,
     ) -> str:
+        raw, _ = await self._call_ex(
+            model, user_content, system_prompt, api_key_override=api_key_override,
+        )
+        return raw
+
+    async def _call_ex(
+        self, model: str, user_content: str, system_prompt: str,
+        *, api_key_override: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Call Gemini; return (text, tool_calls in OpenAI shape)."""
         client = self._client
         if api_key_override:
             client = genai.Client(api_key=api_key_override)
 
+        kwargs: dict[str, Any] = {}
+        if tools:
+            # Gemini rejects function calling combined with a JSON mime type.
+            kwargs["tools"] = _to_gemini_tools(tools)
+        else:
+            kwargs["response_mime_type"] = "application/json"
         config = genai_types.GenerateContentConfig(
             system_instruction=system_prompt,
             thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
-            response_mime_type="application/json",
+            **kwargs,
         )
         response = await client.aio.models.generate_content(
             model=model,
             contents=user_content,
             config=config,
         )
-        return response.text or ""
+        tool_calls: list[dict[str, Any]] = []
+        if tools:
+            for i, fc in enumerate(getattr(response, "function_calls", None) or []):
+                tool_calls.append({
+                    "id": getattr(fc, "id", None) or f"call_{i}",
+                    "type": "function",
+                    "function": {
+                        "name": fc.name,
+                        "arguments": json.dumps(dict(fc.args or {})),
+                    },
+                })
+        text = (response.text or "") if not tool_calls else ""
+        if tools and text.strip().startswith("```"):
+            text = text.strip().strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        return text, tool_calls
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +331,7 @@ class OpenAICompatClient:
         system_prompt: str,
         model: str | None = None,
         api_key_override: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
         """Generate a response using an OpenAI-compatible API.
 
@@ -293,12 +349,11 @@ class OpenAICompatClient:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_content},
                     ],
-                    response_format={"type": "json_object"},
-                    extra_body=self._extra_body,
+                    **self._extra_kwargs(tools),
                 )
-                raw = response.choices[0].message.content or ""
+                raw, tcalls = self._unpack(response)
                 await db_mod.increment_usage(self._db_path, candidate)
-                return parse_llm_response(raw)
+                return _with_tool_calls(parse_llm_response(raw), tcalls)
             except Exception as exc:
                 code = _get_error_code(exc)
                 if code == 429:
@@ -313,12 +368,11 @@ class OpenAICompatClient:
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": user_content},
                             ],
-                            response_format={"type": "json_object"},
-                            extra_body=self._extra_body,
+                            **self._extra_kwargs(tools),
                         )
-                        raw = response.choices[0].message.content or ""
+                        raw, tcalls = self._unpack(response)
                         await db_mod.increment_usage(self._db_path, candidate)
-                        return parse_llm_response(raw)
+                        return _with_tool_calls(parse_llm_response(raw), tcalls)
                     except Exception:
                         logger.warning("Retry on %s also failed, trying next", candidate)
                         continue
@@ -341,6 +395,30 @@ class OpenAICompatClient:
         return None
 
     # ----- private -----
+
+    def _extra_kwargs(self, tools: list[dict[str, Any]] | None) -> dict[str, Any]:
+        kw: dict[str, Any] = {"extra_body": self._extra_body}
+        if tools:
+            kw["tools"] = tools
+        else:
+            kw["response_format"] = {"type": "json_object"}
+        return kw
+
+    @staticmethod
+    def _unpack(response: Any) -> tuple[str, list[dict[str, Any]]]:
+        msg = response.choices[0].message
+        tcalls = [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {
+                    "name": tc.function.name,
+                    "arguments": tc.function.arguments or "{}",
+                },
+            }
+            for tc in (getattr(msg, "tool_calls", None) or [])
+        ]
+        return (msg.content or ""), tcalls
 
     def _build_model_list(self, requested: str) -> list[str]:
         if requested in self._model_heavy:
@@ -404,6 +482,7 @@ class TracingLLM:
         system_prompt: str,
         model: str | None = None,
         api_key_override: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
         traced = pack.last_trace.get()
         if traced is None:
@@ -435,9 +514,14 @@ class TracingLLM:
             )
         except (sqlite3.Error, aiosqlite.Error) as exc:
             logger.warning("could not record llm_call trace: %s", exc)
-        result = await self._inner.generate(
-            user_content, system_prompt, model, api_key_override,
-        )
+        if tools:
+            result = await self._inner.generate(
+                user_content, system_prompt, model, api_key_override, tools=tools,
+            )
+        else:
+            result = await self._inner.generate(
+                user_content, system_prompt, model, api_key_override,
+            )
         if self._on_call is not None:
             self._on_call({
                 **record, "system": system_prompt,

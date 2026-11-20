@@ -426,9 +426,14 @@ class TagsMixin:
         await db_mod.log_message(
             self.db_path, user_id, "user", text, relationship_id=rel_id,
         )
-        result = await self.llm.generate(
-            content, system, api_key_override=api_key,
-        )
+        if rel_id is not None:
+            result = await self._generate_with_tools(
+                user_id, content, system, api_key, rel_id,
+            )
+        else:
+            result = await self.llm.generate(
+                content, system, api_key_override=api_key,
+            )
         await db_mod.log_message(
             self.db_path, user_id, "assistant", result["reply"], relationship_id=rel_id,
         )
@@ -534,6 +539,65 @@ class TagsMixin:
         await self._maybe_run_analysis(user_id)
 
         return responses
+
+    MAX_TOOL_ROUNDS = 2
+
+    async def _generate_with_tools(
+        self, user_id: int, content: str, system: str,
+        api_key: str | None, rel_id: str | None,
+    ) -> dict:
+        """LLM call offering ``search_memory``; execute requested tools and
+        re-call (max ``MAX_TOOL_ROUNDS`` rounds). Falls back to a plain call
+        for clients whose ``generate`` does not accept ``tools``."""
+        import inspect
+        import json as _json
+
+        from pairtner.core.llm_tools import (
+            TOOL_DEFINITIONS, execute_search_memory, format_tool_results,
+        )
+
+        params = inspect.signature(self.llm.generate).parameters
+        supports_tools = "tools" in params or any(
+            p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+        )
+        if not supports_tools:
+            return await self.llm.generate(content, system, api_key_override=api_key)
+
+        rounds = 0
+        while True:
+            # After the round cap, withhold tools so the LLM must answer.
+            offer = TOOL_DEFINITIONS if rounds < self.MAX_TOOL_ROUNDS else None
+            kwargs = {"tools": offer} if offer else {}
+            result = await self.llm.generate(
+                content, system, api_key_override=api_key, **kwargs,
+            )
+            calls = result.get("tool_calls") if offer else None
+            if not calls:
+                return result
+            rounds += 1
+            parts: list[str] = []
+            for call in calls:
+                fn = call.get("function", call)
+                if fn.get("name") != "search_memory":
+                    continue
+                args = fn.get("arguments") or {}
+                if isinstance(args, str):
+                    try:
+                        args = _json.loads(args)
+                    except _json.JSONDecodeError:
+                        args = {}
+                found = await execute_search_memory(
+                    self.db_path, user_id, str(args.get("query", "")), rel_id,
+                )
+                parts.append(
+                    f"[search_memory results for {args.get('query', '')!r}]\n"
+                    + format_tool_results(found)
+                )
+            if not parts:
+                return result
+            content = content + "\n\n" + "\n\n".join(parts) + (
+                "\n\nUse these memory results to answer the user's message."
+            )
 
     async def _acknowledge_relays(self, user_id: int) -> None:
         """Mark any unacknowledged relays sent TO this user as acknowledged."""

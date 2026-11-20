@@ -43,8 +43,10 @@ class MockLLMClient:
         system_prompt: str,
         model: str | None = None,
         api_key_override: str | None = None,
+        tools: list | None = None,
     ) -> LLMResponse:
         self.calls.append({
+            "tools": tools,
             "user_content": user_content,
             "system_prompt": system_prompt,
             "model": model,
