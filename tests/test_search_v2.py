@@ -153,22 +153,15 @@ async def test_search_relationship_scoped(db_path, service):
     assert f"#{mine}" in text and f"#{shared}" in text and f"#{secret}" not in text
 
 
-async def test_composer_uses_two_pass_above_threshold(db_path):
-    ids = [await add(db_path, ALICE, f"dinner note {i}") for i in range(5)]
-    llm = MockLLMClient([{"reply": f"[{ids[4]}]"}])
-    ctx = await ContextComposer(db_path, llm=llm, two_pass_threshold=3).build_context(
-        ALICE, REL, "dinner")
-    assert llm.calls
-    # Below threshold: no LLM call.
-    llm2 = MockLLMClient()
-    await ContextComposer(db_path, llm=llm2, two_pass_threshold=100).build_context(
-        ALICE, REL, "dinner")
-    assert not llm2.calls
-    # LLM failure: still returns FTS matches.
-    ctx3 = await ContextComposer(db_path, llm=FailingLLM(), two_pass_threshold=3
-                                 ).build_context(ALICE, REL, "dinner")
-    assert ctx3.working_facts or ctx3.fts_matches
-    assert isinstance(ctx.fts_matches, list)
+async def test_composer_no_longer_uses_fts_or_two_pass(db_path):
+    """FTS5 and two-pass were removed from the context composer hot path.
+    The composer only returns core + working + partner + nudges + summaries."""
+    for i in range(5):
+        await add(db_path, ALICE, f"dinner note {i}")
+    ctx = await ContextComposer(db_path).build_context(ALICE, REL, "dinner")
+    assert ctx.working_facts
+    assert isinstance(ctx.working_facts, list)
+    assert not hasattr(ctx, "fts_matches")
 
 
 async def _rest(db_path, monkeypatch, admin=False):

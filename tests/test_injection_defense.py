@@ -85,7 +85,7 @@ async def status_of(path, fid) -> str:
 
 def render_prompt(ctx) -> str:
     """Everything the LLM would see for this user, as one string."""
-    parts = (ctx.core_facts + ctx.working_facts + ctx.fts_matches + ctx.partner_facts
+    parts = (ctx.core_facts + ctx.working_facts + ctx.partner_facts
              + ctx.nudge_suggestions + ctx.summaries + ctx.proactive
              + [m[1] for m in ctx.recent_messages])
     return "\n".join(parts).lower()

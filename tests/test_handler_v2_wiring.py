@@ -148,13 +148,13 @@ async def test_memory_ops_v2_set_visibility_and_nudge(v2_db):
 
 async def test_build_chat_prompt_v2_sections():
     c = ComposedContext(
-        core_facts=["Core A"], working_facts=["Work B"], fts_matches=["Match C"],
+        core_facts=["Core A"], working_facts=["Work B"],
         partner_facts=["Partner D"], nudge_suggestions=["Nudge E"],
         summaries=["(daily) Sum F"], proactive=["Upcoming (today): G"],
         recent_messages=[("user", "earlier msg", "")],
     )
     system, content = build_chat_prompt_v2(c, "current text")
     assert system
-    for s in ("Core A", "Work B", "Match C", "Partner D", "Nudge E",
+    for s in ("Core A", "Work B", "Partner D", "Nudge E",
               "Sum F", "Upcoming (today): G", "earlier msg", "current text"):
         assert s in content

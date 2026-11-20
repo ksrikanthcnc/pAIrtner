@@ -434,7 +434,6 @@ def build_chat_prompt_v2(
     parts: list[str] = []
     parts.append(_format_facts(p.s("label_private_notes"), composed.core_facts))
     parts.append(_format_facts(p.s("label_private_notes"), composed.working_facts))
-    parts.append(_format_facts("Related notes", composed.fts_matches))
     parts.append(_format_facts(p.s("label_shared_notes"), composed.partner_facts))
     parts.append(_format_facts("Gentle guidance to weave in if natural", composed.nudge_suggestions))
     parts.append(_format_facts(p.s("label_period"), composed.summaries))

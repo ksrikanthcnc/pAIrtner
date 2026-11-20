@@ -139,7 +139,7 @@ def render_context(ctx: ComposedContext) -> str:
         return f"{title}:\n" + ("\n".join(f"- {i}" for i in items) if items else "- (none)")
     return "\n\n".join([
         sec("About Bob (core)", ctx.core_facts),
-        sec("About Bob (current)", ctx.working_facts + ctx.fts_matches),
+        sec("About Bob (current)", ctx.working_facts),
         sec("About Alice (shareable by design)", ctx.partner_facts),
         sec("Gentle suggestions for Bob", ctx.nudge_suggestions),
     ])

@@ -66,7 +66,7 @@ def _sql(db_path: str, sql: str, params: tuple = ()) -> list[dict]:
 
 def _flat(ctx: ComposedContext) -> str:
     return "\n".join(
-        ctx.core_facts + ctx.working_facts + ctx.fts_matches + ctx.partner_facts
+        ctx.core_facts + ctx.working_facts + ctx.partner_facts
         + ctx.nudge_suggestions + ctx.summaries + ctx.proactive
         + [m[1] for m in ctx.recent_messages]
     )

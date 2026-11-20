@@ -50,7 +50,7 @@ async def add(path, owner, text, visibility="nudge_eligible", kind="working", **
 
 
 def flat(ctx) -> str:
-    parts = (ctx.core_facts + ctx.working_facts + ctx.fts_matches + ctx.partner_facts
+    parts = (ctx.core_facts + ctx.working_facts + ctx.partner_facts
              + ctx.nudge_suggestions + ctx.summaries + ctx.proactive
              + [m[1] for m in ctx.recent_messages])
     return "\n".join(parts)
@@ -119,15 +119,13 @@ async def test_word_budget_respected(db_path):
     assert len(ctx.recent_messages) <= 20
 
 
-async def test_fts_matches_included(db_path):
-    for i in range(WORKING := 40):
-        await add(db_path, ALICE, f"generic filler fact {i}", intensity=0.9)
-    await add(db_path, ALICE, "Alice is allergic to pistachio", intensity=0.0,
-              status="resolved", created_at="2000-01-01T00:00:00")
+async def test_fts_removed_from_hot_path(db_path):
+    """FTS5 is no longer in the context composer hot path (moved to search_memory tool).
+    Verify that the composed context has no fts_matches attribute."""
+    await add(db_path, ALICE, "Alice is allergic to pistachio", intensity=0.5)
     ctx = await ContextComposer(db_path).build_context(
         ALICE, REL, "what about pistachio ice cream?")
-    assert "Alice is allergic to pistachio" in ctx.fts_matches
-    assert "Alice is allergic to pistachio" not in ctx.working_facts
+    assert not hasattr(ctx, "fts_matches")
 
 
 def test_guard_rejects_private_row():
