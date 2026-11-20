@@ -52,6 +52,7 @@ class DispatchMixin:
             # Testing
             "dryrun": lambda: self.handle_dryrun(uid, arg),
             "debug": lambda: self.handle_debug(uid, arg),
+            "model": lambda: self.handle_model(uid, arg),
             # Relay control
             "pause": lambda: self.handle_pause(uid),
             "resume": lambda: self.handle_resume(uid),

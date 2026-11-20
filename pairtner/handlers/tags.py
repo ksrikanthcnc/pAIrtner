@@ -583,8 +583,35 @@ class TagsMixin:
 
     # ── /dryrun and /debug ──────────────────────────────────────────────
 
+    @staticmethod
+    def _parse_message_flags(text: str) -> tuple[set[str], str | None, str]:
+        """Parse leading /flags and /model from a message.
+
+        Returns (flags, model_override, clean_message).
+        Supports: /dryrun, /debug, /model <name>
+        Example: '/debug /model gemma3:4b how are we doing?'
+          -> ({'debug'}, 'gemma3:4b', 'how are we doing?')
+        """
+        flags: set[str] = set()
+        model: str | None = None
+        words = text.split()
+        i = 0
+        while i < len(words):
+            w = words[i]
+            if w in ("/dryrun", "/debug"):
+                flags.add(w[1:])  # strip the /
+                i += 1
+            elif w == "/model" and i + 1 < len(words):
+                model = words[i + 1]
+                i += 2
+            else:
+                break
+        message = " ".join(words[i:])
+        return flags, model, message
+
     async def _run_dryrun(
         self, user_id: int, text: str, show_debug: bool = False,
+        model_override: str | None = None,
     ) -> list[BotResponse]:
         """Run the full pipeline without any DB writes.
 
@@ -616,17 +643,21 @@ class TagsMixin:
 
         # Call LLM (the only external cost -- one LLM call)
         api_key = await self._get_couple_api_key(user_id)
-        result = await self.llm.generate(content, system, api_key_override=api_key)
+        result = await self.llm.generate(
+            content, system, model=model_override, api_key_override=api_key,
+        )
 
         # --- NO DB WRITES from here ---
         reply = result.get("reply", "")
 
         if not show_debug:
             # /dryrun: just the reply, marked as dry run
-            return [BotResponse(f"🧪 *Dry run* (nothing saved)\n\n{reply}")]
+            model_note = f" via `{model_override}`" if model_override else ""
+            return [BotResponse(f"🧪 *Dry run{model_note}* (nothing saved)\n\n{reply}")]
 
         # /debug: full diagnostic output
-        parts = [f"🔬 *Debug mode* (nothing saved)\n\n**Bot reply:**\n{reply}"]
+        model_note = f" via `{model_override}`" if model_override else ""
+        parts = [f"🔬 *Debug mode{model_note}* (nothing saved)\n\n**Bot reply:**\n{reply}"]
 
         # Parse memory ops (but don't apply them)
         memory_ops_raw = result.get("memory_ops", [])
@@ -679,9 +710,63 @@ class TagsMixin:
         return [BotResponse("\n\n".join(parts))]
 
     async def handle_dryrun(self, user_id: int, text: str | None) -> list[BotResponse]:
-        """Handle /dryrun — full pipeline, no DB writes."""
-        return await self._run_dryrun(user_id, text or "", show_debug=False)
+        """Handle /dryrun — full pipeline, no DB writes. Supports combined flags."""
+        flags, model, message = self._parse_message_flags(text or "")
+        flags.add("dryrun")
+        return await self._run_dryrun(
+            user_id, message,
+            show_debug="debug" in flags,
+            model_override=model,
+        )
 
     async def handle_debug(self, user_id: int, text: str | None) -> list[BotResponse]:
-        """Handle /debug — full pipeline, no DB writes, show internals."""
-        return await self._run_dryrun(user_id, text or "", show_debug=True)
+        """Handle /debug — full pipeline, no DB writes, show internals. Supports combined flags."""
+        flags, model, message = self._parse_message_flags(text or "")
+        flags.add("debug")
+        return await self._run_dryrun(
+            user_id, message,
+            show_debug=True,
+            model_override=model,
+        )
+
+    async def handle_model(self, user_id: int, text: str | None) -> list[BotResponse]:
+        """Handle /model <name> <message> — use a specific model for one message.
+
+        This is a live message (DB writes happen), just with a different model.
+        Combines with /dryrun and /debug if present in the remaining text.
+        """
+        if not text or not text.strip():
+            return [BotResponse("Usage: /model <model_name> <message>\n"
+                                "Example: /model gemma3:4b How are we doing?")]
+        parts = text.strip().split(maxsplit=1)
+        model_name = parts[0]
+        message = parts[1] if len(parts) > 1 else ""
+        if not message:
+            return [BotResponse(f"Usage: /model {model_name} <message>")]
+
+        # Check for /dryrun or /debug in the remaining message
+        flags, nested_model, clean = self._parse_message_flags(message)
+        if "dryrun" in flags or "debug" in flags:
+            return await self._run_dryrun(
+                user_id, clean,
+                show_debug="debug" in flags,
+                model_override=nested_model or model_name,
+            )
+
+        # Live message with model override -- use the normal handler but swap model
+        # Store original model, swap, call, restore
+        original_generate = self.llm.generate
+
+        async def _override_generate(content, system, model=None, **kw):
+            return await original_generate(content, system, model=model_name, **kw)
+
+        self.llm.generate = _override_generate  # type: ignore[method-assign]
+        try:
+            responses = await self._handle_plain(user_id, clean or message)
+        finally:
+            self.llm.generate = original_generate  # type: ignore[method-assign]
+
+        # Prepend model indicator
+        if responses:
+            responses[0].text = f"🔄 *Using {model_name}*\n\n" + responses[0].text
+        return responses
