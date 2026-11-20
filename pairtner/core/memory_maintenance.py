@@ -101,7 +101,7 @@ def _max_active_nudges() -> int:
 
 
 async def _run_v2_maintenance(db_path: str, llm: Any, user_id: int) -> None:
-    """v2 maintenance: periodic + couple summaries, nudge cleanup."""
+    """v2 maintenance: periodic + couple summaries, nudge cleanup, orphan rescue."""
     import aiosqlite
 
     from pairtner.core.summary import (
@@ -120,34 +120,66 @@ async def _run_v2_maintenance(db_path: str, llm: Any, user_id: int) -> None:
     rel_ids = [r["id"] for r in rels]
 
     for rid in rel_ids:
-        created = await run_periodic_summaries(db_path, llm, user_id, rid)
-        if created:
-            logger.info("v2 summaries: user %s rel %s created %s", user_id, rid, created)
+        try:
+            created = await run_periodic_summaries(db_path, llm, user_id, rid)
+            if created:
+                logger.info("v2 summaries: user %s rel %s created %s", user_id, rid, created)
+        except Exception:
+            # LLM failure (quota, rate limit, network) -- facts stay as working.
+            # They'll be picked up on the next maintenance cycle. Never lost.
+            logger.warning(
+                "v2 summaries failed for user %s rel %s -- will retry next cycle",
+                user_id, rid, exc_info=True,
+            )
 
         # Couple summaries where both partners have a summary for the same period
-        marks = ",".join("?" for _ in ACTIVE_INTERVALS)
-        pairs = await _fetch_all(
-            db_path,
-            f"SELECT kind, json_extract(metadata,'$.period') AS period FROM facts "
-            f"WHERE relationship_id = ? AND kind IN ({marks}) AND owner_id IS NOT NULL "
-            f"AND archived_at IS NULL AND json_extract(metadata,'$.period') IS NOT NULL "
-            f"GROUP BY kind, period HAVING COUNT(DISTINCT owner_id) >= 2",
-            (rid, *ACTIVE_INTERVALS),
-        )
-        for p in pairs:
-            await create_couple_summary(db_path, llm, rid, p["kind"], p["period"])
+        try:
+            marks = ",".join("?" for _ in ACTIVE_INTERVALS)
+            pairs = await _fetch_all(
+                db_path,
+                f"SELECT kind, json_extract(metadata,'$.period') AS period FROM facts "
+                f"WHERE relationship_id = ? AND kind IN ({marks}) AND owner_id IS NOT NULL "
+                f"AND archived_at IS NULL AND json_extract(metadata,'$.period') IS NOT NULL "
+                f"GROUP BY kind, period HAVING COUNT(DISTINCT owner_id) >= 2",
+                (rid, *ACTIVE_INTERVALS),
+            )
+            for p in pairs:
+                await create_couple_summary(db_path, llm, rid, p["kind"], p["period"])
+        except Exception:
+            logger.warning("Couple summaries failed for rel %s", rid, exc_info=True)
 
+    # Nudge cleanup (doesn't need LLM, always safe)
     await expire_stale_nudges(db_path, _ttl_config())
     max_active = _max_active_nudges()
     for rid in rel_ids:
         await enforce_max_active(db_path, rid, max_active)
 
+    # Check for orphaned working facts older than 30 days (safety net).
+    # These should have been summarized but weren't (e.g. repeated LLM failures).
+    orphan_count = 0
     async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            "SELECT COUNT(*) FROM facts WHERE owner_id = ? AND kind = 'working' "
+            "AND archived_at IS NULL AND status = 'active' "
+            "AND created_at < datetime('now', '-30 days')",
+            (user_id,),
+        ) as cur:
+            orphan_count = (await cur.fetchone())[0]
         await db.execute(
             "INSERT OR REPLACE INTO user_meta (user_id, key, value, updated_at) "
             "VALUES (?, 'last_v2_maintenance', ?, CURRENT_TIMESTAMP)",
             (user_id, _now_iso()),
         )
+        if orphan_count > 0:
+            await db.execute(
+                "INSERT OR REPLACE INTO user_meta (user_id, key, value, updated_at) "
+                "VALUES (?, 'orphan_facts_count', ?, CURRENT_TIMESTAMP)",
+                (user_id, str(orphan_count)),
+            )
+            logger.warning(
+                "user %s has %d working facts older than 30 days (unsummarized orphans)",
+                user_id, orphan_count,
+            )
         await db.commit()
 
 
