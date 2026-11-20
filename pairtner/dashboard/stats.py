@@ -6,6 +6,7 @@ are ``None`` and only counts / metadata remain.
 """
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -358,3 +359,109 @@ def couple_conversation(
         (user_a, user_b, limit),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Overview / couple-detail extras (tolerate DBs without the v2 tables)
+# ---------------------------------------------------------------------------
+
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone() is not None
+
+
+def _parse_health(content: Any) -> dict[str, Any] | None:
+    try:
+        data = json.loads(content)
+    except (TypeError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def latest_health(conn: sqlite3.Connection, couple_id: str) -> dict[str, Any] | None:
+    """Latest health score (``total`` + dimension ints) for ``a:b``, or None."""
+    if not _has_table(conn, "analysis_results"):
+        return None
+    a, b = parse_couple_id(couple_id)
+    row = conn.execute(
+        "SELECT content FROM analysis_results WHERE relationship_id=? "
+        "AND result_type='health_score' ORDER BY datetime(created_at) DESC, id DESC LIMIT 1",
+        (f"{a}_{b}",),
+    ).fetchone()
+    return _parse_health(row[0]) if row else None
+
+
+def health_summary(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Average of each relationship's latest total score."""
+    if not _has_table(conn, "analysis_results"):
+        return {"scored": 0, "average": None}
+    totals = []
+    for r in conn.execute(
+        "SELECT content FROM analysis_results WHERE id IN ("
+        "SELECT MAX(id) FROM analysis_results WHERE result_type='health_score' "
+        "GROUP BY relationship_id)"
+    ):
+        d = _parse_health(r[0])
+        if d and isinstance(d.get("total"), (int, float)) and not isinstance(d["total"], bool):
+            totals.append(d["total"])
+    return {"scored": len(totals),
+            "average": round(sum(totals) / len(totals)) if totals else None}
+
+
+def recent_activity(
+    conn: sqlite3.Connection, show_raw: bool, limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Newest events across all couples: messages, relays, timeline, conflicts."""
+    ev: list[dict] = []
+    for r in conn.execute(
+        "SELECT user_id, role, length(content) AS n, content, datetime(created_at) AS at "
+        "FROM messages ORDER BY id DESC LIMIT ?", (limit,)
+    ):
+        ev.append(_event(r["at"], "message",
+                         f"{r['role']} message, user {r['user_id']} ({r['n']} chars)",
+                         r["content"], show_raw))
+    for r in conn.execute(
+        "SELECT id, sender_id, receiver_id, status, COALESCE(edited_draft, draft) AS draft, "
+        "datetime(created_at) AS at FROM pending ORDER BY id DESC LIMIT ?", (limit,)
+    ):
+        ev.append(_event(r["at"], "relay",
+                         f"relay #{r['id']} {r['sender_id']} -> {r['receiver_id']} "
+                         f"({r['status']})", r["draft"], show_raw))
+    for r in conn.execute(
+        "SELECT couple_id, event_type, summary, datetime(created_at) AS at "
+        "FROM timeline_events ORDER BY id DESC LIMIT ?", (limit,)
+    ):
+        ev.append(_event(r["at"], "timeline", f"{r['event_type']} ({r['couple_id']})",
+                         r["summary"], show_raw))
+    for r in conn.execute(
+        "SELECT id, couple_id, theme, datetime(opened_at) AS at FROM conflicts "
+        "ORDER BY id DESC LIMIT ?", (limit,)
+    ):
+        ev.append(_event(r["at"], "conflict", f"conflict #{r['id']} opened ({r['couple_id']})",
+                         r["theme"], show_raw))
+    ev.sort(key=lambda e: e["at"], reverse=True)
+    return ev[:limit]
+
+
+def couple_quick_stats(conn: sqlite3.Connection, couple_id: str) -> dict[str, Any]:
+    a, b = parse_couple_id(couple_id)
+    ids = (a, b)
+    out: dict[str, Any] = {
+        "messages_week": _scalar(
+            conn,
+            "SELECT COUNT(*) FROM messages WHERE user_id IN (?, ?) "
+            "AND datetime(created_at) >= datetime('now', '-7 days')", ids),
+        "active_facts": _scalar(
+            conn,
+            "SELECT COUNT(*) FROM facts WHERE owner_id IN (?, ?) AND archived_at IS NULL",
+            ids),
+        "pending_nudges": None,
+    }
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(facts)")}
+    if "nudge_status" in cols:
+        out["pending_nudges"] = _scalar(
+            conn,
+            "SELECT COUNT(*) FROM facts WHERE owner_id IN (?, ?) "
+            "AND nudge_target_id IS NOT NULL AND nudge_status='pending'", ids)
+    return out

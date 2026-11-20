@@ -19,7 +19,11 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 import json
 
-from pairtner.dashboard import admin_actions, explorer, stats, store, timeline_page
+from pathlib import Path
+
+from pairtner.dashboard import (
+    admin_actions, explorer, overview_page, stats, store, timeline_page,
+)
 from pairtner.dashboard.config import DashboardConfig
 from pairtner.dashboard.render import (
     SECURITY_HEADERS, Html, cards, esc, layout, link, svg_bars, table,
@@ -38,6 +42,13 @@ _USER_RE = re.compile(r"^/users/(\d+)$")
 _COUPLE_RE = re.compile(r"^/couples/(\d+:\d+)$")
 _CLEAR_USER_RE = re.compile(r"^/admin/clear-user/(\d+)$")
 _TIMELINE_PAGE_RE = re.compile(r"^/timeline/(\d+_\d+)$")
+STATIC_DIR = Path(__file__).parent / "static"
+_STATIC_TYPES = {
+    "manifest.json": "application/manifest+json",
+    "sw.js": "application/javascript; charset=utf-8",
+    "pwa.js": "application/javascript; charset=utf-8",
+    "icon-192.png": "image/png",
+}
 _TIMELINE_API_RE = re.compile(r"^/api/admin/timeline/([^/]+)$")
 
 
@@ -91,6 +102,9 @@ class DashboardApp:
         if path == "/login":
             return self._login(method, body, client_ip)
 
+        if path.startswith("/static/") and method == "GET":
+            return self._static(path[len("/static/"):])
+
         session_id = self._authenticate(headers, client_ip)
         if session_id is None:
             if self.auth.is_locked(client_ip):
@@ -107,6 +121,15 @@ class DashboardApp:
                 return self._error(413, "Request body too large")
             return self._post(path, form, ctx)
         return self._get(path, query, ctx)
+
+    @staticmethod
+    def _static(name: str) -> Response:
+        """Public PWA assets (fixed allowlist; no secrets, no path traversal)."""
+        ctype = _STATIC_TYPES.get(name)
+        if ctype is None:
+            raise NotFound(f"/static/{name}")
+        headers = [("Service-Worker-Allowed", "/")] if name == "sw.js" else []
+        return Response(200, (STATIC_DIR / name).read_bytes(), ctype, headers)
 
     # ------------------------------------------------------------------
     # auth
@@ -247,15 +270,16 @@ class DashboardApp:
         raise NotFound(path)
 
     def _overview(self, ctx: "_Ctx") -> Response:
+        raw = self.config.show_raw_text
         with self._ro() as c:
             o = stats.overview(c)
+            health = stats.health_summary(c)
+            events = stats.recent_activity(c, raw, 10)
         def kv(d: dict) -> str:
             return ", ".join(f"{k}: {v}" for k, v in sorted(d.items())) or "none"
-        body = cards([
-            ("users", o["users"]), ("couples", o["couples"]),
-            ("messages total", o["messages_total"]), ("messages 24h", o["messages_24h"]),
-            ("messages 7d", o["messages_7d"]), ("facts", o["facts_total"]),
-            ("active facts", o["facts_active"]), ("LLM calls today", o["usage_today"]),
+        body = overview_page.render_overview(o, health, events) + cards([
+            ("users", o["users"]), ("messages 7d", o["messages_7d"]),
+            ("LLM calls today", o["usage_today"]),
         ]) + table(["queue / state", "counts"], [
             ["relays by status", kv(o["pending_by_status"])],
             ["batches by status", kv(o["batches_by_status"])],
@@ -333,13 +357,16 @@ class DashboardApp:
         return self._page(ctx, "Couples", body, "/couples")
 
     def _couple(self, ctx: "_Ctx", couple_id: str) -> Response:
+        raw = self.config.show_raw_text
         a, b = stats.parse_couple_id(couple_id)
         with self._ro() as c:
-            events = stats.couple_timeline(c, couple_id, self.config.show_raw_text)
-        body = (f"<p>Members: {link(f'/users/{a}', a)}, {link(f'/users/{b}', b)}"
-                f" · {link(f'/conversations/{couple_id}', '💬 View Conversation')}"
-                f" · {link(f'/timeline/{a}_{b}', '🕒 Timeline')}</p>"
-                "<h2>Timeline</h2>" + self._timeline_table(events))
+            events = stats.couple_timeline(c, couple_id, raw)
+            partners = {r["tg_id"]: r for r in stats.user_activity(c, raw)
+                        if r["tg_id"] in (a, b)}
+            health = stats.latest_health(c, couple_id)
+            quick = stats.couple_quick_stats(c, couple_id)
+        body = overview_page.render_couple(
+            couple_id, a, b, partners, health, quick, self._timeline_table(events))
         return self._page(ctx, f"Couple {couple_id}", body, "/couples")
 
     def _conversation(self, ctx: "_Ctx", couple_id: str) -> Response:

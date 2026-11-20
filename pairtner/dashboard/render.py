@@ -4,41 +4,23 @@ from __future__ import annotations
 import html
 from typing import Any, Iterable, Sequence
 
+from pairtner.dashboard.styles import CSS
+
 SECURITY_HEADERS = {
     "Cache-Control": "no-store",
     "X-Frame-Options": "DENY",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Content-Security-Policy": (
-        "default-src 'none'; style-src 'unsafe-inline'; "
-        "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; "
+        "connect-src 'self'; img-src 'self' data:; manifest-src 'self'; "
+        "worker-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
     ),
 }
 
 MAX_CELL_CHARS = 400
 
-_CSS = """
-body{font:14px/1.45 system-ui,sans-serif;margin:0;background:#f6f7f9;color:#1c1f24}
-header{background:#1c1f24;padding:8px 16px}
-header a{color:#cfd6e0;margin-right:14px;text-decoration:none}
-header a.on{color:#fff;font-weight:600}
-header form{display:inline;float:right}
-main{padding:16px;max-width:1200px;margin:auto}
-h1{font-size:20px} h2{font-size:16px;margin-top:24px}
-.cards{display:flex;flex-wrap:wrap;gap:10px}
-.card{background:#fff;border:1px solid #dde1e7;border-radius:6px;padding:10px 14px;min-width:130px}
-.card b{display:block;font-size:22px}
-table{border-collapse:collapse;background:#fff;width:100%;margin:8px 0}
-th,td{border:1px solid #dde1e7;padding:4px 8px;text-align:left;vertical-align:top;font-size:13px;word-break:break-word}
-th{background:#eef0f4}
-pre{background:#fff;border:1px solid #dde1e7;padding:8px;overflow:auto}
-.warn{background:#fff3cd;border:1px solid #e6cf7a;padding:8px;border-radius:6px}
-.err{background:#fde2e2;border:1px solid #e39a9a;padding:8px;border-radius:6px}
-.ok{background:#e2f5e2;border:1px solid #8fcf8f;padding:8px;border-radius:6px}
-input[type=text],input[type=password]{padding:4px;width:22em}
-button{padding:4px 10px}
-.muted{color:#6b7280}
-"""
+_CSS = CSS
 
 NAV = [
     ("/", "Overview"), ("/usage", "Usage"), ("/users", "Users"),
@@ -63,6 +45,7 @@ def layout(
     title: str, body: str, active: str = "", csrf: str | None = None,
     show_nav: bool = True,
 ) -> str:
+    """Shared page wrapper: PWA tags, viewport, responsive nav (CSS-only hamburger)."""
     nav = ""
     if show_nav:
         links = "".join(
@@ -74,12 +57,21 @@ def layout(
             f'name="csrf" value="{esc(csrf)}"><button>Log out</button></form>'
             if csrf else ""
         )
-        nav = f"<header>{links}{logout}</header>"
+        nav = (
+            '<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="Menu">'
+            '<header class="topbar"><label for="nav-toggle" class="burger" '
+            'aria-label="Toggle menu">☰</label><span class="brand">pAIrtner</span></header>'
+            f'<nav class="side">{links}{logout}</nav>'
+        )
     return (
-        "<!doctype html><html><head><meta charset=utf-8>"
-        f"<meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<!doctype html><html lang=en><head><meta charset=utf-8>"
+        "<meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<meta name=theme-color content='#e94560'>"
+        '<link rel="manifest" href="/static/manifest.json" crossorigin="use-credentials">'
+        '<link rel="icon" href="/static/icon-192.png">'
         f"<title>{esc(title)} · pAIrtner admin</title><style>{_CSS}</style></head>"
-        f"<body>{nav}<main><h1>{esc(title)}</h1>{body}</main></body></html>"
+        f'<body><div class="shell">{nav}<main><h1>{esc(title)}</h1>{body}</main></div>'
+        '<script src="/static/pwa.js" defer></script></body></html>'
     )
 
 
@@ -99,11 +91,11 @@ def table(columns: Sequence[str], rows: Iterable[Sequence[Any]]) -> str:
         out.append("<tr>" + "".join(cells) + "</tr>")
     if not out:
         out.append(f"<tr><td colspan={max(1, len(columns))} class=muted>no rows</td></tr>")
-    return f"<table><tr>{head}</tr>{''.join(out)}</table>"
+    return f'<div class="tscroll"><table><tr>{head}</tr>{"".join(out)}</table></div>'
 
 
 def cards(items: Iterable[tuple[str, Any]]) -> str:
-    return '<div class="cards">' + "".join(
+    return '<div class="cards wide">' + "".join(
         f'<div class="card"><b>{esc(v)}</b>{esc(k)}</div>' for k, v in items
     ) + "</div>"
 

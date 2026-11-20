@@ -68,7 +68,9 @@ details summary{cursor:pointer}
 """ + "".join(
     f'.tl:has(#f-{g}:not(:checked)) .g-{g}{{display:none}}\n' for g, _ in FILTERS
 ) + """
-@media (max-width:600px){.ev .box{max-width:94%}.ev-fact .box,.ev-nudge .box,.ev-summary .box,
+@media (max-width:1023px){.tl-bar{top:44px}}
+@media (max-width:600px){.tl{font-size:13px}.ev .tx{font-size:13px}.ev .hd{font-size:10px}.tl-bar label{padding:3px 9px;font-size:12px}
+.ev .box{max-width:94%}.ev-fact .box,.ev-nudge .box,.ev-summary .box,
 .ev-archive .box,.ev-setting .box{width:98%;max-width:98%}.ev .hd time{margin-left:0}}
 @media (prefers-color-scheme:dark){.tl-bar{background:#14161aee}}
 </style>
