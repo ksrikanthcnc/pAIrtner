@@ -179,9 +179,21 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
             ) as cur:
                 if await cur.fetchone() is None:
                     return None  # no v2 relationship row yet: stay on v1
+        context_tokens: int | None = None
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT value FROM user_meta WHERE user_id = ? "
+                "AND key = 'model_context_length'", (user_id,),
+            ) as cur:
+                meta = await cur.fetchone()
+        if meta and meta[0]:
+            try:
+                context_tokens = int(meta[0])
+            except (TypeError, ValueError):
+                logger.warning("invalid model_context_length: %r", meta[0])
         try:
             composed = await ContextComposer(
-                self.db_path,
+                self.db_path, context_tokens=context_tokens,
             ).build_context(
                 user_id, relationship_id, text,
             )

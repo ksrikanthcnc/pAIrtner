@@ -80,11 +80,12 @@ def test_interleaved_sorted_and_scoped(srv):
     ts = [e["ts"] for e in ev]
     assert ts == sorted(ts)
     types = [e["type"] for e in ev]
-    assert types == ["fact", "message", "fact", "bot_reply", "fact", "nudge",
+    assert types == ["fact", "message", "fact", "bot_reply", "nudge",
                      "setting", "archival", "summary"]
     assert ev[1] == {"ts": "2026-11-15T09:30:00", "type": "message", "user": "Alice",
                      "role": "user", "content": "hi bot"}
     fact = ev[2]
+    assert [e["text"] for e in ev if e["type"] == "fact"].count("felt ignored") == 0
     assert (fact["visibility"], fact["intensity"]) == ("private", 0.8)
     nudge = next(e for e in ev if e["type"] == "nudge")
     assert (nudge["nudge_type"], nudge["status"], nudge["suggestion"]) == (
@@ -94,6 +95,23 @@ def test_interleaved_sorted_and_scoped(srv):
     blob = json.dumps(ev)
     assert "other couple" not in blob and "foreign fact" not in blob
     assert {"setting", "archival"} <= set(types)
+
+
+def test_nudge_fact_not_duplicated(srv):
+    _, ev = api(srv)
+    assert sum(1 for e in ev if e["type"] == "nudge") == 1
+    assert "felt ignored" not in [e.get("text") for e in ev]
+    # Without the nudge branch the fact still appears as a plain fact.
+    _, ev = api(srv, "?types=fact")
+    assert "felt ignored" in [e.get("text") for e in ev]
+
+
+def test_help_lists_new_commands():
+    from pairtner import i18n
+    import inspect
+    src = inspect.getsource(i18n)
+    for cmd in ("/dryrun", "/debug", "/model", "/search"):
+        assert cmd in src
 
 
 def test_type_filter(srv):

@@ -65,6 +65,15 @@ DEFAULT_BUDGETS: dict[str, int] = {
 }
 TOTAL_WORD_BUDGET = sum(DEFAULT_BUDGETS.values())  # 1600
 
+MAX_BUDGET_FACTOR = 2.5
+
+
+def compute_budgets(context_tokens: int) -> dict[str, int]:
+    """Scale DEFAULT_BUDGETS by model context length (floor 1x, cap 2.5x)."""
+    factor = min(MAX_BUDGET_FACTOR, max(1.0, context_tokens / 4096))
+    return {k: int(v * factor) for k, v in DEFAULT_BUDGETS.items()}
+
+
 RECENT_MESSAGE_LIMIT = 20
 WORKING_TOP_K = 30
 PROACTIVE_WINDOW_DAYS = 7
@@ -107,9 +116,15 @@ def _apply_word_cap(items: list[str], cap: int) -> list[str]:
 
 
 class ContextComposer:
-    def __init__(self, db_path: str, budgets: dict[str, int] | None = None):
+    def __init__(
+        self,
+        db_path: str,
+        budgets: dict[str, int] | None = None,
+        context_tokens: int | None = None,
+    ):
         self.db_path = db_path
-        self.budgets = {**DEFAULT_BUDGETS, **(budgets or {})}
+        base = compute_budgets(context_tokens) if context_tokens else DEFAULT_BUDGETS
+        self.budgets = {**base, **(budgets or {})}
 
     async def build_context(
         self, user_id: int, relationship_id: str, current_message: str | None = None,

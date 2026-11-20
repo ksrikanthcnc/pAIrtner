@@ -109,11 +109,14 @@ def build_timeline(
             "m.content AS text, NULL AS a, NULL AS b, NULL AS c, m.id AS d "
             "FROM messages m LEFT JOIN users u ON u.tg_id = m.user_id "
             "WHERE m.relationship_id = ? AND m.deleted_at IS NULL", rid)
+    # A fact carrying a nudge is shown as a nudge card; keep it out of the fact
+    # branch whenever the nudge branch is active so it is not listed twice.
+    fact_dedup = " AND f.nudge_target_id IS NULL" if "nudge" in types else ""
     if "fact" in types:
         add("SELECT datetime(f.created_at), 'fact', f.owner_id, u.name, NULL, f.text, "
             "f.visibility, f.intensity, f.status, f.id "
             "FROM facts f LEFT JOIN users u ON u.tg_id = f.owner_id "
-            f"WHERE f.relationship_id = ? AND f.kind IN ('working','core')", rid)
+            f"WHERE f.relationship_id = ? AND f.kind IN ('working','core'){fact_dedup}", rid)
     if "nudge" in types:
         add("SELECT datetime(f.created_at), 'nudge', f.owner_id, u.name, f.nudge_type, "
             "f.nudge_suggestion, f.nudge_status, f.nudge_target_id, "
