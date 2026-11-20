@@ -19,6 +19,11 @@ _ABS_PLACEHOLDER = "[XXXX-XX-XX XX:XX]"
 # Gap markers like "--- 2 hours gap ---"
 _GAP_RE = re.compile(r"--- \d+ (?:min|hours?|days?) gap ---")
 _GAP_PLACEHOLDER = "--- GAP ---"
+# Camouflage check-in questions are randomly injected; strip the whole section.
+_CAMOUFLAGE_RE = re.compile(
+    r"\n## Optional check-in \(ask naturally, at most once, only if it fits the flow\)\n- .+",
+    re.DOTALL,
+)
 
 
 def _normalize(prompts: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
@@ -31,6 +36,8 @@ def _normalize(prompts: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
             v = _REL_TIME_RE.sub(_REL_PLACEHOLDER, v)
             v = _ABS_TIME_RE.sub(_ABS_PLACEHOLDER, v)
             v = _GAP_RE.sub(_GAP_PLACEHOLDER, v)
+            v = _CAMOUFLAGE_RE.sub("", v)
+            v = v.rstrip()
             out[case_id][k] = v
     return out
 

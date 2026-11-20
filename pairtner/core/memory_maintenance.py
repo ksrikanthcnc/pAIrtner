@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
 
 from pairtner.core.memory_api import MemoryAPI
-from pairtner.storage.helpers import _now_iso, _fetch_all
+from pairtner.storage.helpers import _now_iso, _fetch_all, _fetch_one
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +45,110 @@ async def memory_maintenance_loop(
 
             # 2. Consolidation (per-user, weekly)
             user_ids = await _get_active_user_ids(db_path)
+            v2 = await _has_v2_schema(db_path)
             for uid in user_ids:
-                await _maybe_consolidate(db_path, llm, uid)
+                try:
+                    if v2:
+                        await _run_v2_maintenance(db_path, llm, uid)
+                    else:
+                        await _maybe_consolidate(db_path, llm, uid)
+                except Exception:
+                    logger.exception("Maintenance failed for user %s", uid)
+
+            # 3. Nudge expiry on v1 DBs that have nudge columns
+            if not v2 and await _has_nudge_columns(db_path):
+                from pairtner.features.nudge_engine import expire_stale_nudges
+
+                await expire_stale_nudges(db_path, _ttl_config())
 
         except Exception:
             logger.exception("Memory maintenance loop error")
+
+
+SETTINGS_PATH = Path(__file__).resolve().parents[2] / "settings.yaml"
+DEFAULT_MAX_ACTIVE_NUDGES = 5
+
+
+async def _has_v2_schema(db_path: str) -> bool:
+    row = await _fetch_one(
+        db_path,
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='relationships'",
+        (),
+    )
+    return row is not None
+
+
+async def _has_nudge_columns(db_path: str) -> bool:
+    rows = await _fetch_all(db_path, "PRAGMA table_info(facts)", ())
+    return any(r["name"] == "nudge_status" for r in rows)
+
+
+def _ttl_config() -> dict[str, int]:
+    from pairtner.features.nudge_engine import load_ttl_config
+
+    return load_ttl_config(SETTINGS_PATH)
+
+
+def _max_active_nudges() -> int:
+    if SETTINGS_PATH.exists():
+        import yaml
+
+        data = yaml.safe_load(SETTINGS_PATH.read_text()) or {}
+        val = (data.get("nudges") or {}).get("max_active")
+        if val is not None:
+            return int(val)
+    return DEFAULT_MAX_ACTIVE_NUDGES
+
+
+async def _run_v2_maintenance(db_path: str, llm: Any, user_id: int) -> None:
+    """v2 maintenance: periodic + couple summaries, nudge cleanup."""
+    import aiosqlite
+
+    from pairtner.core.summary import (
+        ACTIVE_INTERVALS,
+        create_couple_summary,
+        run_periodic_summaries,
+    )
+    from pairtner.features.nudge_engine import enforce_max_active, expire_stale_nudges
+
+    rels = await _fetch_all(
+        db_path,
+        "SELECT id FROM relationships WHERE status = 'active' "
+        "AND (user_a_id = ? OR user_b_id = ?)",
+        (user_id, user_id),
+    )
+    rel_ids = [r["id"] for r in rels]
+
+    for rid in rel_ids:
+        created = await run_periodic_summaries(db_path, llm, user_id, rid)
+        if created:
+            logger.info("v2 summaries: user %s rel %s created %s", user_id, rid, created)
+
+        # Couple summaries where both partners have a summary for the same period
+        marks = ",".join("?" for _ in ACTIVE_INTERVALS)
+        pairs = await _fetch_all(
+            db_path,
+            f"SELECT kind, json_extract(metadata,'$.period') AS period FROM facts "
+            f"WHERE relationship_id = ? AND kind IN ({marks}) AND owner_id IS NOT NULL "
+            f"AND archived_at IS NULL AND json_extract(metadata,'$.period') IS NOT NULL "
+            f"GROUP BY kind, period HAVING COUNT(DISTINCT owner_id) >= 2",
+            (rid, *ACTIVE_INTERVALS),
+        )
+        for p in pairs:
+            await create_couple_summary(db_path, llm, rid, p["kind"], p["period"])
+
+    await expire_stale_nudges(db_path, _ttl_config())
+    max_active = _max_active_nudges()
+    for rid in rel_ids:
+        await enforce_max_active(db_path, rid, max_active)
+
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO user_meta (user_id, key, value, updated_at) "
+            "VALUES (?, 'last_v2_maintenance', ?, CURRENT_TIMESTAMP)",
+            (user_id, _now_iso()),
+        )
+        await db.commit()
 
 
 async def _get_active_user_ids(db_path: str) -> list[int]:

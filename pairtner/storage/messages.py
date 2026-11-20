@@ -12,9 +12,20 @@ from pairtner.storage.helpers import _fetch_all, _execute
 
 
 async def log_message(
-    db_path: str, user_id: int, role: str, content: str
+    db_path: str, user_id: int, role: str, content: str,
+    relationship_id: str | None = None,
 ) -> int:
-    """Append a message to the conversation log and return its ID."""
+    """Append a message to the conversation log and return its ID.
+
+    ``relationship_id`` is only valid on a v2 DB (messages.relationship_id).
+    """
+    if relationship_id is not None:
+        return await _execute(
+            db_path,
+            "INSERT INTO messages (user_id, role, content, relationship_id) "
+            "VALUES (?, ?, ?, ?)",
+            (user_id, role, content, relationship_id),
+        )
     return await _execute(
         db_path,
         "INSERT INTO messages (user_id, role, content) VALUES (?, ?, ?)",

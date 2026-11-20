@@ -13,12 +13,20 @@ from pairtner import db as db_mod
 from pairtner import pack
 from pairtner.features.conflict_detector import detect_conflict_opening
 from pairtner.core.dampening import get_dampening_instruction, resolve_dampening
+from pairtner.core.memory import _has_v2_columns as _is_v2_db
+from pairtner.features.nudge_injector import (
+    inject_nudge_context,
+    mark_nudges_delivered,
+    maybe_inject_camouflage,
+)
 from pairtner.i18n import t
+from pairtner.storage.schema_v2 import make_relationship_id
 from pairtner.core.profile_updater import process_llm_extras
 from pairtner.storage.helpers import _to_iso
 from pairtner.core.prompts import (
     build_blunt_prompt,
     build_chat_prompt,
+    build_chat_prompt_v2,
     build_goals_section,
     build_keep_prompt,
     build_partner_summary_block,
@@ -347,29 +355,65 @@ class TagsMixin:
     ) -> list[BotResponse]:
         """Process a plain message (no tag) — chat, then optionally offer relay."""
         lang = await self._get_lang(user_id)
-        ctx = await self._build_ctx(user_id, current_message=text)
+        v2 = await self._build_ctx_v2(user_id, text)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
-        partner_summary = await self._get_partner_summary(user_id)
         goals_text = await self._get_goals_text(user_id)
-        smart_ctx = await build_smart_context(
-            self.db_path, user_id, text, self.config,
-        )
-        system, content = build_chat_prompt(
-            ctx, text, voice_text=voice_text,
-            dampening_instruction=damp_instr,
-            partner_summary=partner_summary,
-            goals_text=goals_text,
-            smart_ctx=smart_ctx,
-        )
+        rel_id: str | None = None
+        if v2 is not None:
+            composed, rel_id = v2
+            system, content = build_chat_prompt_v2(
+                composed, text, voice_text=voice_text,
+                dampening_instruction=damp_instr, goals_text=goals_text,
+            )
+        else:
+            ctx = await self._build_ctx(user_id, current_message=text)
+            partner_summary = await self._get_partner_summary(user_id)
+            smart_ctx = await build_smart_context(
+                self.db_path, user_id, text, self.config,
+            )
+            system, content = build_chat_prompt(
+                ctx, text, voice_text=voice_text,
+                dampening_instruction=damp_instr,
+                partner_summary=partner_summary,
+                goals_text=goals_text,
+                smart_ctx=smart_ctx,
+            )
+
+        # v2 DB: nudge suggestions (v1-context fallback only; the composed v2
+        # context already carries them) + camouflage questions.
+        injected_nudges: list[int] = []
+        if await _is_v2_db(self.db_path):
+            if rel_id is None:
+                _u = await db_mod.get_user(self.db_path, user_id)
+                rel_id_n = (
+                    make_relationship_id(user_id, _u["partner_id"])
+                    if _u and _u.get("partner_id") else None
+                )
+                system, injected_nudges = await inject_nudge_context(
+                    self.db_path, user_id, rel_id_n, system,
+                )
+                system = await maybe_inject_camouflage(self.db_path, user_id, system, rel_id_n)
+            else:
+                system = await maybe_inject_camouflage(self.db_path, user_id, system, rel_id)
 
         api_key = await self._get_couple_api_key(user_id)
-        await db_mod.log_message(self.db_path, user_id, "user", text)
+        await db_mod.log_message(
+            self.db_path, user_id, "user", text, relationship_id=rel_id,
+        )
         result = await self.llm.generate(
             content, system, api_key_override=api_key,
         )
-        await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
+        await db_mod.log_message(
+            self.db_path, user_id, "assistant", result["reply"], relationship_id=rel_id,
+        )
+        if injected_nudges:
+            await mark_nudges_delivered(self.db_path, injected_nudges)
+        if v2 is not None and rel_id is not None:
+            await self._deliver_nudges(user_id, rel_id, v2[0].nudge_suggestions)
 
-        count = await self._apply_memory_ops_from_result(user_id, result, text)
+        count = await self._apply_memory_ops_from_result(
+            user_id, result, text, v2=rel_id is not None, relationship_id=rel_id,
+        )
 
         # Fire-and-forget: auto-update profiles from LLM extras
         await process_llm_extras(self.db_path, user_id, result, self.config)
@@ -391,6 +435,10 @@ class TagsMixin:
         reply_text = result["reply"]
         if count:
             reply_text += "\n\n" + self._format_fact_saved(lang, count)
+
+        if self._last_settings_confirmation:
+            reply_text += "\n\n" + self._last_settings_confirmation
+            self._last_settings_confirmation = ""
 
         # Articulation tip (if enabled and relay_draft present)
         art_note = result.get("articulation_note")

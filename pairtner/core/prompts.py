@@ -13,7 +13,12 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
+from typing import TYPE_CHECKING
+
 from pairtner import pack
+
+if TYPE_CHECKING:
+    from pairtner.core.context_composer import ComposedContext
 
 logger = logging.getLogger(__name__)
 
@@ -396,6 +401,40 @@ def build_chat_prompt(
     parts.append(_format_history(ctx.recent_messages))
     parts.append(f"\n## {p.s('label_current_message')}\n{message}")
 
+    return system, "".join(parts)
+
+
+def build_chat_prompt_v2(
+    composed: "ComposedContext",
+    message: str,
+    voice_text: str | None = None,
+    dampening_instruction: str | None = None,
+    goals_text: str | None = None,
+) -> tuple[str, str]:
+    """Build the chat prompt from a v2 :class:`ComposedContext`.
+
+    The composed context is already isolation-safe (partner facts are
+    non-private only; nudges are generic guidance). Returns
+    (system_prompt, user_content).
+    """
+    p = pack.current()
+    system = build_system_prompt(
+        voice_text=voice_text, dampening_instruction=dampening_instruction,
+    )
+    _trace(p, "chat")
+    if goals_text:
+        system += "\n" + goals_text
+
+    parts: list[str] = []
+    parts.append(_format_facts(p.s("label_private_notes"), composed.core_facts))
+    parts.append(_format_facts(p.s("label_private_notes"), composed.working_facts))
+    parts.append(_format_facts("Related notes", composed.fts_matches))
+    parts.append(_format_facts(p.s("label_shared_notes"), composed.partner_facts))
+    parts.append(_format_facts("Gentle guidance to weave in if natural", composed.nudge_suggestions))
+    parts.append(_format_facts(p.s("label_period"), composed.summaries))
+    parts.append(_format_facts("Coming up", composed.proactive))
+    parts.append(_format_history(composed.recent_messages, limit=max(6, len(composed.recent_messages))))
+    parts.append(f"\n## {p.s('label_current_message')}\n{message}")
     return system, "".join(parts)
 
 

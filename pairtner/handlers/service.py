@@ -12,7 +12,13 @@ import secrets
 from dataclasses import dataclass
 from typing import Any
 
+import aiosqlite
+
 from pairtner import db as db_mod
+from pairtner.core.context_composer import ComposedContext, ContextComposer
+from pairtner.core.memory import _has_v2_columns
+from pairtner.features.nudge_engine import deliver_nudge
+from pairtner.storage.schema_v2 import make_relationship_id
 from pairtner.features.checkin import process_checkin_answer
 from pairtner.config import Config, is_user_allowed
 from pairtner.crypto import decrypt_value
@@ -27,6 +33,7 @@ from pairtner.core.memory import (
     OpsResult,
     apply_memory_ops,
     parse_memory_ops,
+    parse_settings_ops,
 )
 from pairtner.core.prompts import UserContext
 from pairtner.core.sanitize import detect_crisis, sanitize_input
@@ -77,6 +84,7 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         self._batch_item_edit_state: dict[int, int] = {}
         self._pending_contradictions: list[BotResponse] = []
         self._last_saved_facts: list[str] = []
+        self._last_settings_confirmation: str = ""
         self._profile_edit_state: dict[int, str] = {}
         self._ab_choices: dict[str, dict[str, Any]] = {}
 
@@ -139,6 +147,63 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
             self.db_path, user_id, current_message=current_message,
         )
         return UserContext(**data)
+
+    async def _build_ctx_v2(
+        self, user_id: int, text: str | None = None,
+    ) -> tuple[ComposedContext, str] | None:
+        """Build the v2 composed context, or None when v2 does not apply.
+
+        v2 applies only for a paired user whose relationship row exists and
+        whose DB carries the v2 fact columns. Callers fall back to
+        :meth:`_build_ctx` on None.
+        """
+        user = await db_mod.get_user(self.db_path, user_id)
+        partner_id = (user or {}).get("partner_id")
+        if not partner_id:
+            return None
+        if not await _has_v2_columns(self.db_path):
+            return None
+        # Legacy tables (visibility private|shared) have v2 columns after a
+        # partial upgrade but cannot hold v2 visibilities: stay on v1 there.
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='facts'"
+            ) as cur:
+                row = await cur.fetchone()
+        if not row or "nudge_eligible" not in (row[0] or ""):
+            return None
+        relationship_id = make_relationship_id(user_id, partner_id)
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT 1 FROM relationships WHERE id = ?", (relationship_id,),
+            ) as cur:
+                if await cur.fetchone() is None:
+                    return None  # no v2 relationship row yet: stay on v1
+        try:
+            composed = await ContextComposer(self.db_path).build_context(
+                user_id, relationship_id, text,
+            )
+        except aiosqlite.OperationalError as exc:
+            logger.info("v2 context unavailable, falling back to v1: %s", exc)
+            return None
+        return composed, relationship_id
+
+    async def _deliver_nudges(
+        self, user_id: int, relationship_id: str, suggestions: list[str],
+    ) -> None:
+        """Mark pending nudges whose suggestion was injected as delivered."""
+        if not suggestions:
+            return
+        async with aiosqlite.connect(self.db_path) as db:
+            marks = ",".join("?" * len(suggestions))
+            async with db.execute(
+                "SELECT id FROM facts WHERE nudge_target_id = ? AND relationship_id = ? "
+                f"AND nudge_status = 'pending' AND nudge_suggestion IN ({marks})",
+                (user_id, relationship_id, *suggestions),
+            ) as cur:
+                ids = [r[0] for r in await cur.fetchall()]
+        for fid in ids:
+            await deliver_nudge(self.db_path, fid)
 
     def _approval_buttons(
         self, pending_id: int, lang: str, skip_cooldown: bool = False
@@ -226,6 +291,14 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
             details = ""
         return t(lang, "fact_saved", count=count, details=details).rstrip()
 
+    @staticmethod
+    def _format_settings_confirmation(ops_result: OpsResult) -> str:
+        """Confirmation text for applied settings changes ('' if none)."""
+        if not ops_result.settings_ops:
+            return ""
+        changes = ", ".join(f"{o.key} → {o.value}" for o in ops_result.settings_ops)
+        return f"⚙️ Settings updated: {changes}"
+
     async def _apply_memory_ops_from_result(
         self,
         user_id: int,
@@ -233,6 +306,8 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         user_message: str,
         *,
         allow_pin: bool = True,
+        v2: bool = False,
+        relationship_id: str | None = None,
     ) -> int:
         """Apply memory operations from an LLM result.
 
@@ -243,6 +318,16 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         Returns the count of applied operations.
         """
         memory_ops_raw = result.get("memory_ops", [])
+        settings_ops = parse_settings_ops(result.get("settings_ops", []))
+        self._last_settings_confirmation = ""
+
+        if settings_ops and not memory_ops_raw:
+            ops_result = await apply_memory_ops(
+                self.db_path, user_id, [], user_message,
+                allow_pin=allow_pin, existing_facts=[], settings_ops=settings_ops,
+            )
+            self._last_settings_confirmation = self._format_settings_confirmation(ops_result)
+            return 0
 
         if memory_ops_raw:
             # New path: memory_ops
@@ -255,9 +340,11 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
                 memory_ops_raw,
                 user_fact_ids,
                 max_ops=self.config.memory_max_ops if hasattr(self.config, "memory_max_ops") else 5,
+                v2=v2,
+                relationship_id=relationship_id,
             )
 
-            if not ops:
+            if not ops and not settings_ops:
                 return 0
 
             ops_result = await apply_memory_ops(
@@ -267,7 +354,9 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
                 user_message,
                 allow_pin=allow_pin,
                 existing_facts=existing_facts,
+                settings_ops=settings_ops or None,
             )
+            self._last_settings_confirmation = self._format_settings_confirmation(ops_result)
 
             # Handle propose_core items — queue confirm buttons
             for item in ops_result.propose_core_items:
