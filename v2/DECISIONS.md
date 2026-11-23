@@ -910,3 +910,78 @@ Fix: timestamps + gap markers + current time = LLM sees the conversation as two 
 315. **User can delete any fact via /forget.** Works for core and working. Sets archived_at, excluded from all future prompts. Raw message never deleted (rebuild source). "I want you to forget my mother's name" → archived, gone from context.
 
 316. **The extraction prompt must enforce core strictness.** Explicit instruction: "Only mark `core` for identity-level biographical facts: name, date of birth, anniversary, children's names, job title, relationship duration, languages. Everything else — emotions, preferences, situations, complaints, opinions, temporary states — is `working`."
+
+
+## Privacy & Summary Architecture Redesign (Decision 317-340)
+
+317. **Visibility simplified from 3 to 2 levels.** Dropped `nudge_eligible`. Now: `private` (only owner sees, no partner nudges, no couple summary), `shared` (default, partner context + nudges OK). The nudge routing fields on the fact itself control HOW it reaches the partner. Visibility just controls WHETHER it crosses.
+
+318. **Default visibility = shared, no assumptions.** No topic is auto-classified as private. Not therapy, not finances, not health, not even affairs. The user decides. Only mark private when user explicitly says "keep this private" / "between us" / "don't share with partner". "Don't tell anyone" ≠ "don't tell partner" — different contexts.
+
+319. **Sharing mode onboarding.** During onboarding, ask comfort level: Open (recommended, default shared), Ask (shared but ask for grey areas), Private (default private). Stored as `user_settings.default_visibility_mode`. Changeable via `/settings sharing`.
+
+320. **Private tag list for auto-classification.** Per-user `private_tags` list. When user marks a topic private, the tag is added. Future facts matching that tag default to private. Per-fact override: user explicitly says "share this" → shared despite tag match. The tag is a default, not a lock.
+
+321. **Per-fact override trumps tag default.** Each fact's visibility is decided independently. "Share the therapy thing" → that specific fact is shared even though therapy is in private_tags. The override is for THAT fact only — future therapy facts still default private.
+
+322. **3-stream summaries for privacy isolation.** Alice private summary (only Alice's private facts → only Alice's prompt), Bob private summary (same for Bob), Couple shared summary (only shared facts from both → both prompts). No indirect leak path. Private facts never influence any text the partner sees, not even through summary narrative. 3 LLM calls per period instead of 2.
+
+323. **Catch-up fact on /share.** When user does `/share <tag>`, flip all matching facts to shared AND create a synthetic catch-up fact summarizing newly-shared content. One LLM call. Bridges the summary gap without regeneration.
+
+324. **Counter-fact on /private.** When user does `/private <tag>`, flip facts AND create a counter-fact: "User marked [topic] as private. Exclude from partner context." Future summaries respect this.
+
+325. **Bulk share/private.** `/share therapy` (by tag), `/share all` (everything). `/private therapy`, `/private all`. Show user WHAT will be shared before confirming. Reverse works symmetrically.
+
+326. **Summary format: structured bullets, not prose.** Optimized for LLM consumption. Per-item tags: `- [kids] pickup conflict Nov 8, shared calendar fix`. Not abstract narrative. Export/therapy notes can reformat to prose.
+
+327. **Summary metadata: tag counts.** Each summary's metadata JSON includes `source_count`, `message_count`, `tag_distribution`. Tag counts signal topic importance for rolling summary prioritization.
+
+328. **Rolling summaries: prompt-time staging.** Pre-computed daily morning. One LLM call per level with pending children. Fresh each time (not append). Overwritable — only 1 per level exists. For prompt injection only, not the archive.
+
+329. **Summary model override.** `config.summary_model` allows using a stronger model for summaries. Rolling summary is THE control point for long-term memory quality.
+
+330. **Private summaries follow same schedule.** Same daily/weekly/monthly framework. Labeled `[PRIVATE]` in user's own prompt.
+
+331. **Self-engagement for private facts (reaffirmed).** Private = "never share with or nudge PARTNER." Bot DOES therapeutically engage the owner and probe partner on the general topic without attribution. Reaffirms Decision 221/234.
+
+332. **No raw LLM response storage.** Debug view uses existing structured DB columns. No new tables.
+
+333. **PWA push notifications via Web Push API.** VAPID + pywebpush. Outbound HTTPS only. Works behind NAT. Globally after one-time LAN subscription.
+
+334. **Legacy token login removed from PWA.**
+
+335. **Port 8180 for REST API.** Changed from 8080 to avoid qbittorrent conflict.
+
+336. **WSL stack integration.** Code at `~/docker/pairtner/`. State at `~/docker/appdata/pairtner/`. Included in plex-stack compose.
+
+337. **Deploy via SCP (push-win.sh), not git push.** No git protocol on the wire, no corporate proxy flags.
+
+338. **License stays MIT.** Already requires attribution.
+
+339. **Arxiv paper (2510.17119) is reference, not blueprint.** Our design aligns independently. Cited as supporting research.
+
+340. **Pipeline debug view uses existing data.** Message → fact → summary lineage via JOIN queries. No new tables.
+
+## Rolling Pre-computed Summaries (Decision 341-348)
+
+341. **One rolling summary per level, precomputed daily.** `compute_rolling_summaries` / `run_rolling_summaries` (summary.py) run from `_run_v2_maintenance` after periodic and couple summaries. Each is stored as a `facts` row with `kind='rolling'` and metadata `{rolling, level, period_type: "rolling_<level>", stream, tag_counts, ...}`. The next run deletes and replaces it. Prompt cost is bounded at one entry per active level (~5), independent of history length.
+
+342. **`kind='rolling'` instead of a new column.** Existing queries filter by explicit kind lists, so rolling rows never leak into period/cursor/couple logic. `schema_v2` CHECK gains `'rolling'`; `migrate_v2` rebuilds a facts table whose kind CHECK lacks it (the rebuild DDL has no kind CHECK).
+
+343. **Level N consumes level N-1.** Rolling at the first level compresses unarchived working facts; at level N it compresses unarchived level N-1 summaries (the in-progress period); the top level also includes its own unarchived summaries. Every unarchived item is covered exactly once. Sources are never archived by rolling.
+
+344. **3-stream isolation.** Streams: `private` (owner's private items, stored private), `shared` (owner's shared items, stored shared), `couple` (owner NULL; couple summaries not yet folded into a higher-level couple summary, since those are never archived). A stream reads only its own source visibility; the partner's rows are never read. The composer selects own rolling rows plus the couple rolling, never the partner's.
+
+345. **Structured bullets with tags.** Summary sources are split into one item per `- [tag] ...` bullet, so `_summarise_by_tag` is reused and `tag_counts` (per-item) lands in metadata.
+
+346. **Cheap and safe reruns.** Unchanged `source_ids` skip the LLM call. No sources removes the stale row. An unparseable LLM answer keeps the previous row. Maintenance wraps the call so a failure never blocks other steps.
+
+347. **Prompt preference.** `ContextComposer` uses rolling entries when any exist for the user/relationship, otherwise the old per-level assembly. Rolling lags new regular summaries by up to one maintenance cycle. Only own and couple rows are visible.
+
+348. **Config.** `BotConfig.rolling_summary_enabled: bool = True` (env `ROLLING_SUMMARY_ENABLED`, yaml `rolling_summary.enabled`). Disabled: no computation and the composer uses regular summaries.
+
+## Solo mode + pipeline debug view (wave 3, builder 2)
+- `users.mode` ('couple'|'solo', default 'couple') added in schema_v2 + migrate_v2. `SOLO_MODE=true` sets the mode of NEW users only; existing users keep theirs.
+- `/mode solo|couple` switches account mode; the legacy `/mode mediator|voice` relay style is unchanged and stored separately (user preference).
+- Solo: persona prepended (`prompts.SOLO_PERSONA`), v2 couple context/nudge injection/camouflage skipped, `partner_themes` stripped before `process_llm_extras`, no relay offer/feedback/analysis/conflict detection, `/tell`, `/mediate`, `/join`, `#send` refused, nudge loop skips solo users (`_may_nudge`). Switching to solo does not unpair.
+- Pipeline view: `/pipeline` (messages -> facts via `source_message_id` -> `memory_versions` -> summaries via `source_ids`) and `/pipeline/fact/<id>`. Read-only, no new storage; expansion uses `<details>` because the dashboard CSP blocks inline scripts. Honors `show_raw_text` (text hidden, metadata keys kept).

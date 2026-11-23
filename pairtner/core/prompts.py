@@ -72,9 +72,23 @@ def _trace(p: pack.Pack, task: str) -> None:
     pack.last_trace.set((task, p.snapshot()))
 
 
+_bot_name = "Eko"
+
+
+def set_bot_name(name: str) -> None:
+    """Set the assistant name (``config.bot_name``) used in every system prompt."""
+    global _bot_name
+    _bot_name = name or "Eko"
+
+
 def _head(p: pack.Pack, *, tone: bool = True) -> str:
     """Persona and shared blocks that open every system prompt."""
-    parts = [p.persona(), p.block("role"), p.block("not_therapy")]
+    parts = [
+        p.persona(),
+        f"Your name is {_bot_name}. Use it if asked who you are.",
+        p.block("role"),
+        p.block("not_therapy"),
+    ]
     if tone:
         parts.append(p.block("tone"))
     return "\n\n".join(parts)
@@ -345,16 +359,33 @@ async def build_smart_context(
     )
 
 
+SOLO_PERSONA = """\
+## Solo mode: personal journal and coach
+You are a personal emotional journal and coach for ONE person. There is no
+partner and no relationship to mediate. This section overrides any earlier
+instruction about couples, partners, mediation, relaying, or nudges.
+- Help the user reflect, name feelings, notice patterns, and set small next steps.
+- Everything the user tells you is their own; treat all facts as private
+  (visibility "private"). Never mention or imply a partner exists.
+- Do NOT produce a relay_draft, partner_themes, nudges, or advice about what
+  to say to a partner. Return those fields empty/null.
+- Journal/check-in style: ask at most one gentle follow-up question, celebrate
+  progress, and keep replies short and warm."""
+
+
+def apply_solo_persona(system: str) -> str:
+    """Prepend the solo persona so it takes precedence over the couples persona."""
+    return SOLO_PERSONA + "\n\n" + system
+
+
 def build_system_prompt(
     voice_text: str | None = None,
     task_text: str | None = None,
     dampening_instruction: str | None = None,
-    v2: bool = False,
+    existing_tags: list[str] | None = None,
+    private_tags: list[str] | None = None,
 ) -> str:
     """Base system prompt shared across prompt types.
-
-    With ``v2=True`` the pack's v2 extraction contract is used (falls back
-    to the v1 contract when the pack has no ``extract_v2.md``).
 
     Optionally appends voice, task, and dampening instructions.
     Includes current UTC time for temporal awareness.
@@ -362,13 +393,24 @@ def build_system_prompt(
     p = pack.current()
     _trace(p, "system")
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    contract = p.contract_v2() if v2 else p.contract()
+    contract = p.contract()
     parts = [_head(p), f"Current time: {now}\n\n" + contract + "\n"]
     style = _style_section(p, voice_text, dampening_instruction)
     if style:
         parts.append(style.lstrip("\n"))
     if task_text:
         parts.append(f"## {p.s('task_heading')}\n{task_text}")
+    if existing_tags:
+        parts.append(
+            f"Existing tags for this couple: [{', '.join(existing_tags)}]. "
+            "Use an existing tag if it fits; create a new one only if nothing matches."
+        )
+    if private_tags:
+        parts.append(
+            f"Private tags for this user: [{', '.join(private_tags)}]. "
+            "Facts that fall under these tags MUST be saved with visibility "
+            "\"private\" (never shared with the partner)."
+        )
     return "\n\n".join(parts)
 
 
@@ -380,6 +422,8 @@ def build_chat_prompt(
     partner_summary: str | None = None,
     goals_text: str | None = None,
     smart_ctx: SmartContext | None = None,
+    existing_tags: list[str] | None = None,
+    private_tags: list[str] | None = None,
 ) -> tuple[str, str]:
     """Build prompt for a regular chat message.
 
@@ -388,6 +432,7 @@ def build_chat_prompt(
     p = pack.current()
     system = build_system_prompt(
         voice_text=voice_text, dampening_instruction=dampening_instruction,
+        existing_tags=existing_tags, private_tags=private_tags,
     )
     _trace(p, "chat")
     if goals_text:
@@ -415,6 +460,10 @@ def build_chat_prompt_v2(
     voice_text: str | None = None,
     dampening_instruction: str | None = None,
     goals_text: str | None = None,
+    existing_tags: list[str] | None = None,
+    private_tags: list[str] | None = None,
+    partner_name: str = "",
+    tone_overlay: str | None = None,
 ) -> tuple[str, str]:
     """Build the chat prompt from a v2 :class:`ComposedContext`.
 
@@ -425,16 +474,19 @@ def build_chat_prompt_v2(
     p = pack.current()
     system = build_system_prompt(
         voice_text=voice_text, dampening_instruction=dampening_instruction,
-        v2=True,
+        existing_tags=existing_tags, private_tags=private_tags,
     )
     _trace(p, "chat")
     if goals_text:
         system += "\n" + goals_text
+    if tone_overlay:
+        system += "\n\n## Tone Adjustment (based on what you've learned)\n" + tone_overlay
 
     parts: list[str] = []
     parts.append(_format_facts(p.s("label_private_notes"), composed.core_facts))
-    parts.append(_format_facts(p.s("label_private_notes"), composed.working_facts))
-    parts.append(_format_facts(p.s("label_shared_notes"), composed.partner_facts))
+    parts.append(_format_facts(p.s("label_your_working"), composed.working_facts))
+    partner_label = f"What {partner_name} shared" if partner_name else p.s("label_shared_notes")
+    parts.append(_format_facts(partner_label, composed.partner_facts))
     parts.append(_format_facts("Gentle guidance to weave in if natural", composed.nudge_suggestions))
     parts.append(_format_facts(p.s("label_period"), composed.summaries))
     parts.append(_format_facts("Coming up", composed.proactive))

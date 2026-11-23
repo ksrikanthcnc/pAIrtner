@@ -303,7 +303,7 @@ class _KwargsCapturingCompletions(FakeCompletions):
 @pytest.mark.parametrize("effort,expected", [("none", {"reasoning_effort": "none"}), ("", None)])
 async def test_reasoning_effort_sent_only_when_configured(test_db, effort, expected):
     comps = _KwargsCapturingCompletions()
-    with patch("pairtner.llm.AsyncOpenAI", return_value=FakeAsyncOpenAI(comps)):
+    with patch("pairtner.llm.openai_compat.AsyncOpenAI", return_value=FakeAsyncOpenAI(comps)):
         client = OpenAICompatClient(
             base_url="http://x/v1", api_key="k", default_model="m",
             db_path=test_db, reasoning_effort=effort,

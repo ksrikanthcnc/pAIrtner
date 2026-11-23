@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pAIrtner — Mock A: Card Dashboard</title>
+<style>
+  :root { --bg: #faf9f7; --card: #fff; --text: #1a1a1a; --muted: #888; --accent: #6c5ce7;
+    --accent-soft: #e8e5fd; --ok: #00b894; --warn: #fdcb6e; --danger: #e17055; --border: #e8e5e1;
+    --radius: 14px; font-family: -apple-system, system-ui, sans-serif; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1a1a2e; --card: #222240; --text: #e8e8e8; --muted: #888;
+      --accent: #a29bfe; --accent-soft: #2d2b55; --ok: #55efc4; --warn: #ffeaa7;
+      --danger: #ff7675; --border: #333355; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); padding: 0; min-height: 100vh; }
+  .header { background: var(--accent); color: white; padding: 20px 16px 60px; border-radius: 0 0 30px 30px; }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header p { font-size: 13px; opacity: 0.8; margin-top: 4px; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 16px; margin-top: -40px; }
+  .card { background: var(--card); border-radius: var(--radius); padding: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+  .card-full { grid-column: 1 / -1; }
+  .card h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px; }
+  .card .num { font-size: 28px; font-weight: 700; }
+  .card .num.accent { color: var(--accent); }
+  .card .num.ok { color: var(--ok); }
+  .card .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .ratio-bar { height: 8px; border-radius: 4px; background: var(--danger); margin-top: 8px; overflow: hidden; }
+  .ratio-bar .pos { height: 100%; background: var(--ok); border-radius: 4px; }
+  .section { padding: 16px; }
+  .section h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+  .topic-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { background: var(--accent-soft); color: var(--accent); padding: 6px 14px; border-radius: 20px;
+    font-size: 13px; font-weight: 500; }
+  .chip .count { opacity: 0.6; margin-left: 4px; }
+  .fact-list { display: flex; flex-direction: column; gap: 8px; }
+  .fact { background: var(--card); border-radius: 10px; padding: 12px; border-left: 3px solid var(--accent); }
+  .fact.core { border-color: var(--warn); }
+  .fact .text { font-size: 14px; }
+  .fact .meta { font-size: 11px; color: var(--muted); margin-top: 4px; display: flex; gap: 8px; }
+  .fact .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+  .badge.core { background: #fff3cd; color: #856404; }
+  .badge.working { background: var(--accent-soft); color: var(--accent); }
+  .timeline { display: flex; flex-direction: column; gap: 0; }
+  .tl-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .tl-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
+  .tl-dot.conflict { background: var(--danger); }
+  .tl-dot.nudge { background: var(--accent); }
+  .tl-dot.resolution { background: var(--ok); }
+  .tl-dot.milestone { background: var(--warn); }
+  .tl-text { font-size: 13px; }
+  .tl-time { font-size: 11px; color: var(--muted); }
+  nav { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--card);
+    border-top: 1px solid var(--border); padding: 8px 0 env(safe-area-inset-bottom); }
+  nav a { flex: 1; text-align: center; font-size: 11px; color: var(--muted); text-decoration: none; padding: 6px 0; }
+  nav a.active { color: var(--accent); font-weight: 600; }
+  nav a .icon { font-size: 20px; display: block; }
+  .pb { padding-bottom: 80px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Hi Alice 👋</h1>
+  <p>You and Bob — 8 years, 1 child</p>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <h3>Facts</h3>
+    <div class="num accent">8</div>
+    <div class="sub">2 core · 6 working</div>
+  </div>
+  <div class="card">
+    <h3>Mood Ratio</h3>
+    <div class="num ok">4:1</div>
+    <div class="ratio-bar"><div class="pos" style="width:80%"></div></div>
+    <div class="sub">Positive : Negative</div>
+  </div>
+  <div class="card">
+    <h3>Messages</h3>
+    <div class="num">23</div>
+    <div class="sub">Last 7 days</div>
+  </div>
+  <div class="card">
+    <h3>Topics</h3>
+    <div class="num">6</div>
+    <div class="sub">Active themes</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Topics</h2>
+  <div class="topic-chips">
+    <span class="chip">family <span class="count">2</span></span>
+    <span class="chip">appreciation <span class="count">1</span></span>
+    <span class="chip">communication <span class="count">1</span></span>
+    <span class="chip">plans <span class="count">1</span></span>
+    <span class="chip">work <span class="count">1</span></span>
+    <span class="chip">feelings <span class="count">1</span></span>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Recent Knowledge</h2>
+  <div class="fact-list">
+    <div class="fact core">
+      <div class="text">Married for 8 years, one child</div>
+      <div class="meta"><span class="badge core">core</span> <span>identity</span> <span>7d ago</span></div>
+    </div>
+    <div class="fact">
+      <div class="text">Planning date night for Saturday</div>
+      <div class="meta"><span class="badge working">working</span> <span>plans</span> <span>today</span></div>
+    </div>
+    <div class="fact">
+      <div class="text">Had a meaningful hour-long conversation with Bob</div>
+      <div class="meta"><span class="badge working">working</span> <span>communication</span> <span>1d ago</span></div>
+    </div>
+    <div class="fact">
+      <div class="text">Appreciated the surprise flowers from Bob</div>
+      <div class="meta"><span class="badge working">working</span> <span>appreciation</span> <span>2d ago</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Timeline</h2>
+  <div class="timeline">
+    <div class="tl-item"><div class="tl-dot milestone"></div><div><div class="tl-text">Planning first date night in months</div><div class="tl-time">Today</div></div></div>
+    <div class="tl-item"><div class="tl-dot resolution"></div><div><div class="tl-text">Hour-long heart-to-heart conversation</div><div class="tl-time">Yesterday</div></div></div>
+    <div class="tl-item"><div class="tl-dot nudge"></div><div><div class="tl-text">Bob bought flowers for Alice</div><div class="tl-time">2 days ago</div></div></div>
+    <div class="tl-item"><div class="tl-dot conflict"></div><div><div class="tl-text">Alice frustrated about solo parenting</div><div class="tl-time">3 days ago</div></div></div>
+  </div>
+</div>
+
+<div class="section pb">
+  <h2>For You</h2>
+  <div class="fact">
+    <div class="text">💡 Ask Bob about his work deadline — he mentioned it's been tough</div>
+    <div class="meta"><span>partner insight</span></div>
+  </div>
+</div>
+
+<nav>
+  <a href="#"><span class="icon">💬</span>Chat</a>
+  <a href="#" class="active"><span class="icon">📊</span>Dashboard</a>
+  <a href="#"><span class="icon">🧠</span>Knowledge</a>
+  <a href="#"><span class="icon">⚙️</span>Settings</a>
+</nav>
+</body>
+</html>

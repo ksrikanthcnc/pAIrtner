@@ -18,26 +18,19 @@
   <p id="privacy" class="notice"></p>
   <p id="auth-error" class="error" role="alert" hidden></p>
   <form id="signup">
-    <label><span data-i18n="name">Display name</span>
+    <label><span data-i18n="name">Name</span>
       <input id="name" maxlength="40" autocomplete="nickname" required></label>
-    <label id="invite-row" hidden><span data-i18n="invite">Invite code</span>
-      <input id="invite" autocomplete="off"></label>
+    <label><span data-i18n="password">Password</span>
+      <input id="password" type="password" autocomplete="current-password" required></label>
     <label><span data-i18n="language">Language</span>
       <select id="lang"></select></label>
-    <button type="submit" class="primary" data-i18n="signup">Sign up</button>
+    <button type="submit" class="primary" data-i18n="signup">Log in</button>
   </form>
-  <details>
-    <summary data-i18n="have_token">I already have a token</summary>
-    <form id="signin">
-      <label><span data-i18n="token">Token</span>
-        <input id="token" autocomplete="off" spellcheck="false" required></label>
-      <button type="submit" data-i18n="signin">Sign in</button>
-    </form>
-  </details>
 </main>
-<main id="chat" class="screen chat" hidden>
-  <header>
+<div id="app" class="app" hidden>
+  <header id="app-header" class="app-header">
     <b id="who"></b>
+    <span id="admin-badge" class="badge" hidden>Admin</span>
     <span id="status" class="status"></span>
     <button id="menu-btn" type="button" aria-label="menu">&#8942;</button>
   </header>
@@ -45,13 +38,16 @@
     <button id="rotate" type="button" data-i18n="rotate">Rotate token</button>
     <button id="signout" type="button" data-i18n="signout">Sign out</button>
   </div>
-  <section id="log" aria-live="polite"></section>
-  <form id="composer">
-    <textarea id="text" rows="1" autocomplete="off" data-i18n-placeholder="message" placeholder="Message"></textarea>
-    <button type="submit" class="primary" data-i18n="send">Send</button>
-  </form>
-</main>
+  <div id="views" class="views"></div>
+  <nav id="bottom-nav" class="bottom-nav" aria-label="main">
+    <a href="#chat" data-tab="chat"><span class="ico">&#128172;</span><span data-i18n="nav_chat">Chat</span></a>
+    <a href="#dashboard" data-tab="dashboard"><span class="ico">&#128202;</span><span data-i18n="nav_data">My Data</span></a>
+    <a href="#memory" data-tab="memory"><span class="ico">&#129504;</span><span data-i18n="nav_memory">Memory</span></a>
+    <a href="#settings" data-tab="settings"><span class="ico">&#9881;&#65039;</span><span data-i18n="nav_settings">Settings</span></a>
+    <a href="#dashboard/admin" data-tab="admin" id="nav-admin" hidden><span class="ico">&#128737;&#65039;</span><span data-i18n="nav_admin">Admin</span></a>
+  </nav>
+</div>
 <script src="/render.js"></script>
-<script src="/app.js"></script>
+<script type="module" src="/app.js"></script>
 </body>
 </html>

@@ -64,28 +64,6 @@ async def test_invalid_visibility_value_rejected(test_db, paired_users):
         await set_fact_visibility(test_db, fid, a, "public")
 
 
-async def test_shared_fact_reaches_partner_prompt_and_mediate_then_disappears(
-    service, mock_llm, test_db, paired_users
-):
-    a, b = paired_users
-    fid = await add_fact(test_db, a, SECRET, "private")
-    await service.handle_message(b, "Bob", "hello there")
-    assert SECRET not in mock_llm.calls[-1]["user_content"]
-
-    await service.handle_callback(a, f"fv:{fid}")
-    await service.handle_message(b, "Bob", "hello again")
-    assert SECRET in mock_llm.calls[-1]["user_content"]
-    await service.handle_mediate(b)
-    assert SECRET in mock_llm.calls[-1]["user_content"]
-
-    await service.handle_callback(a, f"fv:{fid}")
-    await service.handle_message(b, "Bob", "and once more")
-    assert SECRET not in mock_llm.calls[-1]["user_content"]
-    n = len(mock_llm.calls)
-    await service.handle_mediate(b)
-    # Only the fixture's other shared fact may remain; the toggled one is gone.
-    assert len(mock_llm.calls) == n + 1
-    assert SECRET not in mock_llm.calls[-1]["user_content"]
 
 
 async def test_llm_labelled_shared_fact_stays_private(service, mock_llm, test_db, paired_users):
@@ -101,41 +79,5 @@ async def test_llm_labelled_shared_fact_stays_private(service, mock_llm, test_db
     assert all(f["shared_at"] is None for f in stored)
 
 
-async def test_buttons_on_whatdoyouknow(service, test_db, paired_users):
-    a, _ = paired_users
-    resp = await service.handle_whatdoyouknow(a)
-    buttons = [b for row in resp[0].buttons for b in row]
-    ids = {f["id"] for f in await get_active_facts(test_db, a)}
-    # Should have fv: buttons for all facts
-    fv_buttons = {b.callback_data for b in buttons if b.callback_data.startswith("fv:")}
-    assert fv_buttons == {f"fv:{i}" for i in ids}
-    # Working facts also get mc:confirm: buttons
-    mc_buttons = {b.callback_data for b in buttons if b.callback_data.startswith("mc:")}
-    working_ids = {
-        f["id"] for f in await get_active_facts(test_db, a)
-        if (f.get("kind") or "working") == "working"
-    }
-    assert mc_buttons == {f"mc:confirm:{i}" for i in working_ids}
-    # Row width ≤ 3 (share + pin)
-    assert all(len(row) <= 3 for row in resp[0].buttons)
-    labels = {b.callback_data: b.text for b in buttons if b.callback_data.startswith("fv:")}
-    for f in await get_active_facts(test_db, a):
-        assert f"#{f['id']}" in labels[f"fv:{f['id']}"]
-        if f["visibility"] == "shared":
-            assert "private" in labels[f"fv:{f['id']}"].lower()
-        else:
-            assert "share" in labels[f"fv:{f['id']}"].lower()
 
 
-async def test_buttons_capped_at_30_most_recent(service, test_db, paired_users):
-    a, _ = paired_users
-    existing = len(await get_active_facts(test_db, a))
-    for i in range(40):
-        await add_fact(test_db, a, f"bulk fact number {i} xyz", "private")
-    resp = await service.handle_whatdoyouknow(a)
-    # Each fact gets one row; cap is 30 rows (facts), each row has 1-2 buttons
-    fv_buttons = [b for row in resp[0].buttons for b in row if b.callback_data.startswith("fv:")]
-    assert len(fv_buttons) == 30
-    newest = sorted((f["id"] for f in await get_active_facts(test_db, a)), reverse=True)[:30]
-    assert {b.callback_data for b in fv_buttons} == {f"fv:{i}" for i in newest}
-    assert f"{existing + 40 - 30} more" in resp[0].text

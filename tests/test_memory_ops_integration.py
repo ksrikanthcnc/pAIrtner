@@ -43,7 +43,7 @@ async def test_chat_message_creates_reply(service, test_db, paired_users):
 
 @pytest.mark.asyncio
 async def test_send_creates_pending_relay(service, test_db, paired_users):
-    """#send should create a pending relay for the partner."""
+    """#send should create a relay_queue relay for the partner."""
     a_id, b_id = paired_users
     responses = await service.dispatch(a_id, "Alice", "#send I wish we could talk more")
 

@@ -127,9 +127,9 @@ async def setup_db(db_path: str) -> None:
         await add_fact(db_path, ALICE, text, "private", relationship_id=REL,
                        kind="working", intensity=0.9)
     for text, ntype, suggestion in NUDGE_FACTS:
-        await add_fact(db_path, ALICE, text, "nudge_eligible", relationship_id=REL,
+        await add_fact(db_path, ALICE, text, "shared", relationship_id=REL,
                        kind="working", nudge_type=ntype, nudge_suggestion=suggestion,
-                       nudge_target_id=BOB, nudge_status="pending", nudge_cooldown_h=0)
+                       nudge_target_id=BOB, nudge_status="relay_queue", nudge_cooldown_h=0)
     for text, kind in BOB_FACTS:
         await add_fact(db_path, BOB, text, "private", relationship_id=REL, kind=kind)
 

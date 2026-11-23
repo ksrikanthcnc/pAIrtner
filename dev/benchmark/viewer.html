@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pAIrtner benchmark viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800">
+<div class="max-w-7xl mx-auto p-4 space-y-4">
+  <header class="flex flex-wrap items-center justify-between gap-2">
+    <h1 class="text-2xl font-bold">pAIrtner benchmark viewer</h1>
+    <span class="text-sm text-slate-500">Everything stays in your browser.</span>
+  </header>
+
+  <section class="bg-white rounded-lg shadow p-4 space-y-3">
+    <div id="drop" class="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center">
+      <p class="mb-2">Drop result JSON files here, or</p>
+      <input id="file" type="file" accept=".json,application/json" multiple class="text-sm">
+      <p class="text-xs text-slate-500 mt-2">Files from <code>dev/benchmark/results/*.json</code>. Load several to compare models.</p>
+    </div>
+    <details>
+      <summary class="cursor-pointer text-sm text-blue-700">Paste JSON instead</summary>
+      <textarea id="paste" rows="6" class="w-full mt-2 border rounded p-2 font-mono text-xs" placeholder='{"provider": "...", "model": "...", "alice": {...}, "bob": {...}}'></textarea>
+      <div class="mt-2 flex gap-2">
+        <button id="addPaste" class="bg-blue-600 text-white px-3 py-1 rounded text-sm">Add</button>
+        <button id="sample" class="bg-slate-200 px-3 py-1 rounded text-sm">Load sample</button>
+        <button id="clear" class="bg-slate-200 px-3 py-1 rounded text-sm">Clear all</button>
+      </div>
+    </details>
+    <p id="err" class="text-sm text-red-600 hidden"></p>
+  </section>
+
+  <section id="summary" class="hidden bg-white rounded-lg shadow p-4 overflow-x-auto"></section>
+
+  <section id="controls" class="hidden flex flex-wrap items-center gap-3 text-sm">
+    <label>User
+      <select id="userSel" class="border rounded px-2 py-1 ml-1"></select>
+    </label>
+    <label>Category
+      <select id="catSel" class="border rounded px-2 py-1 ml-1"></select>
+    </label>
+    <label class="flex items-center gap-1"><input type="checkbox" id="onlyMiss"> only show misses</label>
+  </section>
+
+  <section id="cards" class="grid gap-4"></section>
+  <p id="empty" class="text-center text-slate-500 py-10">No results loaded yet.</p>
+</div>
+
+<script>
+"use strict";
+const runs = [];            // {label, data}
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+
+// ---------- score helpers ----------
+function tone(acc) {
+  if (acc == null) return {bg: "bg-slate-100", text: "text-slate-600", bar: "bg-slate-400", border: "border-slate-300"};
+  if (acc >= 0.8) return {bg: "bg-green-50", text: "text-green-800", bar: "bg-green-500", border: "border-green-300"};
+  if (acc >= 0.5) return {bg: "bg-amber-50", text: "text-amber-800", bar: "bg-amber-500", border: "border-amber-300"};
+  return {bg: "bg-red-50", text: "text-red-800", bar: "bg-red-500", border: "border-red-300"};
+}
+const pct = (x) => x == null ? "n/a" : (x * 100).toFixed(0) + "%";
+const userKeys = (d) => Object.keys(d).filter((k) => d[k] && typeof d[k] === "object" && !Array.isArray(d[k]) && ("scores" in d[k] || "facts" in d[k]));
+const catKeys = (u) => Object.keys(u.scores || {}).filter((k) => k !== "overall");
+
+function runStats(run) {
+  let total = 0, hits = 0, lat = [], facts = 0, ops = 0, drafts = 0;
+  for (const u of userKeys(run.data)) {
+    const ud = run.data[u];
+    const o = (ud.scores || {}).overall;
+    if (o) { total += o.total || 0; hits += o.hits || 0; }
+    if (typeof ud.latency_sec === "number") lat.push(ud.latency_sec);
+    facts += (ud.facts || []).length;
+    ops += (ud.memory_ops || []).length;
+    drafts += (ud.relay_drafts || []).length;
+  }
+  return {
+    total, hits, acc: total ? hits / total : null,
+    latency: lat.length ? lat.reduce((a, b) => a + b, 0) / lat.length : null,
+    facts, ops, drafts,
+  };
+}
+
+// ---------- loading ----------
+function showErr(msg) { const e = $("err"); e.textContent = msg; e.classList.toggle("hidden", !msg); }
+
+function addRun(data, name) {
+  if (!data || typeof data !== "object" || !userKeys(data).length)
+    throw new Error("Not a benchmark result: expected keys like alice/bob with 'scores' or 'facts'.");
+  const label = data.model ? `${data.provider ? data.provider + "/" : ""}${data.model}` : (name || `run ${runs.length + 1}`);
+  runs.push({label, data});
+  render();
+}
+
+function addText(text, name) {
+  try { addRun(JSON.parse(text), name); showErr(""); }
+  catch (e) { showErr(`${name || "paste"}: ${e.message}`); }
+}
+
+async function addFiles(files) {
+  for (const f of files) addText(await f.text(), f.name);
+}
+
+$("file").addEventListener("change", (e) => addFiles(e.target.files));
+$("addPaste").addEventListener("click", () => { addText($("paste").value, "pasted JSON"); });
+$("clear").addEventListener("click", () => { runs.length = 0; render(); showErr(""); });
+$("sample").addEventListener("click", () => { SAMPLES.forEach((s) => addRun(s)); showErr(""); });
+const drop = $("drop");
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("bg-blue-50"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("bg-blue-50"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("bg-blue-50"); addFiles(e.dataTransfer.files); });
+["userSel", "catSel", "onlyMiss"].forEach((id) => $(id).addEventListener("change", renderCards));
+
+// ---------- rendering ----------
+function bestIdx(vals, higherBetter) {
+  const nums = vals.filter((v) => v != null);
+  if (nums.length < 2) return -1;
+  const best = higherBetter ? Math.max(...nums) : Math.min(...nums);
+  return vals.indexOf(best);
+}
+
+function renderSummary() {
+  const stats = runs.map(runStats);
+  const accBest = bestIdx(stats.map((s) => s.acc), true);
+  const latBest = bestIdx(stats.map((s) => s.latency), false);
+  const rows = [
+    ["Total score", (s) => `${s.hits}/${s.total}`],
+    ["Extraction accuracy", (s) => pct(s.acc), (s, i) => i === accBest, true],
+    ["Avg response time", (s) => s.latency == null ? "n/a" : s.latency.toFixed(1) + " s", (s, i) => i === latBest],
+    ["Facts extracted", (s) => s.facts],
+    ["Memory ops", (s) => s.ops],
+    ["Relay drafts", (s) => s.drafts],
+  ];
+  let h = `<table class="w-full text-sm"><thead><tr><th class="text-left p-2">Metric</th>`;
+  runs.forEach((r) => h += `<th class="text-left p-2">${esc(r.label)}</th>`);
+  h += `</tr></thead><tbody>`;
+  for (const [name, fmt, isBest, colour] of rows) {
+    h += `<tr class="border-t"><td class="p-2 font-medium">${name}</td>`;
+    stats.forEach((s, i) => {
+      const best = isBest && isBest(s, i);
+      const cls = colour ? tone(s.acc).text : "";
+      h += `<td class="p-2 ${cls} ${best ? "font-bold" : ""}">${esc(fmt(s))}${best ? " ★" : ""}</td>`;
+    });
+    h += `</tr>`;
+  }
+  $("summary").innerHTML = h + `</tbody></table>`;
+}
+
+function fillSelect(sel, values, keep) {
+  const prev = keep ? sel.value : null;
+  sel.innerHTML = values.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  if (prev && values.includes(prev)) sel.value = prev;
+}
+
+function render() {
+  const has = runs.length > 0;
+  $("empty").classList.toggle("hidden", has);
+  $("summary").classList.toggle("hidden", !has);
+  $("controls").classList.toggle("hidden", !has);
+  if (!has) { $("cards").innerHTML = ""; return; }
+  const users = [...new Set(runs.flatMap((r) => userKeys(r.data)))];
+  const cats = ["all", ...new Set(runs.flatMap((r) => userKeys(r.data).flatMap((u) => catKeys(r.data[u]))))];
+  fillSelect($("userSel"), users, true);
+  fillSelect($("catSel"), cats, true);
+  renderSummary();
+  renderCards();
+}
+
+function pill(text, cls) { return `<span class="inline-block text-xs px-2 py-0.5 rounded-full ${cls}">${esc(text)}</span>`; }
+
+function section(title, inner) {
+  return inner ? `<div class="mt-3"><h4 class="text-xs uppercase tracking-wide text-slate-500 mb-1">${esc(title)}</h4>${inner}</div>` : "";
+}
+
+function factList(facts) {
+  if (!facts || !facts.length) return `<p class="text-sm text-slate-400 italic">none extracted</p>`;
+  return `<ul class="space-y-1">` + facts.map((f) => {
+    const text = typeof f === "string" ? f : f.text;
+    const kind = typeof f === "object" && f.kind ? pill(f.kind, "bg-slate-200 text-slate-700") : "";
+    const inten = typeof f === "object" && typeof f.intensity === "number"
+      ? pill("intensity " + f.intensity.toFixed(1), f.intensity >= 0.7 ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600") : "";
+    return `<li class="text-sm flex flex-wrap gap-1 items-baseline">${kind}${inten}<span>${esc(text)}</span></li>`;
+  }).join("") + `</ul>`;
+}
+
+function detailList(items, good) {
+  if (!items || !items.length) return "";
+  const icon = good ? "✓" : "✗", cls = good ? "text-green-700" : "text-red-700";
+  return `<ul class="text-sm space-y-0.5">` + items.map((t) =>
+    `<li class="${cls}"><span class="font-bold">${icon}</span> ${esc(typeof t === "string" ? t : JSON.stringify(t))}</li>`).join("") + `</ul>`;
+}
+
+function opsList(ops) {
+  if (!ops || !ops.length) return "";
+  return `<ul class="text-sm space-y-0.5 font-mono">` + ops.map((o) => {
+    const t = typeof o === "string" ? o : `${o.op || o.action || o.type || "op"}: ${o.text || o.fact || o.target || JSON.stringify(o)}`;
+    return `<li class="bg-slate-50 rounded px-2 py-0.5">${esc(t)}</li>`;
+  }).join("") + `</ul>`;
+}
+
+function draftList(drafts) {
+  if (!drafts || !drafts.length) return "";
+  return drafts.map((d) => {
+    const t = typeof d === "string" ? d : (d.draft || d.text || JSON.stringify(d));
+    return `<blockquote class="text-sm border-l-4 border-indigo-300 bg-indigo-50 px-3 py-1 rounded-r">${esc(t)}</blockquote>`;
+  }).join("");
+}
+
+function conversation(msgs) {
+  if (!msgs || !msgs.length) return "";
+  return `<div class="space-y-1">` + msgs.map((m) => {
+    const role = m.role || m.from || "user";
+    const mine = /user|alice|bob/i.test(role);
+    return `<div class="flex ${mine ? "justify-start" : "justify-end"}"><div class="max-w-[85%] text-sm px-3 py-1.5 rounded-lg ${mine ? "bg-slate-100" : "bg-blue-100"}"><span class="text-xs text-slate-500">${esc(role)}</span><br>${esc(m.text || m.content || m.message || "")}</div></div>`;
+  }).join("") + `</div>`;
+}
+
+function scoreBlock(cat, s) {
+  const t = tone(s.accuracy);
+  return `<div class="border ${t.border} ${t.bg} rounded p-2 mb-2">
+    <div class="flex justify-between text-sm font-medium ${t.text}"><span>${esc(cat)}</span><span>${s.hits}/${s.total} (${pct(s.accuracy)})</span></div>
+    <div class="h-1.5 bg-white rounded mt-1"><div class="h-1.5 rounded ${t.bar}" style="width:${Math.round((s.accuracy || 0) * 100)}%"></div></div>
+    ${detailList(s.hit_details, true)}${detailList(s.miss_details, false)}
+  </div>`;
+}
+
+function runColumn(run, user, cat, onlyMiss) {
+  const ud = run.data[user];
+  if (!ud) return `<div class="text-sm text-slate-400 italic p-3">no "${esc(user)}" data</div>`;
+  const overall = (ud.scores || {}).overall;
+  const t = tone(overall ? overall.accuracy : null);
+  const cats = catKeys(ud).filter((c) => cat === "all" || c === cat);
+  let blocks = cats.map((c) => ({c, s: ud.scores[c]})).filter(({s}) => !onlyMiss || (s.misses || 0) > 0)
+    .map(({c, s}) => scoreBlock(c, s)).join("");
+  const showFacts = cat === "all";
+  return `<div class="border-2 ${t.border} rounded-lg bg-white overflow-hidden">
+    <div class="px-3 py-2 ${t.bg} flex flex-wrap justify-between items-center gap-1">
+      <span class="font-semibold ${t.text}">${esc(run.label)}</span>
+      <span class="text-sm ${t.text}">${overall ? `${overall.hits}/${overall.total} · ${pct(overall.accuracy)}` : "no score"}
+        ${typeof ud.latency_sec === "number" ? ` · ${ud.latency_sec.toFixed(1)}s` : ""}</span>
+    </div>
+    <div class="p-3">
+      ${section("Conversation", conversation(ud.conversation || ud.messages))}
+      ${section("Scores", blocks || `<p class="text-sm text-slate-400 italic">nothing to show</p>`)}
+      ${showFacts ? section(`Extracted facts (${(ud.facts || []).length})`, factList(ud.facts)) : ""}
+      ${section("Memory ops", opsList(ud.memory_ops))}
+      ${section("Relay drafts", draftList(ud.relay_drafts))}
+    </div></div>`;
+}
+
+function renderCards() {
+  if (!runs.length) return;
+  const user = $("userSel").value, cat = $("catSel").value, onlyMiss = $("onlyMiss").checked;
+  const cols = runs.length;
+  $("cards").className = "grid gap-4 " + (cols === 1 ? "grid-cols-1" : cols === 2 ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1 lg:grid-cols-2 xl:grid-cols-3");
+  $("cards").innerHTML = runs.map((r) => runColumn(r, user, cat, onlyMiss)).join("");
+}
+
+// ---------- sample data (shape of dev/benchmark/results/*.json) ----------
+const mk = (hits, total, extra = {}) => ({total, hits, misses: total - hits, accuracy: hits / total, hit_details: [], miss_details: [], ...extra});
+const SAMPLES = [
+  {provider: "demo", model: "good-model", alice: {
+    latency_sec: 3.2,
+    facts: [{text: "Alice is 32 years old", kind: "core", intensity: 0.5}, {text: "Alice feels Bob works too many hours", kind: "working", intensity: 0.8}],
+    memory_ops: [{op: "add", text: "Alice is 32 years old"}],
+    relay_drafts: ["Hey Bob, I've been missing you in the evenings. Could we plan a no-laptop dinner this week?"],
+    scores: {
+      core: mk(8, 9, {hit_details: ["Alice is 32 years old"], miss_details: ["Bob's mother's name is Helen"]}),
+      working_ongoing: mk(3, 4, {miss_details: ["They disagree about screen time for Max"]}),
+      sensitive: mk(2, 2),
+      overall: mk(13, 15)}},
+   bob: {latency_sec: 2.9, facts: [{text: "Bob is a software engineer", kind: "core", intensity: 0.5}],
+    scores: {core: mk(9, 9), working_ongoing: mk(4, 4), sensitive: mk(1, 2, {miss_details: ["Bob is secretly saving for a surprise anniversary trip"]}), overall: mk(14, 15)}}},
+  {provider: "demo", model: "weak-model", alice: {
+    latency_sec: 7.5, facts: [],
+    scores: {
+      core: mk(1, 9, {miss_details: ["Alice is 32 years old", "Bob is 34 years old"]}),
+      working_ongoing: mk(0, 4, {miss_details: ["Alice feels Bob works too many hours"]}),
+      sensitive: mk(0, 2),
+      overall: mk(1, 15)}},
+   bob: {latency_sec: 6.1, facts: [], scores: {core: mk(0, 9), working_ongoing: mk(2, 4), sensitive: mk(0, 2), overall: mk(2, 15)}}},
+];
+</script>
+</body>
+</html>

@@ -122,15 +122,12 @@ async def test_no_questions_after_all_answered(test_db):
 
 
 @pytest.mark.asyncio
-async def test_handle_plain_appends_and_routes_answer(service, mock_llm, paired_users):
+async def test_handle_plain_no_personality_in_handler(service, mock_llm, paired_users):
+    """Personality questionnaire was removed from handler — plain replies
+    should NOT append personality questions."""
     uid = paired_users[0]
     db = service.db_path
     await db_mod.update_user_profile(db, uid, onboarding_done=1, message_count=10)
     first = await service._handle_plain(uid, "hello there")
-    assert "By the way -- " + P.PERSONALITY_QUESTIONS[0]["text"] in first[0].text
-    mock_llm.responses.append({"reply": "listen", "new_facts": [], "relay_draft": None})
-    second = await service._handle_plain(uid, "just listen honestly")
-    assert second[0].text == P.PERSONALITY_QUESTIONS[0]["confirmation"]["vent"]
-    row = await _fetch_one(
-        db, "SELECT value FROM user_meta WHERE user_id = ? AND key = 'default_interaction_mode'", (uid,))
-    assert row["value"] == "vent"
+    # Personality questions are no longer injected into handler responses
+    assert "By the way" not in first[0].text

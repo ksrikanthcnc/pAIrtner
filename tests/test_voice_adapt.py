@@ -232,107 +232,14 @@ async def test_learned_voice_is_before_static_voice(db, cfg):
 # ---------------------------------------------------------------------------
 
 
-async def test_vibe_command_immature(db, cfg):
-    uid = 5020
-    await create_user(db, uid, "VibeTest")
-    await ensure_user_profile(db, uid)
-    await update_user_profile(db, uid, message_count=3)
-
-    mock_llm = MockLLMClient()
-    svc = BotService(config=cfg, db_path=db, llm=mock_llm)
-    responses = await svc.handle_style(uid, None)
-
-    assert len(responses) == 1
-    text = responses[0].text
-    assert "3/10" in text  # count/threshold
-    assert "still learning" in text.lower() or "ఇంకా" in text.lower()
-
-
-async def test_vibe_command_mature_with_traits(db, cfg):
-    uid = 5021
-    await create_user(db, uid, "MatureVibe")
-    await ensure_user_profile(db, uid)
-    traits = {"register": "casual", "humor": "frequent"}
-    await update_learned_voice(db, uid, json.dumps(traits))
-    await update_user_profile(db, uid, message_count=25)
-
-    mock_llm = MockLLMClient()
-    svc = BotService(config=cfg, db_path=db, llm=mock_llm)
-    responses = await svc.handle_style(uid, None)
-
-    text = responses[0].text
-    assert "active" in text.lower() or "యాక్టివ్" in text.lower()
-    assert "register" in text
-    assert "humor" in text
-
-
 # ---------------------------------------------------------------------------
 # (g) /vibe set manual override
 # ---------------------------------------------------------------------------
 
 
-async def test_vibe_set_creates_trait(db, cfg):
-    uid = 5030
-    await create_user(db, uid, "VibeSetter")
-    await ensure_user_profile(db, uid)
-
-    mock_llm = MockLLMClient()
-    svc = BotService(config=cfg, db_path=db, llm=mock_llm)
-    responses = await svc.handle_style(uid, "set register formal")
-
-    assert len(responses) == 1
-    assert "register" in responses[0].text
-    assert "formal" in responses[0].text
-
-    profile = await get_user_profile(db, uid)
-    traits = json.loads(profile["learned_voice"])
-    assert traits["register"] == "formal"
-
-
-async def test_vibe_set_invalid_trait(db, cfg):
-    uid = 5031
-    await create_user(db, uid, "VibeInvalid")
-    await ensure_user_profile(db, uid)
-
-    mock_llm = MockLLMClient()
-    svc = BotService(config=cfg, db_path=db, llm=mock_llm)
-    responses = await svc.handle_style(uid, "set bogus_trait value")
-
-    assert "Unknown" in responses[0].text or "తెలియని" in responses[0].text
-
-
-async def test_vibe_set_usage_missing_value(db, cfg):
-    uid = 5032
-    await create_user(db, uid, "VibeUsage")
-    await ensure_user_profile(db, uid)
-
-    mock_llm = MockLLMClient()
-    svc = BotService(config=cfg, db_path=db, llm=mock_llm)
-    responses = await svc.handle_style(uid, "set register")
-
-    text = responses[0].text
-    assert "Usage" in text or "వాడకం" in text
-
-
 # ---------------------------------------------------------------------------
 # (h) Backward compatibility — /style still works as alias
 # ---------------------------------------------------------------------------
-
-
-async def test_style_alias_routes_to_vibe(db, cfg):
-    uid = 5040
-    await create_user(db, uid, "StyleAlias")
-    await ensure_user_profile(db, uid)
-    await update_user_profile(db, uid, message_count=5)
-
-    mock_llm = MockLLMClient()
-    svc = BotService(config=cfg, db_path=db, llm=mock_llm)
-
-    style_resp = await svc.handle_style(uid, None)
-    vibe_resp = await svc.handle_style(uid, None)
-
-    # Both should return the same content
-    assert style_resp[0].text == vibe_resp[0].text
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,8 @@
   var TAG_RE = /<(\/?)(b|i|u|code|pre)>/gi;
   var ENTITY_RE = /&(lt|gt|amp|quot|#39);/g;
   var ENTITIES = { lt: "<", gt: ">", amp: "&", quot: "\"", "#39": "'" };
+  // Convert markdown code fences to <pre><code> before rendering
+  var FENCE_RE = /```[a-z]*\n?([\s\S]*?)```/g;
 
   function decode(text) {
     return text.replace(ENTITY_RE, function (_, name) { return ENTITIES[name]; });
@@ -26,7 +28,9 @@
     }
 
     TAG_RE.lastIndex = 0;
-    var src = String(markup == null ? "" : markup);
+    // Pre-process: convert markdown fences to <pre><code>...</code></pre>
+    var src = String(markup == null ? "" : markup)
+      .replace(FENCE_RE, function (_, inner) { return "<pre><code>" + inner.trim() + "</code></pre>"; });
     while ((m = TAG_RE.exec(src)) !== null) {
       var name = m[2].toLowerCase();
       if (m[1]) {

@@ -68,7 +68,7 @@ async def test_no_feedback_outside_24h(feedback_db):
     old_time = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
     await db_mod._execute(
         feedback_db,
-        "UPDATE pending SET status = 'sent', sent_at = ? WHERE id = ?",
+        "UPDATE relay_queue SET status = 'sent', sent_at = ? WHERE id = ?",
         (old_time, pid),
     )
 

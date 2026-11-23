@@ -99,7 +99,7 @@ async def _seed_core_facts(db_path: str, user_id: int) -> list[int]:
     for text in _CORE_FACTS:
         fid = await add_fact(
             db_path, user_id, text, visibility="private",
-            category="core", fact_type="stable", intensity=0.8,
+            tag="core", fact_type="stable", intensity=0.8,
         )
         # Mark as core kind
         async with aiosqlite.connect(db_path) as db:
@@ -137,7 +137,7 @@ async def _seed_working_facts(
 
             fid = await add_fact(
                 db_path, user_id, text, visibility="private",
-                category=topic, fact_type="stable", intensity=intensity,
+                tag=topic, fact_type="stable", intensity=intensity,
             )
 
             # Set created_at to simulated time

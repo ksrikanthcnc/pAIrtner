@@ -116,7 +116,7 @@ def assert_no_leak(prompt: str):
 async def seeded(db_path):
     await add_fact(db_path, ALICE, PRIVATE_FACT, "private")
     await add_fact(db_path, ALICE, PRIVATE_FACT + " core", "private", kind="core")
-    await add_fact(db_path, ALICE, "Alice loves hiking", "shareable")
+    await add_fact(db_path, ALICE, "Alice loves hiking", "shared")
     await add_fact(db_path, ALICE, "Alice feels unseen", "private",
                    nudge_target_id=BOB, nudge_type="attention",
                    nudge_suggestion="Consider a small gesture of attention",

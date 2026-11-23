@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pairtner import db as db_mod
 from pairtner import pack
 from pairtner.core.prompts import load_task_prompt
+from pairtner.storage.tagfmt import parse_fact_tags
 
 
 async def generate_monthly_summary(
@@ -36,7 +37,7 @@ async def generate_monthly_summary(
 
     facts = await db_mod._fetch_all(
         db_path,
-        "SELECT text, category, visibility FROM facts "
+        "SELECT text, tag, visibility FROM facts "
         "WHERE owner_id = ? AND created_at >= ? AND created_at < ? "
         "AND archived_at IS NULL "
         "ORDER BY created_at",
@@ -55,7 +56,7 @@ async def generate_monthly_summary(
     for f in facts:
         line = p.s(
             "summarize_fact_line",
-            category=f.get("category") or "other",
+            category=", ".join(parse_fact_tags(f.get("tag"))) or "other",
             visibility=f["visibility"],
             text=f["text"],
         )

@@ -65,6 +65,7 @@ from telegram.ext import (
     filters,
 )
 
+from pairtner.storage.messages import msg_source
 from pairtner.config import is_user_allowed
 from pairtner.handlers import BotResponse
 
@@ -113,8 +114,16 @@ class TelegramAdapter(BaseAdapter):
         self.run_background = run_background
         self._app: Application | None = None
         self._stop_event: asyncio.Event | None = None
+        self._user_locks: dict[int, asyncio.Lock] = {}
 
     # ── public interface ─────────────────────────────────────────────────
+
+    def _lock(self, user_id: int) -> asyncio.Lock:
+        """Per-user lock: serialises processing of a user's messages."""
+        lock = self._user_locks.get(user_id)
+        if lock is None:
+            lock = self._user_locks[user_id] = asyncio.Lock()
+        return lock
 
     def owns_user(self, user_id: int) -> bool:
         return user_id < REST_ID_BASE
@@ -137,30 +146,26 @@ class TelegramAdapter(BaseAdapter):
         # Register handlers (order matters — commands before generic message)
         app.add_handler(CommandHandler("start", self._cmd_start))
         app.add_handler(CommandHandler("join", self._cmd_join))
-        app.add_handler(CommandHandler("tell", self._cmd_tell))
-        app.add_handler(CommandHandler("mediate", self._cmd_mediate))
-        app.add_handler(CommandHandler("whatdoyouknow", self._cmd_whatdoyouknow))
         app.add_handler(CommandHandler("forget", self._cmd_forget))
+        app.add_handler(CommandHandler("share", self._cmd_share))
+        app.add_handler(CommandHandler("private", self._cmd_private))
         app.add_handler(CommandHandler("export", self._cmd_export))
-        app.add_handler(CommandHandler("lang", self._cmd_lang))
         app.add_handler(CommandHandler("setup", self._cmd_setup))
         app.add_handler(CommandHandler("status", self._cmd_status))
         app.add_handler(CommandHandler("history", self._cmd_history))
+        app.add_handler(CommandHandler("password", self._cmd_password))
         app.add_handler(CommandHandler("pause", self._cmd_pause))
         app.add_handler(CommandHandler("resume", self._cmd_resume))
-        app.add_handler(CommandHandler("style", self._cmd_style))
         app.add_handler(CommandHandler("goal", self._cmd_goal))
         app.add_handler(CommandHandler("settings", self._cmd_settings))
         app.add_handler(CommandHandler("mode", self._cmd_mode))
         app.add_handler(CommandHandler("skip", self._cmd_skip))
-        app.add_handler(CommandHandler("remember", self._cmd_remember))
-        app.add_handler(CommandHandler("review", self._cmd_review))
         app.add_handler(CommandHandler("search", self._cmd_search))
-        app.add_handler(CommandHandler("conflicts", self._cmd_conflicts))
-        app.add_handler(CommandHandler("timeline", self._cmd_timeline))
+        app.add_handler(CommandHandler("topics", self._cmd_topics))
         app.add_handler(CommandHandler("usage", self._cmd_usage))
         app.add_handler(CommandHandler("dryrun", self._cmd_dryrun))
         app.add_handler(CommandHandler("debug", self._cmd_debug))
+        app.add_handler(CommandHandler("warnings", self._cmd_warnings))
         app.add_handler(CommandHandler("model", self._cmd_model))
         app.add_handler(CommandHandler("help", self._cmd_help))
         app.add_handler(CallbackQueryHandler(self._on_callback))
@@ -317,33 +322,6 @@ class TelegramAdapter(BaseAdapter):
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 
-    async def _cmd_tell(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
-        if not is_user_allowed(self.config, user.id):
-            return
-        text = " ".join(ctx.args) if ctx.args else None
-        await update.effective_chat.send_action(ChatAction.TYPING)
-        responses = await self.service.handle_tell(user.id, text)
-        for r in responses:
-            await self._send_response(ctx.bot, update.effective_chat.id, r)
-
-    async def _cmd_mediate(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
-        if not is_user_allowed(self.config, user.id):
-            return
-        await update.effective_chat.send_action(ChatAction.TYPING)
-        responses = await self.service.handle_mediate(user.id, " ".join(ctx.args) or None)
-        for r in responses:
-            await self._send_response(ctx.bot, update.effective_chat.id, r)
-
-    async def _cmd_whatdoyouknow(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
-        if not is_user_allowed(self.config, user.id):
-            return
-        responses = await self.service.handle_whatdoyouknow(user.id)
-        for r in responses:
-            await self._send_response(ctx.bot, update.effective_chat.id, r)
-
     async def _cmd_forget(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
         if not is_user_allowed(self.config, user.id):
@@ -351,6 +329,22 @@ class TelegramAdapter(BaseAdapter):
         arg = " ".join(ctx.args) if ctx.args else None
         responses = await self.service.handle_forget(user.id, arg)
         for r in responses:
+            await self._send_response(ctx.bot, update.effective_chat.id, r)
+
+    async def _cmd_share(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        user = update.effective_user
+        if not is_user_allowed(self.config, user.id):
+            return
+        arg = " ".join(ctx.args) if ctx.args else None
+        for r in await self.service.handle_share(user.id, arg):
+            await self._send_response(ctx.bot, update.effective_chat.id, r)
+
+    async def _cmd_private(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        user = update.effective_user
+        if not is_user_allowed(self.config, user.id):
+            return
+        arg = " ".join(ctx.args) if ctx.args else None
+        for r in await self.service.handle_private(user.id, arg):
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 
     async def _cmd_export(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -367,15 +361,6 @@ class TelegramAdapter(BaseAdapter):
         if not is_user_allowed(self.config, user.id):
             return
         responses = await self.service.handle_help(user.id)
-        for r in responses:
-            await self._send_response(ctx.bot, update.effective_chat.id, r)
-
-    async def _cmd_lang(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
-        if not is_user_allowed(self.config, user.id):
-            return
-        arg = ctx.args[0] if ctx.args else None
-        responses = await self.service.handle_lang(user.id, arg)
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 
@@ -405,6 +390,15 @@ class TelegramAdapter(BaseAdapter):
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 
+    async def _cmd_password(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        user = update.effective_user
+        if not is_user_allowed(self.config, user.id):
+            return
+        arg = " ".join(ctx.args) if ctx.args else None
+        responses = await self.service.handle_password(user.id, arg)
+        for r in responses:
+            await self._send_response(ctx.bot, update.effective_chat.id, r)
+
     async def _cmd_pause(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
         if not is_user_allowed(self.config, user.id):
@@ -418,15 +412,6 @@ class TelegramAdapter(BaseAdapter):
         if not is_user_allowed(self.config, user.id):
             return
         responses = await self.service.handle_resume(user.id)
-        for r in responses:
-            await self._send_response(ctx.bot, update.effective_chat.id, r)
-
-    async def _cmd_style(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
-        if not is_user_allowed(self.config, user.id):
-            return
-        arg = " ".join(ctx.args) if ctx.args else None
-        responses = await self.service.handle_style(user.id, arg)
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 
@@ -466,14 +451,6 @@ class TelegramAdapter(BaseAdapter):
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 
-    async def _cmd_remember(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
-        if not is_user_allowed(self.config, user.id):
-            return
-        responses = await self.service.handle_remember(user.id)
-        for r in responses:
-            await self._send_response(ctx.bot, update.effective_chat.id, r)
-
     async def _cmd_search(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
         if not is_user_allowed(self.config, user.id):
@@ -483,28 +460,11 @@ class TelegramAdapter(BaseAdapter):
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 
-    async def _cmd_review(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    async def _cmd_topics(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
         if not is_user_allowed(self.config, user.id):
             return
-        responses = await self.service.handle_review(user.id)
-        for r in responses:
-            await self._send_response(ctx.bot, update.effective_chat.id, r)
-
-    async def _cmd_conflicts(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
-        if not is_user_allowed(self.config, user.id):
-            return
-        responses = await self.service.handle_conflicts(user.id)
-        for r in responses:
-            await self._send_response(ctx.bot, update.effective_chat.id, r)
-
-    async def _cmd_timeline(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        user = update.effective_user
-        if not is_user_allowed(self.config, user.id):
-            return
-        arg = " ".join(ctx.args) if ctx.args else None
-        responses = await self.service.handle_timeline(user.id, arg)
+        responses = await self.service.handle_topics(user.id)
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 
@@ -514,6 +474,14 @@ class TelegramAdapter(BaseAdapter):
             return
         arg = " ".join(ctx.args) if ctx.args else None
         responses = await self.service.handle_usage(user.id, arg)
+        for r in responses:
+            await self._send_response(ctx.bot, update.effective_chat.id, r)
+
+    async def _cmd_warnings(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        user = update.effective_user
+        if not is_user_allowed(self.config, user.id):
+            return
+        responses = await self.service.handle_warnings(user.id)
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 
@@ -550,7 +518,12 @@ class TelegramAdapter(BaseAdapter):
             return
         text = update.message.text or ""
         await update.effective_chat.send_action(ChatAction.TYPING)
-        responses = await self.service.handle_message(user.id, user.first_name, text)
+        async with self._lock(user.id):
+            token = msg_source.set("telegram")
+            try:
+                responses = await self.service.handle_message(user.id, user.first_name, text)
+            finally:
+                msg_source.reset(token)
         for r in responses:
             await self._send_response(ctx.bot, update.effective_chat.id, r)
 
@@ -560,6 +533,10 @@ class TelegramAdapter(BaseAdapter):
         user = query.from_user
         if not is_user_allowed(self.config, user.id):
             return
-        responses = await self.service.handle_callback(user.id, query.data)
+        token = msg_source.set("telegram")
+        try:
+            responses = await self.service.handle_callback(user.id, query.data)
+        finally:
+            msg_source.reset(token)
         for r in responses:
             await self._send_response(ctx.bot, query.message.chat_id, r)

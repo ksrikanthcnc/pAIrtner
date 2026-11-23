@@ -375,7 +375,7 @@ class CallbacksMixin:
         item_id = self._batch_item_edit_state.pop(user_id)
 
         await db_mod.update_batch_item_status(
-            self.db_path, item_id, "pending", text
+            self.db_path, item_id, "relay_queue", text
         )
 
         buttons = [[
@@ -388,30 +388,6 @@ class CallbacksMixin:
             t(lang, "edit_updated", draft=text),
             buttons=buttons,
         )]
-
-    # ── style / voice callbacks ──────────────────────────────────────────
-
-    async def _cb_style_voice(
-        self, user_id: int, data: str, lang: str
-    ) -> list[BotResponse]:
-        """Update the user's default voice."""
-        voice = data.split(":")[1]
-        await db_mod.update_user_profile(self.db_path, user_id, default_voice=voice)
-        display = _VOICE_LABELS.get(voice, voice)
-        return [BotResponse(t(lang, "style_voice_set", voice=display))]
-
-    async def _cb_style_intensity(
-        self, user_id: int, data: str, lang: str
-    ) -> list[BotResponse]:
-        """Update the user's voice intensity."""
-        try:
-            intensity = float(data.split(":")[1])
-        except (ValueError, IndexError):
-            return [BotResponse(t(lang, "error_generic"))]
-        await db_mod.update_user_profile(
-            self.db_path, user_id, voice_intensity=intensity,
-        )
-        return [BotResponse(t(lang, "style_intensity_set", intensity=intensity))]
 
     # ── fact contradiction callbacks ─────────────────────────────────────
 
@@ -578,28 +554,6 @@ class CallbacksMixin:
 
     # ── settings callbacks ───────────────────────────────────────────────
 
-    async def _cb_settings_voice(
-        self, user_id: int, data: str, lang: str
-    ) -> list[BotResponse]:
-        """Show the voice picker (reuse /style)."""
-        return await self.handle_style(user_id, None)
-
-    async def _cb_settings_dampening(
-        self, user_id: int, data: str, lang: str
-    ) -> list[BotResponse]:
-        """Show dampening level with +/- buttons."""
-        profile = await db_mod.ensure_user_profile(self.db_path, user_id)
-        level = profile.get("dampening_base") or 0.7
-        buttons = [[
-            InlineButton("➖", "sd_down"),
-            InlineButton(f"{level:.1f}", "sd_noop"),
-            InlineButton("➕", "sd_up"),
-        ]]
-        return [BotResponse(
-            t(lang, "settings_dampening_current", level=level),
-            buttons=buttons,
-        )]
-
     async def _cb_settings_goals(
         self, user_id: int, data: str, lang: str
     ) -> list[BotResponse]:
@@ -626,60 +580,6 @@ class CallbacksMixin:
             t(lang, "settings_profile_current",
               relationship_type=rtype, duration_years=dur,
               has_kids=kids, age_range=age),
-            buttons=buttons,
-        )]
-
-    async def _cb_settings_mood(
-        self, user_id: int, data: str, lang: str
-    ) -> list[BotResponse]:
-        """Show mood presets with set/clear buttons."""
-        active = await db_mod.get_active_mood(self.db_path, user_id)
-        current = active["mood"] if active else "none"
-
-        mood_buttons = [
-            InlineButton("😰 Stressed", "sm:stressed"),
-            InlineButton("😊 Happy", "sm:happy"),
-        ]
-        mood_buttons2 = [
-            InlineButton("😤 Angry", "sm:angry"),
-            InlineButton("🤔 Reflective", "sm:reflective"),
-        ]
-        clear_row = [InlineButton("🔄 Clear", "sm_clear")]
-
-        text = t(lang, "mood_current", mood=current, expires="") if active else t(lang, "mood_none")
-        return [BotResponse(text, buttons=[mood_buttons, mood_buttons2, clear_row])]
-
-    async def _cb_dampening_up(
-        self, user_id: int, data: str, lang: str
-    ) -> list[BotResponse]:
-        """Increase dampening base by 0.1."""
-        profile = await db_mod.ensure_user_profile(self.db_path, user_id)
-        level = min(1.0, round((profile.get("dampening_base") or 0.7) + 0.1, 1))
-        await db_mod.update_user_profile(self.db_path, user_id, dampening_base=level)
-        buttons = [[
-            InlineButton("➖", "sd_down"),
-            InlineButton(f"{level:.1f}", "sd_noop"),
-            InlineButton("➕", "sd_up"),
-        ]]
-        return [BotResponse(
-            t(lang, "settings_dampening_updated", level=level),
-            buttons=buttons,
-        )]
-
-    async def _cb_dampening_down(
-        self, user_id: int, data: str, lang: str
-    ) -> list[BotResponse]:
-        """Decrease dampening base by 0.1."""
-        profile = await db_mod.ensure_user_profile(self.db_path, user_id)
-        level = max(0.1, round((profile.get("dampening_base") or 0.7) - 0.1, 1))
-        await db_mod.update_user_profile(self.db_path, user_id, dampening_base=level)
-        buttons = [[
-            InlineButton("➖", "sd_down"),
-            InlineButton(f"{level:.1f}", "sd_noop"),
-            InlineButton("➕", "sd_up"),
-        ]]
-        return [BotResponse(
-            t(lang, "settings_dampening_updated", level=level),
             buttons=buttons,
         )]
 
@@ -712,20 +612,6 @@ class CallbacksMixin:
 
         await db_mod.update_user_profile(self.db_path, user_id, **{field_name: value})
         return [BotResponse(t(lang, "settings_profile_updated", field=field_name, value=value))]
-
-    async def _cb_mood_set(
-        self, user_id: int, data: str, lang: str
-    ) -> list[BotResponse]:
-        """Set a mood preset from settings menu."""
-        mood = data.split(":")[1]
-        return await self.handle_style(user_id, f"mood {mood}")
-
-    async def _cb_mood_clear(
-        self, user_id: int, data: str, lang: str
-    ) -> list[BotResponse]:
-        """Clear all moods for this user (active and expired)."""
-        await db_mod.clear_user_mood(self.db_path, user_id)
-        return [BotResponse(t(lang, "mood_none"))]
 
     # ── feedback callbacks (FEAT-003) ────────────────────────────────────
 

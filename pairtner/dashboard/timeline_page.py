@@ -58,7 +58,7 @@ overflow-wrap:anywhere}
 border:1px solid #0002;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
 .st-pending{background:#fff3cd}.st-delivered{background:#d4f1dc}
 .st-cancelled{background:#fde2e2}.st-expired{background:#e5e7eb}
-.vis-private{background:#fde2e2}.vis-shareable,.vis-nudge_eligible{background:#fff}
+.vis-private{background:#fde2e2}.vis-shared{background:#fff}
 .bar{height:5px;border-radius:3px;background:#0001;margin-top:6px;overflow:hidden}
 .bar i{display:block;height:100%;background:#2f9e5f}
 details summary{cursor:pointer}

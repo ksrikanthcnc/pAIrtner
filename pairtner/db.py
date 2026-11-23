@@ -23,6 +23,8 @@ from pairtner.storage.helpers import (  # noqa: F401
 from pairtner.storage.users import (  # noqa: F401
     get_user, create_user, ensure_user, update_user_lang, set_partner,
     set_user_paused, get_partner_last_active,
+    set_password, verify_password, find_user_ids_by_name,
+    get_user_mode, set_user_mode, USER_MODES,
 )
 
 # ---------------------------------------------------------------------------
@@ -40,7 +42,8 @@ from pairtner.storage.facts import (  # noqa: F401
     add_fact, get_facts, get_shared_facts_for_pair, set_fact_visibility,
     update_fact_text, set_fact_status, promote_to_core, delete_fact,
     delete_all_facts, get_fact_by_id, get_active_facts,
-    get_shared_facts_since, get_positive_shared_facts, get_facts_since,
+    get_shared_facts_since, get_positive_shared_facts, get_recent_shared_facts, get_topic_index,
+    get_facts_since, get_couple_tags,
     archive_fact, set_fact_expiry, get_expiring_facts, supersede_fact,
     run_fact_aging, append_memory_version, log_memory_op,
     get_memory_versions, add_fact_summary, get_fact_summaries,
@@ -81,7 +84,7 @@ from pairtner.storage.profiles import (  # noqa: F401
 from pairtner.storage.couples import (  # noqa: F401
     make_couple_id, set_couple_config, get_couple_config,
     delete_couple_config, get_all_couples, create_conflict,
-    get_open_conflicts, get_conflict_by_id, update_conflict_status,
+    get_open_conflicts, get_all_conflicts, get_conflict_by_id, update_conflict_status,
     add_relay_to_conflict, get_conflict_summary, create_checkin,
     get_active_checkin, update_checkin_answers, mark_checkin_complete,
     add_timeline_event, get_timeline_events, get_timeline_events_range,

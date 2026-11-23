@@ -21,6 +21,7 @@ tmp-kiro/
 .rsyncignore
 dev/deploy.sh
 dev/deploy-wsl.sh
+dev/push-win.sh
 dev/sync-to-wsl.sh
 dev/deploy.env
 

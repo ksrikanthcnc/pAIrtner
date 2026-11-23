@@ -368,13 +368,13 @@ async def test_paused_column_migration(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_category_column_migration(tmp_path):
-    """Existing DBs without 'category' column in facts get it via migration."""
+async def test_tag_column_migration(tmp_path):
+    """Existing DBs without 'tag' column in facts get it via migration."""
     import aiosqlite
 
     db_path = str(tmp_path / "migrate_cat.db")
 
-    # Create a DB with the OLD facts schema (no category column)
+    # Create a DB with the OLD facts schema (no tag column)
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
             "CREATE TABLE users ("
@@ -396,19 +396,19 @@ async def test_category_column_migration(tmp_path):
         )
         await db.commit()
 
-    # Run init_db — should add the category column
+    # Run init_db — should add the tag column
     await init_db(db_path)
 
     facts = await get_facts(db_path, 1)
     assert len(facts) == 1
     assert facts[0]["text"] == "Old fact"
-    assert facts[0]["category"] is None
+    assert facts[0]["tag"] is None
 
-    # New facts can have a category
-    fid = await add_fact(db_path, 1, "New fact", "private", category="work")
+    # New facts can have a tag
+    fid = await add_fact(db_path, 1, "New fact", "private", tag="work")
     facts = await get_facts(db_path, 1)
     new_fact = [f for f in facts if f["id"] == fid][0]
-    assert new_fact["category"] == "work"
+    assert new_fact["tag"] == '["work"]'
 
 
 # ---------------------------------------------------------------------------
@@ -793,10 +793,10 @@ async def test_get_sent_relays_limit(test_db, paired_users):
 async def test_add_fact_with_category(test_db):
     """add_fact stores a category when provided."""
     await create_user(test_db, 10, "X")
-    fid = await add_fact(test_db, 10, "Works from home", "private", category="work")
+    fid = await add_fact(test_db, 10, "Works from home", "private", tag="work")
     facts = await get_facts(test_db, 10)
     fact = [f for f in facts if f["id"] == fid][0]
-    assert fact["category"] == "work"
+    assert fact["tag"] == '["work"]'
 
 
 @pytest.mark.asyncio
@@ -806,7 +806,7 @@ async def test_add_fact_without_category(test_db):
     fid = await add_fact(test_db, 10, "Likes coffee", "private")
     facts = await get_facts(test_db, 10)
     fact = [f for f in facts if f["id"] == fid][0]
-    assert fact["category"] is None
+    assert fact["tag"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -990,22 +990,22 @@ async def test_get_positive_shared_facts(test_db):
     # Positive: relationship category, shared
     await add_fact(
         test_db, 1001, "We love hiking", "shared",
-        category="relationship",
+        tag="relationship",
     )
     # Positive: emotional category, shared
     await add_fact(
         test_db, 1001, "We enjoy cooking", "shared",
-        category="emotional",
+        tag="emotional",
     )
     # Non-positive: household, shared
     await add_fact(
         test_db, 1001, "Fix the sink", "shared",
-        category="household",
+        tag="household",
     )
     # Private (should not be returned)
     await add_fact(
         test_db, 1001, "I feel stressed", "private",
-        category="emotional",
+        tag="emotional",
     )
 
     facts = await get_positive_shared_facts(test_db, 1001, 1002)
@@ -1030,3 +1030,38 @@ async def test_record_pattern_with_type(test_db):
     assert len(horsemen) == 1
     assert len(comm) == 1
     assert horsemen[0]["pattern"] == "blame language"
+
+
+@pytest.mark.asyncio
+async def test_get_recent_shared_facts_includes_negative(test_db):
+    from pairtner.db import get_recent_shared_facts
+
+    await create_user(test_db, 1001, "Alice")
+    await create_user(test_db, 1002, "Bob")
+    await set_partner(test_db, 1001, 1002)
+    await add_fact(test_db, 1001, "We love hiking", "shared", tag="relationship")
+    await add_fact(test_db, 1002, "Feeling unheard lately", "shared", tag="conflict")
+    await add_fact(test_db, 1001, "secret", "private", tag="emotional")
+
+    texts = [f["text"] for f in await get_recent_shared_facts(test_db, 1001, 1002)]
+    assert "We love hiking" in texts
+    assert "Feeling unheard lately" in texts
+    assert "secret" not in texts
+    assert len(await get_recent_shared_facts(test_db, 1001, 1002, limit=1)) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_topic_index_counts(test_db):
+    from pairtner.db import get_topic_index
+
+    await create_user(test_db, 1001, "Alice")
+    await add_fact(test_db, 1001, "a", "private", tag=["kids", "school"])
+    await add_fact(test_db, 1001, "b", "shared", tag="kids")
+    await add_fact(test_db, 1001, "c", "private", tag="work")
+
+    idx = {r["topic"]: r for r in await get_topic_index(test_db, 1001)}
+    assert idx["kids"]["mention_count"] == 2
+    assert idx["kids"]["private_count"] == 1
+    assert idx["school"]["mention_count"] == 1
+    assert idx["work"]["private_count"] == 1
+    assert await get_topic_index(test_db, 9999) == []

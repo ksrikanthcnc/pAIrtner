@@ -105,10 +105,6 @@ async def test_blocked_message(restricted_service):
     assert responses == []
 
 
-@pytest.mark.asyncio
-async def test_blocked_tell(restricted_service):
-    responses = await restricted_service.handle_tell(BLOCKED_ID, "test message")
-    assert responses == []
 
 
 @pytest.mark.asyncio
@@ -123,16 +119,8 @@ async def test_blocked_join(restricted_service):
     assert responses == []
 
 
-@pytest.mark.asyncio
-async def test_blocked_mediate(restricted_service):
-    responses = await restricted_service.handle_mediate(BLOCKED_ID)
-    assert responses == []
 
 
-@pytest.mark.asyncio
-async def test_blocked_whatdoyouknow(restricted_service):
-    responses = await restricted_service.handle_whatdoyouknow(BLOCKED_ID)
-    assert responses == []
 
 
 @pytest.mark.asyncio
@@ -153,10 +141,6 @@ async def test_blocked_help(restricted_service):
     assert responses == []
 
 
-@pytest.mark.asyncio
-async def test_blocked_lang(restricted_service):
-    responses = await restricted_service.handle_lang(BLOCKED_ID, "en")
-    assert responses == []
 
 
 # ---------------------------------------------------------------------------

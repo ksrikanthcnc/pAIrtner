@@ -212,14 +212,17 @@ class TestTelegramAdapter:
         """Verify all command handler methods exist on the adapter."""
         adapter = TelegramAdapter(service, config)
         commands = [
-            "_cmd_start", "_cmd_join", "_cmd_tell", "_cmd_mediate",
-            "_cmd_whatdoyouknow", "_cmd_forget", "_cmd_export", "_cmd_help",
-            "_cmd_lang", "_cmd_setup", "_cmd_status", "_cmd_history",
-            "_cmd_pause", "_cmd_resume", "_cmd_style",
+            "_cmd_start", "_cmd_join",
+            "_cmd_forget", "_cmd_export", "_cmd_help",
+            "_cmd_setup", "_cmd_status", "_cmd_history",
+            "_cmd_pause", "_cmd_resume",
             "_cmd_goal",
-            "_cmd_settings", "_cmd_skip", "_cmd_remember", "_cmd_search",
-            "_cmd_conflicts", "_cmd_timeline",
+            "_cmd_settings", "_cmd_skip", "_cmd_search",
         ]
+        for removed in ("_cmd_tell", "_cmd_mediate", "_cmd_whatdoyouknow", "_cmd_lang",
+                        "_cmd_remember", "_cmd_review", "_cmd_conflicts", "_cmd_timeline",
+                        "_cmd_yolo"):
+            assert not hasattr(adapter, removed), f"Should be removed: {removed}"
         for cmd in commands:
             assert hasattr(adapter, cmd), f"Missing method: {cmd}"
             assert callable(getattr(adapter, cmd)), f"{cmd} is not callable"
@@ -421,11 +424,12 @@ class TestAuthTokenDB:
         assert await validate_auth_token(test_db, 9999, "anything") is False
 
     async def test_upsert_token(self, test_db):
-        """create_auth_token should update existing token on conflict."""
+        """create_auth_token supports multi-device (both tokens valid)."""
         await create_auth_token(test_db, 42, "first-token")
         await create_auth_token(test_db, 42, "second-token")
-        token = await get_auth_token(test_db, 42)
-        assert token == "second-token"
+        # Both tokens should be valid (multi-device)
+        assert await validate_auth_token(test_db, 42, "first-token") is True
+        assert await validate_auth_token(test_db, 42, "second-token") is True
 
     async def test_multiple_users_tokens(self, test_db):
         await create_auth_token(test_db, 1, "token-1")

@@ -26,8 +26,9 @@ digest_system: "Generate a brief, neutral daily summary of today's shared activi
 checkin_system: "Generate a warm, blame-free summary of both partners' reflections. Never reveal which partner said what specifically. Focus on common themes and positive momentum. Do not use JSON — reply with plain text only."
 
 # --- data-block labels ----------------------------------------------------
-label_private_notes: "Your private notes"
-label_shared_notes: "Shared notes"
+label_private_notes: "Your notes"
+label_shared_notes: "What your partner shared with me"
+label_your_working: "Your recent thoughts and feelings"
 label_recent_conversation: "Recent conversation"
 label_current_message: "Current message"
 label_current_message_blunt: "Current message (blunt feedback requested)"
@@ -93,8 +94,8 @@ conflict_none: "none"
 partner_fallback: "your partner"
 nudge_partner: "The user's partner is named {partner_name}."
 nudge_language: "Language: {lang}"
-nudge_facts_heading: "Shared positive memories"
-nudge_request: "Generate a warm, tailored nudge based on these shared memories."
+nudge_facts_heading: "Recent shared context"
+nudge_request: "Generate a warm, caring nudge based on this shared context. It could be appreciation, a gentle heads-up, a helpful suggestion, or just checking in."
 appreciation_request: "Generate a warm appreciation prompt. Do NOT mention ratios, metrics, or clinical terms."
 
 # --- monthly fact summary ---------------------------------------------------

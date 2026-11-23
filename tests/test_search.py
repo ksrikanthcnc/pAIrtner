@@ -56,19 +56,19 @@ async def paired_search_db(search_db) -> tuple[str, int, int]:
     await set_partner(search_db, alice, bob)
 
     # Alice's private facts
-    await add_fact(search_db, alice, "Alice loves hiking in the mountains", "private", category="health")
-    await add_fact(search_db, alice, "Alice feels stressed about work deadlines", "private", category="work")
-    await add_fact(search_db, alice, "Alice prefers morning coffee", "private", category="other")
+    await add_fact(search_db, alice, "Alice loves hiking in the mountains", "private", tag="health")
+    await add_fact(search_db, alice, "Alice feels stressed about work deadlines", "private", tag="work")
+    await add_fact(search_db, alice, "Alice prefers morning coffee", "private", tag="other")
 
     # Alice's shared fact
-    await add_fact(search_db, alice, "We agreed to cook together on weekends", "shared", category="household")
+    await add_fact(search_db, alice, "We agreed to cook together on weekends", "shared", tag="household")
 
     # Bob's private facts (should NOT appear in Alice's search)
-    await add_fact(search_db, bob, "Bob secretly hates hiking", "private", category="health")
-    await add_fact(search_db, bob, "Bob is anxious about work reviews", "private", category="work")
+    await add_fact(search_db, bob, "Bob secretly hates hiking", "private", tag="health")
+    await add_fact(search_db, bob, "Bob is anxious about work reviews", "private", tag="work")
 
     # Bob's shared facts (SHOULD appear in Alice's search)
-    await add_fact(search_db, bob, "We decided to try a new hiking trail", "shared", category="health")
+    await add_fact(search_db, bob, "We decided to try a new hiking trail", "shared", tag="health")
 
     return search_db, alice, bob
 
@@ -299,7 +299,7 @@ class TestFactSummaries:
 
         async with aiosqlite.connect(search_db) as db:
             await db.execute(
-                "INSERT INTO facts (owner_id, text, visibility, category, created_at) "
+                "INSERT INTO facts (owner_id, text, visibility, tag, created_at) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (1, "January test fact", "private", "work", "2025-01-15T10:00:00"),
             )
@@ -427,7 +427,7 @@ class TestSearchCommand:
 
     async def test_search_with_results(self, search_service):
         await create_user(search_service.db_path, 1, "Test")
-        await add_fact(search_service.db_path, 1, "I love morning runs", category="health")
+        await add_fact(search_service.db_path, 1, "I love morning runs", tag="health")
         responses = await search_service.handle_search(1, "morning")
         assert len(responses) == 1
         assert "morning" in responses[0].text.lower()
@@ -445,7 +445,7 @@ class TestPromptBuildersWithSmartContext:
             shared_facts=["Both like pizza"],
         )
         system, content = build_chat_prompt(ctx, "hello")
-        assert "private notes" in content.lower()
+        assert "your notes" in content.lower()
         assert "Alice likes cats" in content
 
     def test_chat_prompt_with_smart_ctx_uses_structured_sections(self):
@@ -463,7 +463,7 @@ class TestPromptBuildersWithSmartContext:
         assert "Recent fact A" in content
         assert "Relevant fact B" in content
         # Should NOT contain the flat facts sections
-        assert "private notes" not in content.lower()
+        assert "your notes" not in content.lower()
 
     def test_tell_prompt_with_smart_ctx(self):
         ctx = UserContext(user_name="Alice")

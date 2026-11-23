@@ -80,7 +80,7 @@ def _mk(test_db, llm, **kw):
 
 PROTECTED = [r for r in ROUTES if not r.public]
 PUBLIC_EXPECTED = {
-    "/healthz", "/api/v1/meta", "/api/v1/register",
+    "/healthz", "/api/v1/meta", "/api/v1/register", "/api/v1/login",
 }
 
 
@@ -92,12 +92,24 @@ def test_route_table_decisions_are_explicit():
         ("GET", "/healthz"): True,
         ("GET", "/api/v1/meta"): True,
         ("POST", "/api/v1/register"): True,
+        ("POST", "/api/v1/login"): True,
+        ("POST", "/api/v1/sandbox/create"): True,
+        ("POST", "/api/v1/admin/dryrun"): False,
         ("GET", "/api/v1/me"): False,
+        ("POST", "/api/v1/push/subscribe"): False,
+        ("DELETE", "/api/v1/push/subscribe"): False,
+        ("GET", "/api/v1/push/vapid"): True,
         ("POST", "/api/v1/message"): False,
         ("POST", "/api/v1/callback"): False,
         ("GET", "/api/v1/events"): False,
         ("GET", "/api/v1/history"): False,
         ("GET", "/api/v1/facts"): False,
+        ("GET", "/api/v1/summaries"): False,
+        ("GET", "/api/v1/topics"): False,
+        ("GET", "/api/v1/dashboard/stats"): False,
+        ("GET", "/api/v1/relationships"): False,
+        ("GET", "/api/v1/admin/stats"): False,
+        ("GET", "/api/v1/admin/users"): False,
         ("DELETE", "/api/v1/message"): False,
         ("POST", "/api/v1/token/rotate"): False,
         ("GET", "/api/v1/memory"): False,
@@ -106,11 +118,16 @@ def test_route_table_decisions_are_explicit():
         ("GET", "/api/v1/memory/search"): False,
         ("GET", "/api/search"): False,
         ("POST", "/api/search/rerank"): False,
+        ("POST", "/api/v1/import"): False,
+        ("POST", "/api/v1/summaries/trigger"): False,
+        ("GET", "/api/v1/settings/model"): False,
+        ("PUT", "/api/v1/settings/model"): False,
+        ("GET", "/api/v1/export/therapy"): False,
     }
     static = [r for r in ROUTES if r.handler == "_static"]
     assert static and all(r.public and r.method == "GET" for r in static)
     assert {r.handler for r in ROUTES if r.public and r.handler != "_static"} == {
-        "_healthz", "_meta", "_register"}
+        "_healthz", "_meta", "_register", "_login", "_push_vapid", "_sandbox_create"}
 
 
 @pytest.mark.parametrize("route", PROTECTED, ids=lambda r: f"{r.method} {r.path}")
@@ -353,6 +370,29 @@ async def test_static_serving_content_types(env, tmp_path):
         assert resp.content_type.startswith(ctype)
         assert resp.body == body
     assert (await c.call("GET", "/style.css"))[0] == 404  # allowed name, file missing
+
+
+async def test_pwa_mode_routes_and_manifests(env):
+    _, api, c, _ = env
+    import json as _json
+    from pathlib import Path
+    api.web_dir = Path(api_mod.__file__).parent.parent / "web"
+    for mode, name, scope in [("couple", "pAIrtner", "/couple/"), ("solo", "pAIrtner Solo", "/solo/")]:
+        status, _, resp = await c.call("GET", f"/{mode}/")
+        assert status == 200 and resp.content_type.startswith("text/html")
+        status, _, resp = await c.call("GET", f"/{mode}/manifest.json")
+        data = _json.loads(resp.body)
+        assert status == 200 and data["name"] == name
+        assert data["start_url"] == scope and data["scope"] == scope
+
+
+def test_offline_queue_and_sw_version():
+    from pathlib import Path
+    web = Path(api_mod.__file__).parent.parent / "web"
+    js = (web / "components" / "chat.js").read_text()  # offline queue lives in the chat view
+    for needle in ("function queueMessage", "function flushQueue", "batched: true", "msgQueue"):
+        assert needle in js
+    assert "shell-v16" in (web / "sw.js").read_text()
 
 
 @pytest.mark.parametrize("path", [

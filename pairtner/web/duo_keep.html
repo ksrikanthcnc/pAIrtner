@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- Persistent duo: separate DB (not main), survives restarts. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pAIrtner duo (persistent)</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="duo">
+<div class="duo-banner duo-keep">🔒 Persistent Duo — separate DB, keeps history
+  <button type="button" id="duo-reset">Reset DB</button></div>
+<iframe id="duo-alice" title="Alice" data-query="profile=alice"></iframe>
+<iframe id="duo-bob" title="Bob" data-query="profile=bob"></iframe>
+<script type="module" src="/duo_keep.js"></script>
+</body>
+</html>

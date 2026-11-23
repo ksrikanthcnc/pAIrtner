@@ -80,7 +80,7 @@ async def test_client_without_tools_param_still_works(db):
 
 async def test_search_memory_respects_privacy(db):
     await _add(db, ALICE, "ALICE_PRIVATE_ZEBRA secret", "private")
-    await _add(db, ALICE, "Alice loves zebra stripes", "nudge_eligible")
+    await _add(db, ALICE, "Alice loves zebra stripes", "shared")
     results = await execute_search_memory(db, BOB, "zebra", REL)
     texts = " ".join(r["text"] for r in results)
     assert "ALICE_PRIVATE_ZEBRA" not in texts

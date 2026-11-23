@@ -28,9 +28,8 @@ def api(db):
 
 class TestAging:
     @pytest.mark.asyncio
-    async def test_run_aging_marks_outdated(self, api, db):
-        """Working facts uncited for 30+ days get marked outdated."""
-        # Create a fact with old created_at and no citations
+    async def test_run_aging_does_not_outdate_working(self, api, db):
+        """Working facts should NOT be auto-outdated. Summaries handle implicit memory."""
         old_date = _to_iso(datetime.now(timezone.utc) - timedelta(days=45))
         async with aiosqlite.connect(db) as conn:
             await conn.execute(
@@ -41,10 +40,10 @@ class TestAging:
             await conn.commit()
 
         result = await api.run_aging()
-        assert result.marked_outdated >= 1
+        assert result.marked_outdated == 0
 
-        # Verify the fact is now outdated
-        facts = await api.list_facts(1, status="outdated")
+        # Verify the fact is still active
+        facts = await api.list_facts(1, status="active")
         assert any(f.text == "Old uncited fact" for f in facts.facts)
 
     @pytest.mark.asyncio

@@ -262,7 +262,7 @@ async def generate_couple_data(db_path: str, months: int = 6, seed: int = 42) ->
                         text = tpl.format(n=NAMES[uid])
                         inten = round(min(1.0, max(0.1, base + rng.uniform(-0.08, 0.08))), 2)
                         status = "resolved" if (key == "resolution" and rng.random() < 0.6) else "active"
-                        vis = rng.choices(["private", "nudge_eligible", "shareable"], [3, 5, 2])[0]
+                        vis = rng.choices(["private", "shared", "shared"], [3, 5, 2])[0]
                         cur = conn.execute(
                             "INSERT INTO facts (owner_id, relationship_id, text, visibility, kind, "
                             "status, intensity, msg_source, created_at) VALUES (?,?,?,?,?,?,?,?,?)",

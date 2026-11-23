@@ -22,12 +22,13 @@ async def memory_maintenance_loop(
     llm: Any,
     *,
     interval: int = 3600,
+    rolling_summary_enabled: bool = True,
 ) -> None:
     """Background loop: run memory maintenance once per interval.
 
-    - Ages expired/transient facts
-    - Auto-marks stale working facts as outdated
+    - Ages expired/transient facts (auto-archive at 14d)
     - Runs consolidation (weekly) for eligible users
+    - Working facts are NOT auto-outdated; they persist until consolidation
     """
     api = MemoryAPI(db_path)
     logger.info("Memory maintenance loop started (interval=%ds)", interval)
@@ -49,7 +50,10 @@ async def memory_maintenance_loop(
             for uid in user_ids:
                 try:
                     if v2:
-                        await _run_v2_maintenance(db_path, llm, uid)
+                        await _run_v2_maintenance(
+                            db_path, llm, uid,
+                            rolling_summary_enabled=rolling_summary_enabled,
+                        )
                     else:
                         await _maybe_consolidate(db_path, llm, uid)
                 except Exception:
@@ -100,7 +104,9 @@ def _max_active_nudges() -> int:
     return DEFAULT_MAX_ACTIVE_NUDGES
 
 
-async def _run_v2_maintenance(db_path: str, llm: Any, user_id: int) -> None:
+async def _run_v2_maintenance(
+    db_path: str, llm: Any, user_id: int, *, rolling_summary_enabled: bool = True,
+) -> None:
     """v2 maintenance: periodic + couple summaries, nudge cleanup, orphan rescue."""
     import aiosqlite
 
@@ -147,6 +153,15 @@ async def _run_v2_maintenance(db_path: str, llm: Any, user_id: int) -> None:
                 await create_couple_summary(db_path, llm, rid, p["kind"], p["period"])
         except Exception:
             logger.warning("Couple summaries failed for rel %s", rid, exc_info=True)
+
+        if rolling_summary_enabled:
+            from pairtner.core.summary import run_rolling_summaries
+            try:
+                await run_rolling_summaries(db_path, llm, user_id, rid)
+            except Exception:
+                # Old rolling rows stay in place; the prompt keeps using them.
+                logger.warning("Rolling summaries failed for user %s rel %s",
+                               user_id, rid, exc_info=True)
 
     # Weekly relationship health score (no LLM)
     from pairtner.core.health_score import maybe_compute_weekly

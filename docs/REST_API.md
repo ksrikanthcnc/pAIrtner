@@ -90,6 +90,28 @@ Response `201`:
 
 The `token` is shown once. Store it and send it as the bearer credential.
 
+### `POST /api/v1/login` (no auth, throttled)
+
+Log in with a password (set via `/password` in Telegram or during onboarding).
+Returns a bearer token for the same user, so a Telegram user can access the PWA.
+
+Request: `{"user_id": 123456, "password": "mypass"}` or `{"name": "Alice", "password": "mypass"}`
+
+| Field | Required | Notes |
+|---|---|---|
+| `user_id` | one of `user_id` or `name` | The Telegram user ID |
+| `name` | one of `user_id` or `name` | Case-insensitive display name lookup |
+| `password` | yes | The password set via `/password` or during onboarding |
+
+Response `200`:
+
+```json
+{"user_id": 123456,
+ "token": "123456:cJamwmeLgu5na3MThTjpixcfJSd8Zz1pNLZKOe5RsWA"}
+```
+
+Errors: `401 invalid_credentials` (wrong password, no password set, or unknown user).
+
 ### `GET /api/v1/me`
 
 ```json
@@ -192,7 +214,44 @@ Response `200`:
 
 Query parameters:
 - `kind` — filter by memory kind: `core`, `working`, `episode`, `partner_view` (optional)
-- `visibility` — filter by `private` or `shared` (optional)
+- `visibility` (alias `vis`) — filter by `private` or `shared` (optional)
+- `tag` — only facts carrying this tag (optional)
+- `relationship_id` — a relationship id you belong to, or `none` for solo facts (404 for others)
+- `ids` — comma-separated fact ids (still limited to your own facts)
+- `include_summaries=0` — leave out period summaries
+- `order=desc` (default ascending), `limit` (max 2000), `offset`; the response adds `total`
+
+### `GET /api/v1/export/therapy`
+
+Therapist-facing markdown report built from stored data (no LLM). Includes the
+caller's own private facts and shared facts only. Response `200` with
+`Content-Type: text/markdown`. `409 not_paired` if unpaired, `404
+not_enough_data` if nothing is recorded yet.
+
+### PWA dashboard endpoints (all user-scoped, bearer auth)
+
+- `GET /api/v1/summaries?period=weekly&tag=T&relationship_id=R&limit=N` — own period summaries
+  (`{"summaries": [{id, kind, period_id, text, tags, source_ids, created_at}], "count"}`)
+- `GET /api/v1/topics?relationship_id=R&limit=N` — own per-tag topic index
+  (`{"topics": [{topic, mention_count, private_count, last_discussed}]}`)
+- `GET /api/v1/dashboard/stats?relationship_id=R` — `{facts, core_facts, shared_facts, summaries, topics, messages, relationships}`
+- `GET /api/v1/relationships` — relationships the user belongs to, with `partner_name`
+- `GET /api/v1/couple/<relationship_id>/{facts,conflicts,nudges,relays}` — couple views; `404` unless the caller is a member. `facts` lists only shared facts, `nudges` only those addressed to the caller, `relays` the caller's own plus relays already sent to them.
+
+### Admin endpoints
+
+Bearer auth **and** an `X-Admin-Token` header equal to the `DASHBOARD_TOKEN` env var (`403 admin_disabled` when unset, `403 admin_required` when wrong).
+
+- `GET /api/v1/admin/stats` — row counts per table
+- `GET /api/v1/admin/users` — all users with fact/message counts
+- `POST /api/v1/admin/dryrun` — body `{text, user_id?}`; runs the real LLM and returns `{system_prompt, user_content, llm_response, parsed, would_save}`; saves nothing
+
+### Dev sandbox (duo page)
+
+- `POST /api/v1/sandbox/create` — no auth; makes an isolated temp DB with paired users Alice (1) and Bob (2); returns `{sandbox_id, alice_token, bob_token}`. Pass `?sandbox=<id>` on later API calls to use that DB. Sandboxes expire after 1 hour.
+- `DELETE /api/v1/sandbox/{id}` — deletes the sandbox DB
+
+- `GET /api/v1/admin/pipeline/<message_id>` — message, the facts extracted from it, and summaries citing them
 
 ### `GET /api/v1/memory?kind=K&status=S&scored=1&limit=N&offset=N`
 
@@ -265,6 +324,40 @@ Two-pass search (FTS5 top 50, then LLM picks top 15). Admin only (`ADMIN_USER_ID
 
 `GET /`, `/index.html`, `/duo.html`, `/app.js`, `/render.js`, `/sw.js`, `/style.css`, `/manifest.webmanifest`, `/icons/icon-192.png`, `/icons/icon-512.png`, `/icons/icon.svg`. This is a fixed list; any other path is `404 not_found`.
 
+### Push notifications
+
+#### `GET /api/v1/push/vapid`
+
+Public. Returns the VAPID public key for client-side push subscription. `501 push_not_configured` when `VAPID_PUBLIC_KEY` is not set.
+
+```json
+{"vapid_public_key": "BHpIh..."}
+```
+
+#### `POST /api/v1/import`
+
+Authenticated. Import chat history and extract knowledge.
+Body: `{"messages": [...], "partner_name": "Bob", "user_name": "Alice", "dry_run": false}`.
+Messages accept native, Telegram JSON export, or `{sender, message, date}` formats.
+
+#### `POST /api/v1/summaries/trigger`
+
+Authenticated. Manually trigger summary generation for the authenticated user.
+Returns `{"created": {"weekly": N, ...}, "total": N}`.
+
+#### `POST /api/v1/push/subscribe`
+
+Authenticated. Stores a Web Push subscription for the user. Body:
+
+```json
+{"subscription": {"endpoint": "https://fcm.googleapis.com/...", "keys": {"p256dh": "...", "auth": "..."}}}
+```
+
+#### `DELETE /api/v1/push/subscribe`
+
+Authenticated. Removes a push subscription. Body: `{"endpoint": "https://fcm.googleapis.com/..."}`.
+
+
 ## 4. Registration modes
 
 Set with `rest.registration` in `settings.yaml` or `REST_REGISTRATION`.
@@ -291,27 +384,42 @@ With `ALLOWED_USER_IDS` set on the server, registration also needs an explicit a
 |---|---|---|
 | 400 | `invalid_json` | Body is not a JSON object |
 | 400 | `invalid_text` | `text` missing, not a string, or blank |
+| 400 | `invalid_model` | `model` is not a single token of at most 100 chars |
 | 400 | `text_too_long` | `text` longer than the limit |
 | 400 | `invalid_name` | `name` empty after cleaning |
 | 400 | `invalid_lang` | `lang` is not `en` or `te` |
+| 404 | `not_enough_data` | Therapy export requested before anything is recorded |
+| 409 | `not_paired` | Therapy export requested by an unpaired user |
+| 400 | `invalid_user_id` | `user_id` is not an integer (dry-run) |
+| 404 | `user_not_found` | Dry-run `user_id` does not exist |
+| 404 | `sandbox_not_found` | Unknown or expired `sandbox` id |
+| 429 | `too_many_sandboxes` | Too many live dev sandboxes |
 | 400 | `invalid_data` | `data` missing, blank, or over 256 chars |
-| 400 | `invalid_query` | Bad `after` or `wait` |
+| 400 | `invalid_query` | Bad `after`, `wait`, `limit`, `offset` or `ids` |
+| 400 | `invalid_period` | `period` is not a summary kind |
 | 400 | `missing_query` | Search query parameter `q` is empty or missing |
 | 400 | `invalid_kind` | `kind` is not `core` or `working` |
+| 400 | `missing_messages` | Chat import request has no `messages` array |
 | 403 | `forbidden` | Searching another user or a relationship you are not in |
-| 403 | `admin_required` | Endpoint needs a user in `ADMIN_USER_IDS` |
+| 403 | `admin_required` | Endpoint needs a user in `ADMIN_USER_IDS`, or a valid `X-Admin-Token` |
+| 403 | `admin_disabled` | `DASHBOARD_TOKEN` is not set on the server |
 | 400 | `invalid_id` | Message id missing or not a positive integer |
 | 401 | `unauthorized` | Bad or missing token (response has `WWW-Authenticate`) |
 | 403 | `not_allowed` | Id not in `ALLOWED_USER_IDS` |
 | 403 | `registration_closed` | Mode is `closed` |
 | 403 | `registration_unavailable` | Mode is `invite` but the server has no `REST_INVITE_CODE` |
 | 403 | `invalid_invite` | Wrong invite code |
+| 401 | `invalid_credentials` | Wrong password, no password set, or unknown user on `/login` |
 | 404 | `not_found` | Unknown path |
 | 405 | `method_not_allowed` | Known path, wrong HTTP method |
 | 409 | `user_exists` | Allowlisted id already registered |
 | 413 | `body_too_large` | Body over 16 KiB |
 | 415 | `json_required` | POST without `Content-Type: application/json` |
 | 429 | `too_many_requests` | Throttled |
+| 400 | `missing_subscription` | Push subscribe body missing `subscription` object |
+| 400 | `incomplete_subscription` | Push subscription missing `endpoint`, `p256dh`, or `auth` |
+| 400 | `missing_endpoint` | Push unsubscribe body missing `endpoint` |
+| 501 | `push_not_configured` | `VAPID_PUBLIC_KEY` env var not set |
 
 ## 7. Two-user walkthrough
 
@@ -462,3 +570,14 @@ On the dev rig the "LLM" upper-cases input, so the relayed text reads `YOU LEFT 
 - Every response carries `Content-Security-Policy`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`.
 - Event payloads contain the message text of the relayed conversation, kept in the `rest_outbox` table for `REST_EVENT_RETENTION_DAYS`. Lower the value if you want less stored. The admin dashboard classifies this table as raw text.
 - The static file list is fixed. There is no directory listing or path traversal.
+
+### `GET /api/v1/settings/model`
+
+Returns the caller's effective LLM model: `{"model": "...", "custom": bool}`.
+`custom` is true when the user has set a personal override.
+
+### `PUT /api/v1/settings/model`
+
+Body `{"model": "name"}` sets the preferred model; `{"model": "reset"}` (or
+`null`/empty) clears it. Returns the same shape as GET. `400 invalid_model`
+for names with spaces or over 100 chars.

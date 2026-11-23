@@ -26,9 +26,15 @@ trace_logger = logging.getLogger("pairtner.trace")
 # Shown to users when every model failed; also lets callers detect that case.
 FALLBACK_REPLY = "I'm having trouble connecting right now. Please try again in a moment."
 
-def _make_fallback(provider: str = "", model: str = "") -> dict:
+def _make_fallback(provider: str = "", model: str = "", last_code: int = 0) -> dict:
     """Build a fallback response with a more helpful error message."""
-    if provider == "openai_compat":
+    if last_code == 503:
+        msg = "⚡ The AI model is temporarily busy (503). Please try again in a moment."
+    elif last_code == 429:
+        msg = "⚡ Rate limit hit — too many requests. Please wait a minute and try again."
+    elif last_code == 404:
+        msg = f"⚠️ Model '{model}' not found (404). Check your MODEL_DEFAULT setting."
+    elif provider == "openai_compat":
         msg = (
             "I couldn't reach the local LLM. "
             "Check that Ollama is running (`ollama serve`) "
@@ -57,18 +63,71 @@ LLMResponse = dict[str, Any]
 """Expected shape: {"reply": str, "memory_ops": list[dict], "new_facts": list[dict], "relay_draft": str|None}"""
 
 
+def _strip_fences(raw: str) -> str:
+    """Remove markdown code fences (```json ... ```) wrapping a JSON blob."""
+    s = raw.strip()
+    if s.startswith("```"):
+        # Remove opening fence + optional language tag
+        first_nl = s.find("\n")
+        if first_nl != -1:
+            s = s[first_nl + 1:]
+        if s.rstrip().endswith("```"):
+            s = s.rstrip()[:-3]
+    return s.strip()
+
+
+def _extract_json_from_mixed(raw: str) -> tuple[str, str]:
+    """Split a mixed text+JSON response into (reply_text, json_str).
+
+    Handles: "reply text\\n```json\\n{...}\\n```" patterns where the LLM
+    puts its conversational reply before the JSON block.
+    Returns (reply_text, json_string) or (raw, "") if no JSON found.
+    """
+    import re
+    # Match ```json ... ``` block anywhere in the text
+    m = re.search(r'```(?:json)?\s*\n(\{.*?\})\s*```', raw, re.DOTALL)
+    if m:
+        json_str = m.group(1)
+        reply_text = raw[:m.start()].strip()
+        return reply_text, json_str
+    # Match a bare JSON object at the end of the text
+    m = re.search(r'\n(\{[^{]*"(?:memory_ops|reply)".*\})\s*$', raw, re.DOTALL)
+    if m:
+        json_str = m.group(1)
+        reply_text = raw[:m.start()].strip()
+        return reply_text, json_str
+    return raw, ""
+
+
 def parse_llm_response(raw: str) -> LLMResponse:
     """Parse LLM JSON output, with graceful fallback.
 
     Supports both contract 1 (new_facts) and contract 2 (memory_ops).
+    Strips markdown code fences if present.
     """
     try:
-        data = json.loads(raw)
+        data = json.loads(_strip_fences(raw))
+        if not isinstance(data, dict):
+            raise TypeError(f"Expected JSON object, got {type(data).__name__}")
+        reply = data.get("reply") or data.get("response") or ""
+        # If LLM returned JSON with ops but forgot the reply field,
+        # don't leak raw JSON to the user
+        if not reply and (data.get("memory_ops") or data.get("settings_ops")
+                          or data.get("new_facts")):
+            logger.warning("LLM returned ops but no reply field — keys: %s",
+                           list(data.keys()))
+            reply = ""  # empty reply, ops still processed
+        elif not reply:
+            # No reply and no ops — unparseable content, but valid JSON
+            logger.warning("LLM returned JSON with no reply — keys: %s",
+                           list(data.keys()))
+            reply = raw  # truly unparseable, show as-is
         return {
-            "reply": data.get("reply", raw),
+            "reply": reply,
             "memory_ops": data.get("memory_ops", []),
             "new_facts": data.get("new_facts", []),
             "relay_draft": data.get("relay_draft"),
+            "relay_urgency": data.get("relay_urgency"),
             "detected_mood": data.get("detected_mood"),
             "patterns_observed": data.get("patterns_observed", []),
             "partner_themes": data.get("partner_themes", []),
@@ -76,12 +135,37 @@ def parse_llm_response(raw: str) -> LLMResponse:
             "horsemen_detected": data.get("horsemen_detected", []),
             "voice_traits": data.get("voice_traits", {}),
         }
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError) as exc:
+        # Try mixed-content extraction: "reply text\n```json\n{...}\n```"
+        reply_text, json_str = _extract_json_from_mixed(raw)
+        if json_str:
+            try:
+                data = json.loads(json_str)
+                if isinstance(data, dict):
+                    # Use extracted reply text, merge with JSON ops
+                    return {
+                        "reply": reply_text or data.get("reply", ""),
+                        "memory_ops": data.get("memory_ops", []),
+                        "new_facts": data.get("new_facts", []),
+                        "relay_draft": data.get("relay_draft"),
+            "relay_urgency": data.get("relay_urgency"),
+                        "detected_mood": data.get("detected_mood"),
+                        "patterns_observed": data.get("patterns_observed", []),
+                        "partner_themes": data.get("partner_themes", []),
+                        "articulation_note": data.get("articulation_note"),
+                        "horsemen_detected": data.get("horsemen_detected", []),
+                        "voice_traits": data.get("voice_traits", {}),
+                    }
+            except (json.JSONDecodeError, TypeError):
+                pass  # fall through to _parse_failed
         return {
+            "_parse_failed": True,
+            "_parse_error": str(exc),
             "reply": raw,
             "memory_ops": [],
             "new_facts": [],
             "relay_draft": None,
+            "relay_urgency": None,
             "detected_mood": None,
             "patterns_observed": [],
             "partner_themes": [],
@@ -95,6 +179,31 @@ def _with_tool_calls(parsed: LLMResponse, tool_calls: list[dict[str, Any]] | Non
     if tool_calls:
         parsed["tool_calls"] = tool_calls
     return parsed
+
+
+def get_reply_text(response: LLMResponse, fallback: str = "") -> str:
+    """Extract clean reply text from an LLM response.
+
+    Use this everywhere instead of response.get("reply", "").
+    Handles: empty reply, raw JSON leak, array wrapper.
+    """
+    reply = response.get("reply", "")
+    if not reply:
+        return fallback
+    # Guard: if the reply is raw JSON (LLM forgot to put text), discard
+    stripped = reply.strip()
+    if stripped.startswith("{") and ("memory_ops" in stripped or "settings_ops" in stripped):
+        logger.warning("get_reply_text: reply is raw JSON, discarding")
+        return fallback
+    # Guard: if reply is a JSON array (nudge edge case)
+    if stripped.startswith("["):
+        try:
+            arr = json.loads(stripped)
+            if isinstance(arr, list) and arr:
+                return str(arr[0]).strip().strip('"')
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return reply
 
 
 def _to_gemini_tools(tools: list[dict[str, Any]]) -> list[Any]:
@@ -186,6 +295,7 @@ class GeminiClient:
         """
         model = model or self._config.model_default
         models_to_try = self._build_model_list(model)
+        _last_code = 0
 
         for candidate in models_to_try:
             try:
@@ -219,7 +329,8 @@ class GeminiClient:
                     raise
 
         # All models exhausted — return a safe fallback
-        return _make_fallback("gemini", models_to_try[0] if models_to_try else "")
+        return _make_fallback("gemini", models_to_try[0] if models_to_try else "",
+                              last_code=_last_code)
 
     async def check_usage_warning(self, model: str) -> str | None:
         """Return a warning string if usage is approaching the cap, else None."""

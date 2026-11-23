@@ -4,10 +4,13 @@ Canonical implementations of fact-related database operations.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiosqlite
+
+from pairtner.storage.tagfmt import encode_tags
 
 from pairtner.storage.helpers import (
     _now_iso, _to_iso, _fetch_one, _fetch_all, _execute,
@@ -19,7 +22,7 @@ from pairtner.storage.helpers import (
 # ---------------------------------------------------------------------------
 
 # Columns that exist only in the v1 schema (dropped in v2, decision 306).
-_V1_ONLY_COLUMNS = ("source", "category", "fact_type")
+_V1_ONLY_COLUMNS = ("source", "category", "tag", "fact_type")
 
 
 async def add_fact(
@@ -28,7 +31,7 @@ async def add_fact(
     text: str,
     visibility: str = "private",
     source: str | None = None,
-    category: str | None = None,
+    tag: str | list[str] | None = None,
     fact_type: str = "stable",
     source_message_id: int | None = None,
     source_ids: str | None = None,
@@ -59,7 +62,7 @@ async def add_fact(
         "text": text,
         "visibility": visibility,
         "source": source,
-        "category": category,
+        "tag": encode_tags(tag),
         "fact_type": fact_type,
         "source_message_id": source_message_id,
         "source_ids": source_ids,
@@ -302,10 +305,56 @@ async def get_positive_shared_facts(
     return await _fetch_all(
         db_path,
         "SELECT * FROM facts WHERE owner_id IN (?, ?) AND visibility = 'shared' "
-        "AND category IN (?, ?) AND archived_at IS NULL "
+        "AND (tag IN (?, ?) OR tag LIKE ? OR tag LIKE ?) AND archived_at IS NULL "
         "ORDER BY created_at DESC",
-        (user_id, partner_id, *positive_categories),
+        (user_id, partner_id, *positive_categories,
+         *(f'%"{c}"%' for c in positive_categories)),
     )
+
+
+async def get_recent_shared_facts(
+    db_path: str, user_id: int, partner_id: int, limit: int = 5
+) -> list[dict[str, Any]]:
+    """Most recent active shared facts from either partner (any sentiment)."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM facts WHERE visibility = 'shared' "
+        "AND owner_id IN (?, ?) AND archived_at IS NULL "
+        "ORDER BY created_at DESC, id DESC LIMIT ?",
+        (user_id, partner_id, limit),
+    )
+
+
+async def get_topic_index(
+    db_path: str, user_id: int, limit: int = 10
+) -> list[dict[str, Any]]:
+    """Per-tag index of the user's own facts, most recently discussed first."""
+    return await _fetch_all(
+        db_path,
+        "SELECT je.value AS topic, MAX(f.created_at) AS last_discussed, "
+        "COUNT(*) AS mention_count, "
+        "SUM(CASE WHEN f.visibility = 'private' THEN 1 ELSE 0 END) AS private_count "
+        "FROM facts f, json_each(CASE WHEN json_valid(f.tag) THEN f.tag "
+        "ELSE json_array(f.tag) END) je "
+        "WHERE f.owner_id = ? AND f.kind != 'summary' AND f.archived_at IS NULL "
+        "AND f.tag IS NOT NULL AND f.tag != '' "
+        "GROUP BY je.value ORDER BY last_discussed DESC LIMIT ?",
+        (user_id, limit),
+    )
+
+
+async def get_couple_tags(
+    db_path: str, user_id: int, partner_id: int | None = None
+) -> list[str]:
+    """Distinct non-empty tags used by either partner, sorted."""
+    ids = (user_id, partner_id if partner_id is not None else user_id)
+    rows = await _fetch_all(
+        db_path,
+        "SELECT DISTINCT tag FROM facts WHERE owner_id IN (?, ?) "
+        "AND tag IS NOT NULL AND tag != '' ORDER BY tag",
+        ids,
+    )
+    return [r["tag"] for r in rows]
 
 
 async def get_facts_since(
@@ -524,3 +573,46 @@ async def get_fact_summaries(
         "ORDER BY year_month DESC LIMIT ?",
         (user_id, limit),
     )
+
+
+# ---------------------------------------------------------------------------
+# Private tag list (users.private_tags JSON array)
+# ---------------------------------------------------------------------------
+
+def _norm_tag(tag: str) -> str:
+    return tag.strip().lower()
+
+
+async def get_private_tags(db_path: str, user_id: int) -> list[str]:
+    """Tags this user wants always treated as private."""
+    row = await _fetch_one(
+        db_path, "SELECT private_tags FROM users WHERE tg_id = ?", (user_id,))
+    if not row:
+        return []
+    try:
+        tags = json.loads(row["private_tags"] or "[]")
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return [str(t) for t in tags] if isinstance(tags, list) else []
+
+
+async def _set_private_tags(db_path: str, user_id: int, tags: list[str]) -> None:
+    await _execute(
+        db_path, "UPDATE users SET private_tags = ? WHERE tg_id = ?",
+        (json.dumps(tags), user_id))
+
+
+async def add_private_tag(db_path: str, user_id: int, tag: str) -> None:
+    tag = _norm_tag(tag)
+    if not tag:
+        return
+    tags = await get_private_tags(db_path, user_id)
+    if tag not in tags:
+        await _set_private_tags(db_path, user_id, [*tags, tag])
+
+
+async def remove_private_tag(db_path: str, user_id: int, tag: str) -> None:
+    tag = _norm_tag(tag)
+    tags = await get_private_tags(db_path, user_id)
+    if tag in tags:
+        await _set_private_tags(db_path, user_id, [t for t in tags if t != tag])

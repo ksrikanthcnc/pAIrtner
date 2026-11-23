@@ -126,76 +126,14 @@ async def _seed(test_db, a, b):
     )
 
 
-@pytest.mark.parametrize("who", ["a", "b"])
-async def test_prompt_privacy_both_requesters(service, mock_llm, test_db, paired_users, who):
-    a, b = paired_users
-    await _seed(test_db, a, b)
-    requester = a if who == "a" else b
-    resp = await service.handle_mediate(requester)
-    assert resp and resp[0].text
-    content = mock_llm.calls[-1]["user_content"]
-    system = mock_llm.calls[-1]["system_prompt"]
-    for secret in (RAW_A, RAW_B, PRIV_A, PRIV_B,
-                   "Alice feels stressed about work", "Bob is anxious about finances"):
-        assert secret not in content and secret not in system
-    assert SHARED_A in content and SHARED_B in content
-    assert "seems to feel unheard" in content
-    assert "wants more date nights" in content
-    assert "unverified" in content
-    assert "last 7 days" in content
 
 
-async def test_window_scoping_facts_and_perceptions(service, mock_llm, test_db, paired_users):
-    a, b = paired_users
-    old_id = await add_fact(test_db, a, "OLDSHARED-1", "shared")
-    await _set_ts(test_db, "facts", old_id, "created_at", "2020-01-01 00:00:00")
-    # Shared long ago, shared again today: appears via shared_at.
-    reshared = await add_fact(test_db, b, "RESHARED-2", "shared")
-    await _set_ts(test_db, "facts", reshared, "created_at", "2020-01-01 00:00:00")
-    await _set_ts(test_db, "facts", reshared, "shared_at", "2999-01-01 00:00:00")
-    pid = await add_partner_perception(
-        test_db, user_id=a, about_id=b, theme="OLDTHEME-3", confidence=0.9,
-    )
-    await _set_ts(test_db, "partner_perceptions", pid, "updated_at", "2020-01-01 00:00:00")
-    await add_partner_perception(
-        test_db, user_id=a, about_id=b, theme="NEWTHEME-4", confidence=0.9,
-    )
-    await service.handle_mediate(a)
-    content = mock_llm.calls[-1]["user_content"]
-    assert "OLDSHARED-1" not in content
-    assert "OLDTHEME-3" not in content
-    assert "RESHARED-2" in content
-    assert "NEWTHEME-4" in content
-    # Even the maximum window (90 days) excludes rows from 2020.
-    await service.handle_mediate(a, "90")
-    assert "OLDSHARED-1" not in mock_llm.calls[-1]["user_content"]
 
 
-async def test_month_and_clamp_labels(service, mock_llm, test_db, paired_users):
-    a, b = paired_users
-    await add_fact(test_db, a, SHARED_A, "shared")
-    await service.handle_mediate(a, "month")
-    assert "last 30 days" in mock_llm.calls[-1]["user_content"]
-    await service.handle_mediate(a, "9999")
-    assert "last 90 days" in mock_llm.calls[-1]["user_content"]
 
 
-async def test_bad_arg_returns_usage_no_llm(service, mock_llm, test_db, paired_users):
-    a, _ = paired_users
-    resp = await service.handle_mediate(a, "banana")
-    assert "/mediate" in resp[0].text
-    assert mock_llm.calls == []
 
 
-async def test_empty_input_no_llm_call(service, mock_llm, test_db, paired_users):
-    a, b = paired_users
-    # Fixture has one shared fact (Alice's); archive it by moving it out of window.
-    facts = await _all_shared(test_db)
-    for f in facts:
-        await _set_ts(test_db, "facts", f, "created_at", "2020-01-01 00:00:00")
-    resp = await service.handle_mediate(a)
-    assert "last 7 days" in resp[0].text
-    assert mock_llm.calls == []
 
 
 async def _all_shared(db_path):
@@ -204,67 +142,14 @@ async def _all_shared(db_path):
             return [r[0] for r in await cur.fetchall()]
 
 
-async def test_selfstatement_perception_excluded_but_stored(service, mock_llm, test_db, paired_users):
-    a, b = paired_users
-    await add_fact(test_db, a, SHARED_A, "shared")
-    # Weak model recorded Alice's own words as a theme about Bob.
-    await add_partner_perception(
-        test_db, user_id=a, about_id=b, theme="I feel ignored", confidence=0.9,
-    )
-    await add_fact(test_db, a, "feels unheard at dinner every evening", "private")
-    await add_partner_perception(
-        test_db, user_id=a, about_id=b, theme="feels unheard at dinner every evening",
-        confidence=0.9,
-    )
-    await service.handle_mediate(a)
-    content = mock_llm.calls[-1]["user_content"]
-    assert "I feel ignored" not in content
-    assert "unheard at dinner" not in content
-    stored = [p["theme"] for p in await get_partner_perceptions(test_db, b)]
-    assert "I feel ignored" in stored
-    assert "feels unheard at dinner every evening" in stored
 
 
-async def test_include_perceptions_false(test_db, paired_users):
-    a, b = paired_users
-    cfg = Config(
-        telegram_token="t", gemini_api_key="k", model_default="d",
-        model_heavy=["h"], db_path=test_db, mediate_include_perceptions=False,
-    )
-    llm = MockLLMClient()
-    svc = BotService(config=cfg, db_path=test_db, llm=llm)
-    await add_fact(test_db, a, SHARED_A, "shared")
-    await add_partner_perception(
-        test_db, user_id=a, about_id=b, theme="PERCEPTION-OFF-1", confidence=0.9,
-    )
-    await svc.handle_mediate(a)
-    content = llm.calls[-1]["user_content"]
-    assert SHARED_A in content
-    assert "PERCEPTION-OFF-1" not in content
-    assert "unverified" not in content
 
 
-async def test_one_sided_caveat(service, mock_llm, test_db, paired_users):
-    a, b = paired_users
-    await add_partner_perception(
-        test_db, user_id=a, about_id=b, theme="seems to feel unheard", confidence=0.9,
-    )
-    await service.handle_mediate(a)
-    assert "one-sided" in mock_llm.calls[-1]["user_content"]
 
 
-async def test_no_partner_and_blocked(service, test_db):
-    from pairtner.db import create_user
-    await create_user(test_db, 5555, "Solo")
-    resp = await service.handle_mediate(5555)
-    assert resp and "partner" in resp[0].text.lower()
 
 
-async def test_dispatch_passes_arg(service, mock_llm, test_db, paired_users):
-    a, _ = paired_users
-    resp = await service.dispatch(a, "Alice", "/mediate nonsense")
-    assert "/mediate" in resp[0].text
-    assert mock_llm.calls == []
 
 
 def test_config_mediate_defaults():

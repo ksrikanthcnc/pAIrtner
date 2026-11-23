@@ -14,6 +14,17 @@ import logging
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+
+class _QuietHTTPServer(ThreadingHTTPServer):
+    """Suppress BrokenPipeError tracebacks from client disconnects."""
+
+    def handle_error(self, request, client_address):
+        import sys
+        exc_type = sys.exc_info()[0]
+        if exc_type is BrokenPipeError:
+            return  # client disconnected -- normal for SSE, page navigation
+        super().handle_error(request, client_address)
+
 from pairtner import db as db_mod
 from pairtner.rest.api import MAX_BODY_BYTES, Request, RestApi, text_to_msg
 from pairtner.rest.ids import REST_ID_BASE
@@ -70,7 +81,7 @@ class RestAdapter(BaseAdapter):
         if self.run_background:
             await self._start_background_tasks()
 
-        server = ThreadingHTTPServer(
+        server = _QuietHTTPServer(
             (self.config.rest_host, self.config.rest_port),
             _make_handler(self),
         )
@@ -150,13 +161,16 @@ def _make_handler(adapter: RestAdapter) -> type[BaseHTTPRequestHandler]:
                 logger.exception("REST request failed")
                 self._send_error_json(500, "internal")
                 return
-            self.send_response(resp.status)
-            self.send_header("Content-Type", resp.content_type)
-            self.send_header("Content-Length", str(len(resp.body)))
-            for key, value in resp.headers:
-                self.send_header(key, value)
-            self.end_headers()
-            self.wfile.write(resp.body)
+            try:
+                self.send_response(resp.status)
+                self.send_header("Content-Type", resp.content_type)
+                self.send_header("Content-Length", str(len(resp.body)))
+                for key, value in resp.headers:
+                    self.send_header(key, value)
+                self.end_headers()
+                self.wfile.write(resp.body)
+            except BrokenPipeError:
+                pass  # client disconnected mid-response (normal for SSE, page nav)
 
         def _send_error_json(self, status: int, code: str) -> None:
             payload = json.dumps({"error": code}).encode("utf-8")

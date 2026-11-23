@@ -56,32 +56,32 @@ def main(path: str) -> None:
 
     facts = [
         (A, "Alice feels unheard when plans are forgotten.", "private", 0.8, 0, 9),
-        (A, "Alice loves weekend getaways.", "nudge_eligible", 0.6, 1, 8),
+        (A, "Alice loves weekend getaways.", "shared", 0.6, 1, 8),
         (B, "Bob is stressed by work deadlines.", "private", 0.9, 0, 19),
-        (B, "Bob worries Alice is upset with him.", "nudge_eligible", 0.5, 1, 12),
-        (A, "Alice appreciated the flowers.", "shareable", 0.7, 1, 18),
-        (B, "Bob wants a Friday Italian dinner.", "shareable", 0.4, 2, 10),
-        (B, "Bob feels closer to Alice lately.", "nudge_eligible", 0.3, 2, 21),
+        (B, "Bob worries Alice is upset with him.", "shared", 0.5, 1, 12),
+        (A, "Alice appreciated the flowers.", "shared", 0.7, 1, 18),
+        (B, "Bob wants a Friday Italian dinner.", "shared", 0.4, 2, 10),
+        (B, "Bob feels closer to Alice lately.", "shared", 0.3, 2, 21),
     ]
     for owner, text, vis, inten, d, h in facts:
         c.execute("INSERT INTO facts(owner_id,relationship_id,text,visibility,kind,intensity,created_at,updated_at) "
                   "VALUES (?,?,?,?, 'working',?,?,?)", (owner, rid, text, vis, inten, ts(d, h, 2), ts(d, h, 2)))
 
     nudges = [
-        (A, B, "Plan something special for Alice this weekend.", "quality_time", "pending", 1, 8, None, None),
+        (A, B, "Plan something special for Alice this weekend.", "quality_time", "relay_queue", 1, 8, None, None),
         (B, A, "Check in with Bob about his workload.", "support", "delivered", 0, 19, ts(1, 9), None),
         (A, B, "Remember the dinner plans you made.", "attention", "expired", 0, 10, None, None),
     ]
     for owner, tgt, sug, typ, status, d, h, deliv, canc in nudges:
         c.execute("INSERT INTO facts(owner_id,relationship_id,text,visibility,kind,nudge_target_id,nudge_type,"
                   "nudge_suggestion,nudge_status,nudge_delivered_at,nudge_cancelled_at,created_at,updated_at) "
-                  "VALUES (?,?,?,'nudge_eligible','working',?,?,?,?,?,?,?,?)",
+                  "VALUES (?,?,?,'shared','working',?,?,?,?,?,?,?,?)",
                   (owner, rid, f"nudge: {sug}", tgt, typ, sug, status, deliv, canc, ts(d, h, 5), ts(d, h, 5)))
 
     narrative = ("A mixed few days. Alice felt let down about forgotten plans while Bob carried work stress.\n"
                  "They ended on a warmer note with a planned Friday dinner and a sweet gesture of flowers.")
     c.execute("INSERT INTO facts(owner_id,relationship_id,text,visibility,kind,metadata,created_at,updated_at) "
-              "VALUES (NULL,?,?,'nudge_eligible','weekly',?,?,?)",
+              "VALUES (NULL,?,?,'shared','weekly',?,?,?)",
               (rid, narrative, json.dumps({"narrative": narrative}), ts(2, 23), ts(2, 23)))
 
     c.execute("INSERT INTO relationship_config(relationship_id,config_key,config_value,created_at,updated_at) "

@@ -38,7 +38,7 @@ async def db_path(tmp_path):
     return path
 
 
-async def add(path, owner, text, visibility="nudge_eligible", kind="working", **kw):
+async def add(path, owner, text, visibility="shared", kind="working", **kw):
     cols = {"owner_id": owner, "relationship_id": REL, "text": text,
             "visibility": visibility, "kind": kind, **kw}
     async with aiosqlite.connect(path) as db:
@@ -73,8 +73,8 @@ async def test_partner_private_excluded(db_path):
 
 
 async def test_partner_nudge_eligible_included(db_path):
-    await add(db_path, ALICE, "Alice likes surprise dinners", "nudge_eligible")
-    await add(db_path, ALICE, "Alice enjoys hiking together", "shareable")
+    await add(db_path, ALICE, "Alice likes surprise dinners", "shared")
+    await add(db_path, ALICE, "Alice enjoys hiking together", "shared")
     ctx = await ContextComposer(db_path).build_context(BOB, REL)
     assert set(ctx.partner_facts) == {
         "Alice likes surprise dinners", "Alice enjoys hiking together"}
@@ -103,11 +103,9 @@ async def test_core_facts_always_present(db_path):
 async def test_word_budget_respected(db_path):
     for i in range(200):
         await add(db_path, ALICE, " ".join(f"w{i}x{j}" for j in range(20)), "private")
-        await add(db_path, BOB, " ".join(f"p{i}x{j}" for j in range(20)), "shareable")
+        await add(db_path, BOB, " ".join(f"p{i}x{j}" for j in range(20)), "shared")
         await add(db_path, ALICE, " ".join(f"c{i}x{j}" for j in range(20)), "private",
                   kind="core")
-        await add(db_path, ALICE, " ".join(f"s{i}x{j}" for j in range(20)), "private",
-                  kind="weekly")
     async with aiosqlite.connect(db_path) as db:
         for i in range(30):
             await db.execute(
@@ -117,6 +115,17 @@ async def test_word_budget_respected(db_path):
     ctx = await ContextComposer(db_path).build_context(ALICE, REL, "w1x1 w2x2")
     assert ctx.total_words() <= TOTAL_WORD_BUDGET
     assert len(ctx.recent_messages) <= 20
+
+
+async def test_summaries_gap_filled_one_entry_per_level(db_path):
+    await add(db_path, ALICE, "Q1 story", "private", kind="quarterly")
+    await add(db_path, ALICE, "Q2 story", "private", kind="quarterly")
+    await add(db_path, ALICE, "Year story", "private", kind="yearly")
+    await add(db_path, ALICE, "Day story", "private", kind="daily")
+    ctx = await ContextComposer(db_path).build_context(ALICE, REL)
+    assert len(ctx.summaries) == 3
+    assert [s.split(")")[0] for s in ctx.summaries] == ["(daily", "(quarterly", "(yearly"]
+    assert "Q1 story" in ctx.summaries[1] and "Q2 story" in ctx.summaries[1]
 
 
 async def test_fts_removed_from_hot_path(db_path):

@@ -87,3 +87,37 @@ Why pAIrtner is built the way it is. Newest first. Each entry: the decision, why
 - **Decision:** add a `/mode` setting with two values: `mediator` (default, third-person — the AI is a visible intermediary) and `voice` (first-person — the AI writes as the user, in their voice). Affects relay drafting and bot framing.
 - **Why:** first-person relays read more naturally to the receiver ("I've been feeling..." vs "Your partner feels..."). Some couples prefer the bot invisible; others want the mediator framing. Making it a mode lets both work.
 - **Status:** planned, not yet implemented. Needs changes to persona.md, contract.md relay section, and relay drafting logic.
+
+## 2026-11-23 — Dampening is progressive training toward healthy communication (bidirectional)
+
+- **Decision (clarification):** Dampening is a progressive teaching methodology that nudges users toward healthy, assertive communication — the CENTER, not one end. Direction depends on the user's current pattern:
+  - Aggressive/abusive user → dampen toward gentler, more constructive expression
+  - Passive/avoidant user → dampen toward more assertive, direct expression
+  - Already healthy → minimal dampening, maintain current style
+- **Scope:** Dampening belongs in ALL interactions (not relay-only), because teaching happens in regular conversation, not just message delivery. The relay inherits the user's current effective style.
+- **The knob (0.0-1.0):** Controls rate of change (acceleration, not velocity). High value = change slowly and carefully. Low value = push faster. The DIRECTION is determined by the user's current communication pattern, not the knob value.
+- **Status:** Currently implemented as a static "softness level" (velocity model). Two future changes: (1) make it bidirectional (detect if user needs softening OR assertiveness), (2) make it acceleration-based (progressive, with maturity tracking).
+- **Rejected:** relay-only scoping (teaching happens in all interactions); removing dampening entirely (progressive communication training is a core value proposition).
+
+## 2026-11-23 — Episodes are legacy; rolling summaries replace them
+
+- **Decision:** The `episode` fact kind was the original consolidation mechanism (group 5-10 related working facts into a narrative). Rolling summaries (daily/weekly/monthly/quarterly) now serve the same purpose with a cleaner time-based model. Episodes should not be created by new code.
+- **Why:** Two consolidation systems doing similar things adds complexity. Rolling summaries are time-based and predictable; episodes are ad-hoc and overlap with weekly summaries.
+- **Status:** Episode creation code still exists in `consolidation.py`. New features should use the rolling summary path. Removal of the episode system is a future cleanup.
+
+## 2026-11-23 — Working facts ARE archived when their summary is created (confirmed)
+
+- **Decision (confirmed from code):** Period summaries (`create_summary`) pass `archive=True` to `_store()`, which sets `archived_at` on all source working facts. The context composer filters `archived_at IS NULL`, so archived facts DO leave the prompt once summarized.
+- **How it works:** Daily maintenance runs `run_periodic_summaries()` → for each completed period, gathers working facts in that window → LLM summarizes → stores as kind='daily'/'weekly'/etc → archives source facts. Then `run_rolling_summaries()` reads remaining unarchived working facts + completed summaries → creates a rolling preview (kind='rolling', replaced in-place, NO archival).
+- **Prompt contains:** core facts + unarchived working facts (today's + unprocessed) + rolling summaries (gap filler) + period summaries (the real history).
+- **Corrects earlier note:** An earlier entry said "working facts should archive when summary is created — not yet implemented." This was wrong; it IS implemented. The confusion arose from testing on a fresh DB where the maintenance loop hadn't run.
+
+## 2026-11-23 — Fact-saved notices removed from regular chat
+
+- **Decision:** Regular chat messages no longer append "✅ Saved 2 new fact(s)" after the LLM's reply. Facts are still extracted and stored silently. The `#keep` command still shows what was saved (explicit request).
+- **Why:** The appended notice breaks conversational flow. The LLM gives a warm empathetic response, then a mechanical data notice. The LLM's reply IS the conversation; metadata belongs in /debug.
+
+## 2026-11-23 — Simplified onboarding: no /skip, no forced password
+
+- **Decision:** Onboarding completes on ANY first message after pairing. Greetings ("hi", "hey") complete instantly with no extraction. Messages with facts are auto-extracted by the LLM. No /skip advertised (still works silently). Password mentioned in the welcome message, not forced as a separate step.
+- **Why:** /skip was an unnecessary friction point. The LLM already handles extraction from free-text. Making the user type a specific command to bypass a step they didn't ask for is bad UX.

@@ -62,7 +62,7 @@ async def test_tell_command_disclosure_never_becomes_a_relay(service: BotService
 @pytest.mark.asyncio
 async def test_edit_text_disclosure_is_caught_before_edit_handler(service: BotService, paired_users, mock_llm):
     a, _ = paired_users
-    service._edit_state[a] = 1  # user is editing pending draft #1
+    service._edit_state[a] = 1  # user is editing relay_queue draft #1
     out = await service.dispatch(a, "Alice", "he slapped me, just send it")
     assert _no_relay(out)
     assert mock_llm.calls == []

@@ -7,7 +7,8 @@ Use this as a starting point for creating a new pAIrtner prompt pack.
 ```bash
 cp -r packs/template packs/my-pack
 # Edit the files to match your use case
-# Run eval to verify:
+# Validate, then run eval:
+uv run python -m pairtner.pack_cli validate packs/my-pack
 uv run python dev/prompt-eval/run_eval.py --pack packs/my-pack --llm ollama
 ```
 
@@ -43,7 +44,7 @@ The `engine_contract: 1` field in pack.yaml declares which output schema version
 
 ## Inheriting from default
 
-Future: set `parent: packs/default` in pack.yaml to inherit files you don't override. For now, copy the full default pack and modify what you need.
+`pack.yaml` may declare `inherits: default`, but the loader does not resolve it yet: a pack must be complete on its own. Copy the full default pack and modify what you need, then compare with `uv run python -m pairtner.pack_cli diff packs/default packs/my-pack`. See [CUSTOM_PACKS.md](../CUSTOM_PACKS.md) for the full guide.
 
 ## Testing your pack
 

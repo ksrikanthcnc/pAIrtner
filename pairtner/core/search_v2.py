@@ -24,7 +24,7 @@ DEFAULT_TOP_K = 15
 MAX_PER_PAGE = 100
 _VALID_KINDS = ("core", "working")
 # Visibilities a partner's fact may have for the other partner to see it.
-_PARTNER_VISIBLE = ("nudge_eligible", "shareable", "shared")
+_PARTNER_VISIBLE = ("shared",)
 
 RERANK_SYSTEM_PROMPT = (
     "You are a relevance ranker. Given a query and a list of facts, return the IDs "
@@ -104,7 +104,7 @@ def _to_result(row: aiosqlite.Row) -> dict[str, Any]:
         "kind": d.get("kind") or "working",
         "visibility": d.get("visibility"),
         "owner_id": d.get("owner_id"),
-        "category": d.get("category"),
+        "tag": d.get("tag"),
         "created_at": d.get("created_at"),
         "score": d["score"],
     }

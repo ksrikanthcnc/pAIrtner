@@ -383,49 +383,6 @@ class TestExtractTheme:
 # ---------------------------------------------------------------------------
 
 
-class TestConflictsCommand:
-    """Test the /conflicts command handler."""
-
-    @pytest_asyncio.fixture
-    async def cmd_service(self, conflict_db, conflict_config):
-        cfg = Config(
-            telegram_token=conflict_config.telegram_token,
-            gemini_api_key=conflict_config.gemini_api_key,
-            db_path=conflict_db,
-            conflicts_enabled=True,
-            conflicts_auto_detect=True,
-            conflicts_resolution_timeout_hours=48,
-        )
-        return BotService(config=cfg, db_path=conflict_db, llm=MockLLMClient())
-
-    async def test_conflicts_unpaired(self, cmd_service, conflict_db):
-        await db_mod.create_user(conflict_db, 9999, "Solo")
-        responses = await cmd_service.handle_conflicts(9999)
-        assert len(responses) == 1
-        assert "not_paired" in responses[0].text.lower() or "pair" in responses[0].text.lower()
-
-    async def test_conflicts_no_open(self, cmd_service, couple_id):
-        responses = await cmd_service.handle_conflicts(1001)
-        assert len(responses) == 1
-        assert "🌟" in responses[0].text
-
-    async def test_conflicts_with_open(self, cmd_service, conflict_db, couple_id):
-        await db_mod.create_conflict(conflict_db, couple_id, "money stuff")
-        await db_mod.create_conflict(conflict_db, couple_id, "housework")
-
-        responses = await cmd_service.handle_conflicts(1001)
-        assert len(responses) == 1
-        text = responses[0].text
-        assert "money stuff" in text
-        assert "housework" in text
-
-    async def test_conflicts_shows_relay_count(self, cmd_service, conflict_db, couple_id):
-        cid = await db_mod.create_conflict(conflict_db, couple_id, "money stuff")
-        await db_mod.add_relay_to_conflict(conflict_db, cid, 1)
-        await db_mod.add_relay_to_conflict(conflict_db, cid, 2)
-
-        responses = await cmd_service.handle_conflicts(1001)
-        assert "2 relays" in responses[0].text
 
 
 # ---------------------------------------------------------------------------

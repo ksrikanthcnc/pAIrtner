@@ -73,7 +73,7 @@ async def execute_search_memory(
         try:
             # Search across all facts (including archived) and summaries
             async with db.execute(
-                "SELECT f.id, f.text, f.kind, f.visibility, f.created_at "
+                "SELECT f.id, f.text, f.kind, f.visibility, f.created_at, f.source_ids "
                 "FROM facts_fts JOIN facts f ON f.id = facts_fts.rowid "
                 "WHERE facts_fts MATCH ? AND f.owner_id = ? "
                 "ORDER BY rank LIMIT ?",
@@ -96,10 +96,10 @@ async def execute_search_memory(
                 if rel:
                     partner_id = rel["user_b_id"] if user_id == rel["user_a_id"] else rel["user_a_id"]
                     async with db.execute(
-                        "SELECT f.id, f.text, f.kind, f.visibility, f.created_at "
+                        "SELECT f.id, f.text, f.kind, f.visibility, f.created_at, f.source_ids "
                         "FROM facts_fts JOIN facts f ON f.id = facts_fts.rowid "
                         "WHERE facts_fts MATCH ? AND f.owner_id = ? "
-                        "AND f.visibility IN ('nudge_eligible', 'shareable') "
+                        "AND f.visibility = 'shared' "
                         "ORDER BY rank LIMIT ?",
                         (fts_query, partner_id, limit // 2),
                     ) as cur:
@@ -110,7 +110,55 @@ async def execute_search_memory(
     # Merge, deduplicate, and limit
     all_results = own + partner_results
     all_results.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    all_results = _dedup_by_source_ids(all_results)
+    for r in all_results:
+        r.pop("source_ids", None)
     return all_results[:limit]
+
+
+def _parse_source_ids(raw: Any) -> set[int]:
+    if not raw:
+        return set()
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return set()
+    if not isinstance(raw, list):
+        return set()
+    return {i for i in raw if isinstance(i, int) and not isinstance(i, bool)}
+
+
+def _dedup_by_source_ids(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop summaries whose source_ids cover another returned result.
+
+    The more specific (source) fact wins. Coverage is transitive: a summary
+    of a summary is dropped when any descendant is also in the results.
+    """
+    by_id = {r["id"]: r for r in results if "id" in r}
+    covered: dict[int, set[int]] = {}
+
+    def descendants(rid: int, seen: frozenset[int] = frozenset()) -> set[int]:
+        if rid in covered:
+            return covered[rid]
+        r = by_id.get(rid)
+        out: set[int] = set()
+        if r is not None and rid not in seen:
+            for sid in _parse_source_ids(r.get("source_ids")):
+                out.add(sid)
+                out |= descendants(sid, seen | {rid})
+        covered[rid] = out
+        return out
+
+    kept = []
+    for r in results:
+        rid = r.get("id")
+        if rid is not None and any(
+            other != rid and other in by_id for other in descendants(rid)
+        ):
+            continue
+        kept.append(r)
+    return kept
 
 
 def format_tool_results(results: list[dict[str, Any]]) -> str:

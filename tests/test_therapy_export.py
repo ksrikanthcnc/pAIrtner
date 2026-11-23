@@ -209,7 +209,7 @@ class TestExportTherapyCommand:
         assert resp[0].document is not None
         fname, content = resp[0].document
         assert fname.startswith("therapy_report_")
-        assert fname.endswith(".txt")
+        assert fname.endswith(".md")
         assert "Therapy Report" in content
 
     async def test_export_therapy_empty(self, te_db, te_service):
@@ -255,3 +255,53 @@ class TestExportTherapyCommand:
         resp = await svc.handle_export(7007, None)
         assert len(resp) == 1
         assert resp[0].document is None
+
+
+# ---------------------------------------------------------------------------
+# Data-only notes (build_therapy_notes) + REST endpoint
+# ---------------------------------------------------------------------------
+
+class TestTherapyNotes:
+    async def test_sections_and_privacy(self, te_paired):
+        from pairtner.features.therapy_export import build_therapy_notes
+
+        db, a, b = te_paired
+        cid = db_mod.make_couple_id(a, b)
+        await add_fact(db, a, "We have a 5-year-old son named Max", "shared")
+        await db_mod.record_interaction(db, cid, a, "positive")
+        await db_mod.create_conflict(db, cid, "chores")
+        md = await build_therapy_notes(db, a)
+        assert md.startswith("# Therapy Report")
+        for h in ("## 1.", "## 2.", "## 3.", "## 4.", "## 5.", "## 6.", "## 7."):
+            assert h in md
+        assert "son named Max" in md
+        assert "Be more present" in md and "Weekly date night" in md
+        assert "Arjun feels stressed" in md
+        assert "worries about money privately" not in md  # partner private
+
+    async def test_none_when_unpaired_or_empty(self, te_db):
+        from pairtner.features.therapy_export import build_therapy_notes
+
+        await create_user(te_db, 6201, "Solo")
+        assert await build_therapy_notes(te_db, 6201) is None
+        await create_user(te_db, 6202, "B")
+        await set_partner(te_db, 6201, 6202)
+        assert await build_therapy_notes(te_db, 6201) is None
+
+    async def test_rest_endpoint(self, te_paired):
+        import json
+        from pairtner.rest.api import Request, RestApi
+
+        db, a, b = te_paired
+        cfg = Config(telegram_token="", db_path=db, rest_registration="open",
+                     rest_long_poll_max_seconds=1)
+        api = RestApi(BotService(cfg, db, MockLLMClient()), cfg)
+        secret = "s" * 32
+        await db_mod.create_auth_token(db, a, secret)
+        h = {"authorization": f"Bearer {a}:{secret}"}
+        resp = await api.handle(Request("GET", "/api/v1/export/therapy", h, b"", "10.0.0.5"))
+        assert resp.status == 200, resp.body
+        assert resp.content_type.startswith("text/markdown")
+        assert resp.body.decode().startswith("# Therapy Report")
+        resp = await api.handle(Request("GET", "/api/v1/export/therapy", {}, b"", "10.0.0.5"))
+        assert resp.status == 401

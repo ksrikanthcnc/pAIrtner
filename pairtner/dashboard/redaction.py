@@ -23,13 +23,13 @@ SECRET_COLUMN_PATTERN = re.compile(r"token|secret|password|api_?key", re.IGNOREC
 
 SECRET_COLUMNS: dict[str, set[str]] = {
     "auth_tokens": {"token"},
-    "couple_config": {"config_value"},
+    "relationship_config": {"config_value"},
 }
 
 METADATA_COLUMNS: dict[str, set[str]] = {
-    "users": {"tg_id", "partner_id", "lang", "paused", "created_at"},
+    "users": {"tg_id", "partner_id", "lang", "paused", "created_at", "default_visibility_mode", "mode"},
     "facts": {
-        "id", "owner_id", "visibility", "category", "fact_type", "kind", "status",
+        "id", "owner_id", "visibility", "tag", "fact_type", "kind", "status",
         "expires_at", "archived_at", "shared_at", "supersedes_id", "contradicts_id",
         "citation_count", "last_cited_at", "source_message_id", "source_ids",
         "intensity", "model", "metadata", "event_date", "recurring",
@@ -39,20 +39,20 @@ METADATA_COLUMNS: dict[str, set[str]] = {
         "nudge_target_id", "nudge_type", "nudge_cooldown_h", "nudge_ttl_h",
         "nudge_status", "nudge_delivered_at", "nudge_cancelled_at",
     },
-    "pending": {
+    "relay_queue": {
         "id", "sender_id", "receiver_id", "status", "send_after", "created_at",
         "sent_at", "feedback", "acknowledged_at",
     },
-    "messages": {"id", "user_id", "role", "deleted_at", "created_at", "relationship_id"},
+    "messages": {"id", "user_id", "role", "deleted_at", "created_at", "relationship_id", "source"},
     "usage": {"date", "model", "count"},
     "llm_calls": {"id", "created_at", "task", "model", "pack_hash", "prompt_sha256"},
     "pack_snapshots": {
         "pack_hash", "name", "version", "engine_contract", "files_json",
         "first_seen_at",
     },
-    "couple_config": {"couple_id", "config_key", "created_at", "updated_at"},
-    "pending_batch": {"id", "sender_id", "receiver_id", "status", "send_after", "created_at"},
-    "pending_batch_items": {"id", "batch_id", "status", "created_at"},
+    "relationship_config": {"couple_id", "config_key", "created_at", "updated_at"},
+    "relay_batch": {"id", "sender_id", "receiver_id", "status", "send_after", "created_at"},
+    "relay_batch_items": {"id", "batch_id", "status", "created_at"},
     "checkins": {
         "id", "couple_id", "week_start", "partner_a_id", "partner_b_id",
         "status", "created_at", "relationship_id",
@@ -77,9 +77,9 @@ METADATA_COLUMNS: dict[str, set[str]] = {
     "interaction_scores": {
         "id", "couple_id", "user_id", "interaction_type", "source", "created_at",
     },
-    "user_goals": {"id", "user_id", "status", "created_at", "updated_at"},
-    "shared_goals": {
-        "id", "couple_id", "created_by", "status", "created_at", "updated_at",
+    "goals": {
+        "id", "scope", "user_id", "couple_id", "created_by", "status",
+        "created_at", "updated_at",
     },
     "conflicts": {
         "id", "couple_id", "status", "opened_at", "resolved_at", "relay_ids",
@@ -87,7 +87,7 @@ METADATA_COLUMNS: dict[str, set[str]] = {
     },
     "timeline_events": {"id", "couple_id", "event_type", "created_at", "relationship_id"},
     "fact_summaries": {"id", "user_id", "year_month", "fact_count", "created_at"},
-    "auth_tokens": {"user_id", "created_at"},
+    "auth_tokens": {"id", "user_id", "created_at"},
     "rest_outbox": {"id", "user_id", "kind", "created_at"},
     "memory_versions": {
         "id", "fact_id", "version", "status", "op", "source_msg_id", "created_at",
@@ -109,23 +109,19 @@ METADATA_COLUMNS: dict[str, set[str]] = {
         "confidence", "frequency", "interaction_dir", "source",
         "first_seen", "last_seen", "created_at", "updated_at",
     },
-    "goals": {
-        "id", "user_id", "relationship_id", "scope", "created_by", "status",
-        "created_at", "updated_at",
-    },
     "relationship_config": {
-        "relationship_id", "config_key", "created_at", "updated_at",
+        "couple_id", "config_key", "created_at", "updated_at",
     },
 }
 
 # Known free-text columns (shown only with show_raw_text). Used by the schema
 # coverage test; unknown columns are treated the same way at runtime.
 RAW_TEXT_COLUMNS: dict[str, set[str]] = {
-    "users": {"name"},
+    "users": {"name", "private_tags"},
     "facts": {"text", "source", "nudge_suggestion", "nudge_cancel_reason"},
-    "pending": {"draft", "edited_draft"},
+    "relay_queue": {"draft", "edited_draft"},
     "messages": {"content"},
-    "pending_batch_items": {"draft", "edited_draft"},
+    "relay_batch_items": {"draft", "edited_draft"},
     "checkins": {"partner_a_answers", "partner_b_answers", "summary"},
     "user_profiles": {
         "relationship_type", "duration_years", "has_kids", "age_range",
@@ -134,8 +130,7 @@ RAW_TEXT_COLUMNS: dict[str, set[str]] = {
     "user_mood_styles": {"mood"},
     "partner_perceptions": {"theme"},
     "user_patterns": {"pattern"},
-    "user_goals": {"text", "progress"},
-    "shared_goals": {"text", "progress"},
+    "goals": {"text", "progress"},
     "conflicts": {"theme"},
     "timeline_events": {"summary", "metadata"},
     "fact_summaries": {"summary_text"},

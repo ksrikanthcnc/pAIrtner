@@ -7,11 +7,16 @@ Privacy: nothing here ever SELECTs ``facts.text`` for a nudge. Callers get
 
 from __future__ import annotations
 
+import logging
 import random
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+from pairtner.storage.helpers import _fetch_all
+
+log = logging.getLogger(__name__)
 
 import aiosqlite
 
@@ -216,3 +221,133 @@ async def get_camouflage_questions(
         cat = r.choice([c for c in cats if pool[c]])
         picked.append(pool[cat].pop(r.randrange(len(pool[cat]))))
     return picked
+
+
+# ---------------------------------------------------------------------------
+# Partner-informed question generation (non-attributable)
+# ---------------------------------------------------------------------------
+
+_QUESTION_GEN_PROMPT = """\
+You are generating natural check-in questions for a person. These questions
+should feel casual and generic — the person must NOT be able to tell that you
+know specific information about their partner.
+
+Given these facts about their partner (which you must NEVER reveal directly):
+{partner_facts}
+
+Generate {count} natural questions that could surface a conversation about
+these topics WITHOUT revealing that you know anything. Mix in topics the
+questions could plausibly ask anyone.
+
+Rules:
+- Questions must be generic enough that ANYONE could be asked them
+- Never reference the partner, their name, or specific details
+- Vary the tone: some light, some reflective
+- One question per line, no numbering, no bullets
+
+Examples of GOOD questions (given "partner stressed about work"):
+- How's work been treating you lately?
+- What's taking up most of your mental energy these days?
+
+Examples of BAD questions (too specific, reveals knowledge):
+- Is your partner stressed about work?
+- How is [partner name]'s job going?
+"""
+
+
+async def generate_partner_informed_questions(
+    db_path: str,
+    user_id: int,
+    partner_id: int,
+    llm_fn,
+    *,
+    count: int = 3,
+) -> list[str]:
+    """Generate questions informed by partner's shared facts.
+
+    These look generic but are designed to surface topics the partner
+    cares about. Mixed into the camouflage question pool so the user
+    can't tell which questions are informed by partner context.
+
+    Args:
+        db_path: database path
+        user_id: the user who will RECEIVE these questions
+        partner_id: the user whose shared facts inform the questions
+        llm_fn: async callable(system, user) -> str (the LLM)
+        count: how many questions to generate
+
+    Returns:
+        List of question strings, or empty list if no partner facts.
+    """
+    # Get partner's recent shared facts (what user_id is allowed to see)
+    rows = await _fetch_all(
+        db_path,
+        "SELECT text FROM facts "
+        "WHERE owner_id = ? AND visibility = 'shared' "
+        "AND status = 'active' AND archived_at IS NULL "
+        "ORDER BY updated_at DESC LIMIT 10",
+        (partner_id,),
+    )
+
+    if not rows:
+        return []
+
+    partner_facts = "\n".join(f"- {r['text']}" for r in rows)
+    prompt = _QUESTION_GEN_PROMPT.format(
+        partner_facts=partner_facts, count=count,
+    )
+
+    try:
+        raw = await llm_fn(
+            "You generate natural, non-attributable check-in questions.",
+            prompt,
+        )
+        questions = [
+            line.strip().lstrip("- ").lstrip("•").strip()
+            for line in raw.strip().splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        return questions[:count]
+    except Exception as e:
+        log.warning("Failed to generate partner-informed questions: %s", e)
+        return []
+
+
+async def get_mixed_questions(
+    db_path: str,
+    user_id: int,
+    partner_id: int | None = None,
+    llm_fn=None,
+    *,
+    total: int = 3,
+    bank_path: str | Path | None = None,
+    rng: random.Random | None = None,
+) -> list[str]:
+    """Get a mix of generic + partner-informed questions.
+
+    If partner_id and llm_fn are provided, generates 1-2 partner-informed
+    questions and fills the rest with generic ones. Otherwise, all generic.
+    The questions are shuffled so the user can't tell which are informed.
+    """
+    r = rng or random
+    informed: list[str] = []
+
+    if partner_id and llm_fn:
+        informed_count = min(2, max(1, total // 2))
+        try:
+            informed = await generate_partner_informed_questions(
+                db_path, user_id, partner_id, llm_fn,
+                count=informed_count,
+            )
+        except Exception:
+            pass  # fall back to all generic
+
+    generic_count = total - len(informed)
+    generic = await get_camouflage_questions(
+        db_path, user_id, count=generic_count,
+        bank_path=bank_path, rng=r,
+    )
+
+    mixed = informed + generic
+    r.shuffle(mixed)
+    return mixed

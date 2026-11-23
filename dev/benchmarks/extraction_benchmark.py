@@ -34,7 +34,7 @@ SYSTEM_PROMPT = """You extract memory from a message a user sends to a private r
 Return ONLY JSON: {"memory_ops": [ ... ]}. Use [] when nothing is worth remembering (small talk, greetings, questions).
 
 Each op: {"op": "add", "text": "<one sentence, third person, max 200 chars>",
- "kind": "core"|"working", "visibility": "private"|"nudge_eligible"|"shareable",
+ "kind": "core"|"working", "visibility": "private"|"shared"|"shared",
  "nudge_type": "appreciation"|"attention"|"communication"|"support"|"quality_time"|"conflict_prevention"|null,
  "nudge_suggestion": "<generic, partner-safe guidance that reveals nothing private>"|null,
  "nudge_target": "partner"|null}
@@ -49,24 +49,24 @@ Rules:
 # expect: None => no add op expected; else dict of fields to check.
 CASES: list[dict] = [
     {"msg": "I feel like Sam never notices when I clean up or cook. I feel invisible.",
-     "expect": {"visibility": "nudge_eligible", "nudge_type": "appreciation", "kind": "working"}},
+     "expect": {"visibility": "shared", "nudge_type": "appreciation", "kind": "working"}},
     {"msg": "I wish we went on more date nights. We haven't had one in months.",
-     "expect": {"visibility": "nudge_eligible", "nudge_type": "quality_time", "kind": "working"}},
+     "expect": {"visibility": "shared", "nudge_type": "quality_time", "kind": "working"}},
     {"msg": "I think I'm developing feelings for my coworker and I haven't told anyone.",
      "expect": {"visibility": "private", "nudge_type": None, "kind": "working"}},
     {"msg": "I took out a loan of $8,000 and don't want my husband to find out.",
      "expect": {"visibility": "private", "nudge_type": None, "kind": "working"}},
     {"msg": "My name is Priya and my birthday is March 14. Feel free to tell Sam, I want him to remember.",
-     "expect": {"visibility": "shareable", "nudge_type": None, "kind": "core"}},
+     "expect": {"visibility": "shared", "nudge_type": None, "kind": "core"}},
     {"msg": "I'm really stressed about the deadline at work this week, I'd love some help around the house.",
-     "expect": {"visibility": "nudge_eligible", "nudge_type": "support", "kind": "working"}},
+     "expect": {"visibility": "shared", "nudge_type": "support", "kind": "working"}},
     {"msg": "I'm a vegetarian and have been for 15 years, it's a core part of who I am.",
-     "expect": {"visibility": "nudge_eligible", "nudge_type": None, "kind": "core", "check_nudge": False}},
+     "expect": {"visibility": "shared", "nudge_type": None, "kind": "core", "check_nudge": False}},
     {"msg": "hi, how are you?", "expect": None},
     {"msg": "I'm scared, the doctor found something and I'm getting a biopsy. Please don't let Sam know.",
      "expect": {"visibility": "private", "nudge_type": None, "kind": "working"}},
     {"msg": "We keep fighting about money and I snap at him every time, I want us to talk calmly.",
-     "expect": {"visibility": "nudge_eligible", "nudge_type": "conflict_prevention", "kind": "working",
+     "expect": {"visibility": "shared", "nudge_type": "conflict_prevention", "kind": "working",
                 "nudge_alt": ["communication"]}},
 ]
 

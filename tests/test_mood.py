@@ -16,58 +16,6 @@ from pairtner.db import (
 
 
 @pytest.mark.asyncio
-async def test_mood_set(test_db, service, paired_users):
-    """/mood stressed sets the mood with confirmation."""
-    a_id, _ = paired_users
-    await ensure_user_profile(test_db, a_id)
-
-    responses = await service.handle_style(a_id, "mood stressed")
-    assert len(responses) == 1
-    assert "stressed" in responses[0].text.lower()
-
-    mood = await get_active_mood(test_db, a_id)
-    assert mood is not None
-    assert mood["mood"] == "stressed"
-
-
-@pytest.mark.asyncio
-async def test_mood_show_current(test_db, service, paired_users):
-    """/mood with no arg shows the current mood."""
-    a_id, _ = paired_users
-    await ensure_user_profile(test_db, a_id)
-
-    # Set a mood first
-    expires = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
-    await set_user_mood(test_db, a_id, "happy", expires)
-
-    responses = await service.handle_style(a_id, "mood")
-    assert len(responses) == 1
-    assert "happy" in responses[0].text.lower()
-
-
-@pytest.mark.asyncio
-async def test_mood_none_active(test_db, service, paired_users):
-    """/mood with no arg and no active mood shows usage."""
-    a_id, _ = paired_users
-    await ensure_user_profile(test_db, a_id)
-
-    responses = await service.handle_style(a_id, "mood")
-    assert len(responses) == 1
-    assert "no active mood" in responses[0].text.lower() or "usage" in responses[0].text.lower()
-
-
-@pytest.mark.asyncio
-async def test_mood_invalid(test_db, service, paired_users):
-    """/mood with invalid mood shows usage."""
-    a_id, _ = paired_users
-    await ensure_user_profile(test_db, a_id)
-
-    responses = await service.handle_style(a_id, "mood ecstatic")
-    assert len(responses) == 1
-    assert "usage" in responses[0].text.lower()
-
-
-@pytest.mark.asyncio
 async def test_mood_expiry(test_db):
     """Expired moods are not returned by get_active_mood."""
     await create_user(test_db, 1, "X")

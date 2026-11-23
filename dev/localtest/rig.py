@@ -58,6 +58,9 @@ def make_config(
         llm_model_default=model,
         llm_model_heavy=[model],
         llm_reasoning_effort=reasoning,
+        # Pick up Gemini key from env so multi-provider routing works
+        # even when primary is Ollama
+        gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
         cooldown_minutes=cooldown,
         review_before_send=review_before_send,
         delivery_check_interval_seconds=delivery_interval,

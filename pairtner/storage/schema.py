@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS users (
     partner_id  INTEGER REFERENCES users(tg_id),
     lang        TEXT DEFAULT 'en',
     paused      INTEGER DEFAULT 0,
+    password_hash TEXT,
+    mode        TEXT DEFAULT 'couple' CHECK(mode IN ('couple','solo')),
+    default_visibility_mode TEXT DEFAULT 'open' CHECK(default_visibility_mode IN ('open','ask','private')),
+    private_tags TEXT,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -28,7 +32,7 @@ CREATE TABLE IF NOT EXISTS facts (
     text        TEXT NOT NULL,
     visibility  TEXT NOT NULL CHECK(visibility IN ('private', 'shared')),
     source      TEXT,
-    category    TEXT DEFAULT NULL,
+    tag         TEXT DEFAULT NULL,
     fact_type   TEXT DEFAULT 'stable' CHECK(fact_type IN ('transient','situational','stable')),
     kind        TEXT NOT NULL DEFAULT 'working',
     status      TEXT NOT NULL DEFAULT 'active',
@@ -40,6 +44,17 @@ CREATE TABLE IF NOT EXISTS facts (
     citation_count INTEGER DEFAULT 0,
     last_cited_at TIMESTAMP,
     source_message_id INTEGER REFERENCES messages(id),
+    relationship_id TEXT,
+    msg_source  TEXT DEFAULT 'user',
+    nudge_target_id INTEGER,
+    nudge_type  TEXT,
+    nudge_suggestion TEXT,
+    nudge_cooldown_h INTEGER DEFAULT 24,
+    nudge_ttl_h INTEGER,
+    nudge_status TEXT DEFAULT 'pending',
+    nudge_delivered_at TIMESTAMP,
+    nudge_cancelled_at TIMESTAMP,
+    nudge_cancel_reason TEXT,
     source_ids  TEXT,
     intensity   REAL DEFAULT 0.5,
     model       TEXT,
@@ -50,8 +65,9 @@ CREATE TABLE IF NOT EXISTS facts (
     updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS pending (
+CREATE TABLE IF NOT EXISTS relay_queue (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    relationship_id TEXT,
     sender_id     INTEGER NOT NULL REFERENCES users(tg_id),
     receiver_id   INTEGER NOT NULL REFERENCES users(tg_id),
     draft         TEXT NOT NULL,
@@ -70,6 +86,8 @@ CREATE TABLE IF NOT EXISTS messages (
     user_id     INTEGER NOT NULL REFERENCES users(tg_id),
     role        TEXT NOT NULL,
     content     TEXT NOT NULL,
+    relationship_id TEXT,
+    source      TEXT,
     deleted_at  TIMESTAMP,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -97,7 +115,7 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     pack_hash      TEXT NOT NULL,
     prompt_sha256  TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS couple_config (
+CREATE TABLE IF NOT EXISTS relationship_config (
     couple_id   TEXT NOT NULL,
     config_key  TEXT NOT NULL,
     config_value TEXT NOT NULL,
@@ -106,7 +124,7 @@ CREATE TABLE IF NOT EXISTS couple_config (
     PRIMARY KEY (couple_id, config_key)
 );
 
-CREATE TABLE IF NOT EXISTS pending_batch (
+CREATE TABLE IF NOT EXISTS relay_batch (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     sender_id   INTEGER NOT NULL REFERENCES users(tg_id),
     receiver_id INTEGER NOT NULL REFERENCES users(tg_id),
@@ -116,9 +134,9 @@ CREATE TABLE IF NOT EXISTS pending_batch (
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS pending_batch_items (
+CREATE TABLE IF NOT EXISTS relay_batch_items (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    batch_id     INTEGER NOT NULL REFERENCES pending_batch(id),
+    batch_id     INTEGER NOT NULL REFERENCES relay_batch(id),
     draft        TEXT NOT NULL,
     status       TEXT NOT NULL DEFAULT 'pending'
                  CHECK(status IN ('pending','approved','edited','discarded')),
@@ -129,6 +147,7 @@ CREATE TABLE IF NOT EXISTS pending_batch_items (
 CREATE TABLE IF NOT EXISTS checkins (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     couple_id        TEXT NOT NULL,
+    relationship_id  TEXT,
     week_start       TEXT NOT NULL,
     partner_a_id     INTEGER NOT NULL,
     partner_a_answers TEXT,
@@ -217,28 +236,20 @@ CREATE TABLE IF NOT EXISTS interaction_scores (
 CREATE INDEX IF NOT EXISTS idx_interaction_couple_created
     ON interaction_scores(couple_id, created_at);
 
-CREATE TABLE IF NOT EXISTS user_goals (
+CREATE TABLE IF NOT EXISTS goals (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope       TEXT NOT NULL DEFAULT 'personal' CHECK(scope IN ('personal','shared')),
     user_id     INTEGER NOT NULL REFERENCES users(tg_id),
+    couple_id   TEXT,
+    created_by  INTEGER REFERENCES users(tg_id),
     text        TEXT NOT NULL,
     status      TEXT DEFAULT 'active' CHECK(status IN ('active','achieved','dropped')),
     progress    TEXT,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_goals_user_status ON user_goals(user_id, status);
-
-CREATE TABLE IF NOT EXISTS shared_goals (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    couple_id   TEXT NOT NULL,
-    text        TEXT NOT NULL,
-    created_by  INTEGER NOT NULL REFERENCES users(tg_id),
-    status      TEXT DEFAULT 'active' CHECK(status IN ('active','achieved','dropped')),
-    progress    TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_shared_goals_couple ON shared_goals(couple_id, status);
+CREATE INDEX IF NOT EXISTS idx_goals_user_status ON goals(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_goals_couple ON goals(couple_id, status);
 
 -- Indexes for efficient querying
 CREATE INDEX IF NOT EXISTS idx_facts_owner_visibility
@@ -247,20 +258,21 @@ CREATE INDEX IF NOT EXISTS idx_facts_owner_created
     ON facts(owner_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_messages_user_created
     ON messages(user_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_pending_sender_status
-    ON pending(sender_id, status);
-CREATE INDEX IF NOT EXISTS idx_pending_status_send_after
-    ON pending(status, send_after);
+CREATE INDEX IF NOT EXISTS idx_relay_queue_sender_status
+    ON relay_queue(sender_id, status);
+CREATE INDEX IF NOT EXISTS idx_relay_queue_status_send_after
+    ON relay_queue(status, send_after);
 CREATE INDEX IF NOT EXISTS idx_batch_sender_status
-    ON pending_batch(sender_id, status);
+    ON relay_batch(sender_id, status);
 CREATE INDEX IF NOT EXISTS idx_batch_status_send_after
-    ON pending_batch(status, send_after);
+    ON relay_batch(status, send_after);
 CREATE INDEX IF NOT EXISTS idx_batch_items_batch
-    ON pending_batch_items(batch_id);
+    ON relay_batch_items(batch_id);
 
 CREATE TABLE IF NOT EXISTS conflicts (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     couple_id   TEXT NOT NULL,
+    relationship_id TEXT,
     theme       TEXT NOT NULL,
     status      TEXT NOT NULL DEFAULT 'open'
                 CHECK(status IN ('open','resolved','recurring')),
@@ -275,8 +287,9 @@ CREATE INDEX IF NOT EXISTS idx_conflicts_couple_status
 CREATE TABLE IF NOT EXISTS timeline_events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     couple_id   TEXT NOT NULL,
+    relationship_id TEXT,
     event_type  TEXT NOT NULL
-                CHECK(event_type IN ('paired','conflict','resolution','milestone','goal','relay','checkin')),
+                CHECK(event_type IN ('paired','conflict','resolution','milestone','goal','relay','checkin','nudge')),
     summary     TEXT NOT NULL,
     metadata    TEXT,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -370,13 +383,20 @@ async def init_db(db_path: str) -> None:
                 "ALTER TABLE users ADD COLUMN paused INTEGER DEFAULT 0"
             )
 
-        # Migration: add 'category' column to facts if missing
+        # Migration: add 'password_hash' column to users if missing
+        if "password_hash" not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+
+        # Migration: facts.category was renamed to facts.tag
         async with db.execute("PRAGMA table_info(facts)") as cur:
             fact_columns = {row[1] for row in await cur.fetchall()}
-        if "category" not in fact_columns:
-            await db.execute(
-                "ALTER TABLE facts ADD COLUMN category TEXT DEFAULT NULL"
-            )
+        if "category" in fact_columns and "tag" not in fact_columns:
+            await db.execute("ALTER TABLE facts RENAME COLUMN category TO tag")
+            await db.execute("DROP INDEX IF EXISTS idx_facts_owner_category")
+            fact_columns = (fact_columns - {"category"}) | {"tag"}
+        elif "tag" not in fact_columns:
+            await db.execute("ALTER TABLE facts ADD COLUMN tag TEXT DEFAULT NULL")
+            fact_columns = fact_columns | {"tag"}
 
         # Migration: add fact lifecycle columns
         if "fact_type" not in fact_columns:
@@ -462,7 +482,7 @@ async def init_db(db_path: str) -> None:
             "CREATE INDEX IF NOT EXISTS idx_facts_status ON facts(owner_id, status)"
         )
         await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_facts_owner_category ON facts(owner_id, category)"
+            "CREATE INDEX IF NOT EXISTS idx_facts_owner_tag ON facts(owner_id, tag)"
         )
 
         # Migration: pattern_type column
@@ -473,13 +493,13 @@ async def init_db(db_path: str) -> None:
                 "ALTER TABLE user_patterns ADD COLUMN pattern_type TEXT DEFAULT 'communication'"
             )
 
-        # Migration: feedback/acknowledged_at on pending
-        async with db.execute("PRAGMA table_info(pending)") as cur:
+        # Migration: feedback/acknowledged_at on relay_queue
+        async with db.execute("PRAGMA table_info(relay_queue)") as cur:
             pending_columns = {row[1] for row in await cur.fetchall()}
         if "feedback" not in pending_columns:
-            await db.execute("ALTER TABLE pending ADD COLUMN feedback TEXT")
+            await db.execute("ALTER TABLE relay_queue ADD COLUMN feedback TEXT")
         if "acknowledged_at" not in pending_columns:
-            await db.execute("ALTER TABLE pending ADD COLUMN acknowledged_at TIMESTAMP")
+            await db.execute("ALTER TABLE relay_queue ADD COLUMN acknowledged_at TIMESTAMP")
 
         # Migration: learned_voice and message_count on user_profiles
         async with db.execute("PRAGMA table_info(user_profiles)") as cur:

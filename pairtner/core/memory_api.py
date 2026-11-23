@@ -36,7 +36,7 @@ class Fact:
     text: str
     kind: str
     status: str
-    category: str | None
+    tag: str | None
     fact_type: str
     visibility: str
     relevance_score: float
@@ -57,7 +57,7 @@ class Fact:
             "text": self.text,
             "kind": self.kind,
             "status": self.status,
-            "category": self.category,
+            "tag": self.tag,
             "fact_type": self.fact_type,
             "visibility": self.visibility,
             "relevance_score": round(self.relevance_score, 3),
@@ -228,7 +228,7 @@ def _row_to_fact(row: dict[str, Any]) -> Fact:
         text=row.get("text", ""),
         kind=row.get("kind") or "working",
         status=row.get("status") or "active",
-        category=row.get("category"),
+        tag=row.get("tag"),
         fact_type=row.get("fact_type") or "stable",
         visibility=row.get("visibility") or "private",
         relevance_score=compute_relevance_score(row),
@@ -431,7 +431,7 @@ class MemoryAPI:
         text: str,
         *,
         kind: str = "working",
-        category: str | None = None,
+        tag: str | None = None,
         fact_type: str = "stable",
         source_message_id: int | None = None,
         source_ids: str | None = None,
@@ -447,7 +447,7 @@ class MemoryAPI:
             user_id,
             text,
             "private",
-            category=category,
+            tag=tag,
             fact_type=fact_type,
             source_message_id=source_message_id,
             source_ids=source_ids,
@@ -675,31 +675,23 @@ class MemoryAPI:
     # --- Maintenance ---
 
     async def run_aging(self) -> AgingResult:
-        """Run fact aging: archive expired, mark stale as outdated."""
+        """Run fact aging: archive expired transient facts.
+
+        Working facts are NOT auto-outdated. Instead, they persist until:
+        - Consolidation compresses them into episode summaries (weekly)
+        - The user or LLM explicitly archives/resolves them
+        - Contradiction detection flags them
+
+        Core facts are permanent (explicit user request only).
+        Summaries maintain implicit memory across time.
+        """
         from pairtner.storage.facts import run_fact_aging
 
         needs_confirm = await run_fact_aging(self.db_path)
 
-        # Auto-mark outdated: active working facts uncited for 30+ days
-        import aiosqlite
-
-        now = datetime.now(timezone.utc)
-        cutoff = _to_iso(now - __import__("datetime").timedelta(days=30))
-        async with aiosqlite.connect(self.db_path) as db:
-            cur = await db.execute(
-                "UPDATE facts SET status = 'outdated', updated_at = ? "
-                "WHERE kind = 'working' AND status = 'active' "
-                "AND archived_at IS NULL "
-                "AND (last_cited_at IS NULL OR last_cited_at < ?) "
-                "AND created_at < ?",
-                (_now_iso(), cutoff, cutoff),
-            )
-            marked = cur.rowcount
-            await db.commit()
-
         return AgingResult(
             archived_transient=0,  # run_fact_aging handles this internally
-            marked_outdated=marked,
+            marked_outdated=0,
             needs_confirmation=needs_confirm,
         )
 

@@ -69,10 +69,14 @@ Not a therapist. Not a judge. A warm, practical friend who helps people communic
 ## Data Model
 
 ### Core Tables
-- `users(tg_id, name, partner_id, lang, paused, created_at)` — paired users
-- `facts(id, owner_id, text, visibility, category, fact_type, source, expires_at, archived_at, supersedes_id, shared_at, created_at)` — per-user knowledge with lifecycle. `shared_at` is set when the owner shares a fact and cleared when it is made private; `/mediate` windows use `COALESCE(shared_at, created_at)` so a fact shared today counts even if it was written long ago
-- `pending(id, sender_id, draft, edited_draft, status, send_after, feedback, acknowledged_at, created_at)` — relay approval pipeline
-- `messages(id, user_id, role, content, created_at)` — rolling chat history
+- `users(tg_id, name, partner_id, lang, paused, mode, created_at)` — paired users, `mode` = couple/solo
+- `facts(id, owner_id, relationship_id, text, visibility, kind, tag, status, nudge_status, ...)` — per-user knowledge with lifecycle. Kinds: core, working, episode, partner_view. Tags for categorization.
+- `relay_queue(id, sender_id, receiver_id, relationship_id, draft, edited_draft, status, ...)` — relay approval pipeline (draft → approved → sent)
+- `relay_batch(id, sender_id, receiver_id, status, ...)` / `relay_batch_items(batch_id, draft, status)` — grouped relay batches
+- `messages(id, user_id, relationship_id, role, content, source, created_at)` — rolling chat history, `source` = telegram/pwa
+- `goals(id, user_id, couple_id, text, scope, status, progress, created_by, ...)` — unified personal + shared goals
+- `relationships(id, user_a_id, user_b_id, rel_type, status)` — partner pair metadata
+- `relationship_config(couple_id, config_key, config_value)` — per-couple settings
 - `usage(date, model, count)` — per-model daily API usage
 
 ### Intelligence Tables
@@ -147,6 +151,56 @@ Prompt assembly stores `(task, pack snapshot)` in the `pack.last_trace` context 
 
 ### Pack evaluation
 `dev/prompt-eval/run_eval.py` (helpers in `eval_lib.py`) drives a pack's `eval/cases.yaml` through the real engine. It starts the dev rig in-process (`dev/localtest/rig.py`: throwaway SQLite DB, `RestAdapter` on 127.0.0.1, Telegram token forced to a dummy, adapter forced to `rest`), registers two paired users per case over REST, seeds context with `pairtner.db` calls, and sends one message as user A. The LLM client is `TracingLLM(Throttle(inner), on_call=observer)`, so each case records the system prompt, user content, parsed JSON and pack hashes of its calls. The runner records new rows in `facts`, `partner_perceptions` and `user_patterns` and echoes the case's `expect` lists; it makes no pass/fail verdict. When the engine returns `FALLBACK_REPLY` (quota or provider outage) the run stops, writes partial results and exits with code 3. `rig.make_gemini_config` loads the real key from the main checkout's `.env` through `load_config` only. Output goes to `dev/prompt-eval/runs/<pack>/<version>/<time>_<llm>-<model>/`. See `docs/PACKS.md`.
+## Design Philosophy
+
+- **Privacy-first.** Isolation is structural (separate summary streams, SQL-level filters), never a prompt instruction. A private fact cannot reach the partner's prompt even through summary narrative.
+- **User controls privacy.** Nothing is auto-classified as private. Default is shared; the user decides per fact (`/private`, `/share`) or per tag, and the per-fact choice always wins.
+- **Structured for LLM.** Facts, summaries and nudge suggestions are stored as tagged, bounded bullets. The LLM does the interpretation at extraction time; the engine only stores and copies fields.
+- **Rolling summary is the compression control point.** Long-term memory quality is decided there, so it is pre-computed, regenerated fresh per level, and can use a stronger `summary_model`.
+
+## Memory & Privacy Pipelines
+
+### Message pipeline
+```mermaid
+graph LR
+    M[Message] --> E[Extraction]
+    E --> F[Fact]
+    F --> S[Summary<br/>daily / weekly / monthly]
+    S --> R[Rolling summary<br/>one per level]
+    R --> P[Prompt]
+    F --> P
+```
+
+### Privacy: 3 summary streams
+```mermaid
+graph TD
+    F[Facts] -->|private, owner Alice| A[Alice-private summary]
+    F -->|private, owner Bob| B[Bob-private summary]
+    F -->|shared, both| C[Couple-shared summary]
+    A --> PA[Alice's prompt only]
+    B --> PB[Bob's prompt only]
+    C --> PA
+    C --> PB
+```
+
+### Push notification
+```mermaid
+sequenceDiagram
+    participant Bot
+    participant FCM as Push service (FCM)
+    participant Phone
+    Bot->>FCM: Outbound HTTPS (VAPID-signed)
+    FCM-->>Phone: Push
+    Note over Bot,Phone: Outbound only, works behind NAT
+```
+
+### Deploy
+```mermaid
+graph LR
+    Mac -->|SCP push-win.sh| WSL
+    WSL -->|docker compose| Docker[pairtner container]
+```
+
 ## Key Flows
 
 ### Relay (message to partner)
@@ -266,7 +320,7 @@ Run: `uv run python -m pairtner.dashboard` or `docker compose up dashboard`
 
 ## Roadmap (next priorities)
 Done in the REST + PWA batch: PWA with service worker and display names, provider-aware privacy text, time-scoped `/mediate`, the [Share] button, scripted periodic-flow scenarios.
-1. **Web Push** for the PWA (clients long-poll while open today)
+1. ~~Web Push for the PWA~~ done (Web Push API, VAPID + pywebpush; see decision 333)
 2. **Hash stored auth tokens** (shared with the WebSocket adapter)
 3. **Circles model**: rename couples to circles, support any relationship type (parent-child, siblings, friends)
 4. **FTS5 + smart context**: when facts exceed threshold, search instead of dump

@@ -125,9 +125,9 @@ async def test_parse_message_flags():
 
 @pytest.mark.asyncio
 async def test_model_command_usage(service: BotService, test_db):
-    """/model with no args shows usage."""
+    """/model with no args shows current model; a bare name sets it."""
     resp = await service.handle_model(1, "")
-    assert "Usage" in resp[0].text
+    assert "/model reset" in resp[0].text
 
     resp2 = await service.handle_model(1, "gemma3:4b")
-    assert "Usage" in resp2[0].text
+    assert "gemma3:4b" in resp2[0].text

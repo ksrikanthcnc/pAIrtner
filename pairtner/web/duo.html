@@ -1,13 +1,17 @@
 <!doctype html>
+<!-- Dev tool: sandboxed duo testing with isolated temp DB. Logic lives in /duo.js (CSP: no inline script). -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pAIrtner duo (dev demo)</title>
+<title>pAIrtner duo (sandboxed)</title>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body class="duo">
-<iframe title="Alice" src="/?profile=alice&amp;name=Alice"></iframe>
-<iframe title="Bob" src="/?profile=bob&amp;name=Bob"></iframe>
+<div class="duo-banner">🧪 Sandbox Mode <span id="duo-id">creating…</span>
+  <button type="button" id="duo-reset">Reset</button></div>
+<iframe id="duo-alice" title="Alice" data-query="profile=alice"></iframe>
+<iframe id="duo-bob" title="Bob" data-query="profile=bob"></iframe>
+<script type="module" src="/duo.js"></script>
 </body>
 </html>

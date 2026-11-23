@@ -47,14 +47,14 @@ async def test_visibility_stored(v2_db):
     ops = parse_memory_ops(
         [
             {"op": "add", "text": "Secret worry about money", "visibility": "private"},
-            {"op": "add", "text": "Loves surprise dinners", "visibility": "shareable"},
+            {"op": "add", "text": "Loves surprise dinners", "visibility": "shared"},
             {"op": "add", "text": "Had a long day", "visibility": "bogus"},
         ],
         set(), v2=True,
     )
     res = await _apply(v2_db, ops)
     vis = [(await _fact(v2_db, o.memory_id))["visibility"] for o in res.outcomes]
-    assert vis == ["private", "shareable", "nudge_eligible"]
+    assert vis == ["private", "shared", "shared"]
 
 
 @pytest.mark.asyncio
@@ -127,7 +127,7 @@ async def test_settings_ops_rejected(v2_db):
 async def test_cancel_nudge(v2_db):
     # Alice's fact nudges Bob; Bob addresses it, so Bob's cancel applies.
     fid = await db_mod.add_fact(
-        v2_db, ALICE, "Wants more attention", "nudge_eligible",
+        v2_db, ALICE, "Wants more attention", "shared",
         nudge_type="attention", nudge_suggestion="Be attentive.",
         nudge_target_id=BOB, nudge_status="pending",
     )

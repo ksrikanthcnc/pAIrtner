@@ -1,3 +1,4 @@
+bot_name: Eko
 # pAIrtner Bot — tunables
 # Secrets (API keys, tokens, encryption keys) belong in .env, NOT here.
 
@@ -38,8 +39,8 @@ models:
 cooldown:
   behavior: "accumulate"
 
-# Fact categories — LLM classifies facts into one of these.
-fact_categories:
+# Fact tags — seed list for reference only -- tags are dynamic per couple
+fact_tags:
   - relationship
   - household
   - emotional

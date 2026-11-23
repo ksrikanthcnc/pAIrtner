@@ -38,7 +38,7 @@ async def v2_db(tmp_path) -> str:
 
 async def _add_nudge(path: str) -> int:
     return await db_mod.add_fact(
-        path, ALICE, SECRET, "nudge_eligible",
+        path, ALICE, SECRET, "shared",
         nudge_type="attention", nudge_suggestion=SUGGESTION,
         nudge_target_id=BOB, nudge_status="pending", nudge_cooldown_h=0,
     )

@@ -48,6 +48,8 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config()
+    from pairtner.core.prompts import set_bot_name
+    set_bot_name(config.bot_name)
     adapter_name = args.adapter or config.adapter
     logger.info(
         "Config loaded — provider: %s, default model: %s",

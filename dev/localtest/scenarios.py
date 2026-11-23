@@ -573,7 +573,7 @@ def sc_periodic(env: Env) -> None:
     rows = env.db("select config_value from couple_config where couple_id=? and config_key='last_digest'", couple)
     env.check(rows, "couple_config.last_digest was not written")
     rows = env.db("select status from checkins where couple_id=?", couple)
-    env.check(rows and rows[-1][0] == "pending", f"check-in row missing or not pending: {rows}")
+    env.check(rows and rows[-1][0] == "relay_queue", f"check-in row missing or not pending: {rows}")
 
     # answer the check-in: first answer waits, second triggers the summary for both
     waiting = a.say("Check-in answer from Alice: the week was fine")

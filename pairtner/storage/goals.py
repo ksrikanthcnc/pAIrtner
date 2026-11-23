@@ -1,6 +1,8 @@
-"""Goals — personal and shared.
+"""Goals — personal and shared, unified in one table.
 
-Canonical implementations of goal-related database operations.
+The ``goals`` table has a ``scope`` column: 'personal' or 'shared'.
+Personal goals have ``user_id`` set; shared goals also have ``couple_id``.
+Function names are kept for backward compatibility.
 """
 from __future__ import annotations
 
@@ -13,8 +15,8 @@ async def add_user_goal(db_path: str, user_id: int, text: str) -> int:
     """Create a personal goal; return its id."""
     return await _execute(
         db_path,
-        "INSERT INTO user_goals (user_id, text) VALUES (?, ?)",
-        (user_id, text),
+        "INSERT INTO goals (scope, user_id, created_by, text) VALUES ('personal', ?, ?, ?)",
+        (user_id, user_id, text),
     )
 
 
@@ -24,8 +26,9 @@ async def add_shared_goal(
     """Create a shared goal; return its id."""
     return await _execute(
         db_path,
-        "INSERT INTO shared_goals (couple_id, text, created_by) VALUES (?, ?, ?)",
-        (couple_id, text, created_by),
+        "INSERT INTO goals (scope, user_id, couple_id, created_by, text) "
+        "VALUES ('shared', ?, ?, ?, ?)",
+        (created_by, couple_id, created_by, text),
     )
 
 
@@ -35,7 +38,7 @@ async def get_active_goals(
     """Get active personal goals for a user."""
     return await _fetch_all(
         db_path,
-        "SELECT * FROM user_goals WHERE user_id = ? AND status = 'active' "
+        "SELECT * FROM goals WHERE user_id = ? AND scope = 'personal' AND status = 'active' "
         "ORDER BY created_at",
         (user_id,),
     )
@@ -47,7 +50,7 @@ async def get_shared_goals(
     """Get active shared goals for a couple."""
     return await _fetch_all(
         db_path,
-        "SELECT * FROM shared_goals WHERE couple_id = ? AND status = 'active' "
+        "SELECT * FROM goals WHERE couple_id = ? AND scope = 'shared' AND status = 'active' "
         "ORDER BY created_at",
         (couple_id,),
     )
@@ -56,18 +59,18 @@ async def get_shared_goals(
 async def update_goal_status(
     db_path: str, goal_id: int, status: str, progress: str | None = None
 ) -> None:
-    """Update a personal goal's status and optional progress."""
+    """Update a goal's status and optional progress (works for both personal and shared)."""
     if progress is not None:
         await _execute(
             db_path,
-            "UPDATE user_goals SET status = ?, progress = ?, "
+            "UPDATE goals SET status = ?, progress = ?, "
             "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (status, progress, goal_id),
         )
     else:
         await _execute(
             db_path,
-            "UPDATE user_goals SET status = ?, "
+            "UPDATE goals SET status = ?, "
             "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (status, goal_id),
         )
@@ -76,32 +79,17 @@ async def update_goal_status(
 async def update_shared_goal_status(
     db_path: str, goal_id: int, status: str, progress: str | None = None
 ) -> None:
-    """Update a shared goal's status and optional progress."""
-    if progress is not None:
-        await _execute(
-            db_path,
-            "UPDATE shared_goals SET status = ?, progress = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (status, progress, goal_id),
-        )
-    else:
-        await _execute(
-            db_path,
-            "UPDATE shared_goals SET status = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (status, goal_id),
-        )
+    """Update a shared goal's status. Delegates to update_goal_status (unified table)."""
+    await update_goal_status(db_path, goal_id, status, progress)
 
 
 async def get_goal_by_id(db_path: str, goal_id: int) -> dict[str, Any] | None:
-    """Return a personal goal by its id."""
+    """Return a goal by its id (personal or shared)."""
     return await _fetch_one(
-        db_path, "SELECT * FROM user_goals WHERE id = ?", (goal_id,)
+        db_path, "SELECT * FROM goals WHERE id = ?", (goal_id,)
     )
 
 
 async def get_shared_goal_by_id(db_path: str, goal_id: int) -> dict[str, Any] | None:
-    """Return a shared goal by its id."""
-    return await _fetch_one(
-        db_path, "SELECT * FROM shared_goals WHERE id = ?", (goal_id,)
-    )
+    """Return a shared goal by its id. Delegates to get_goal_by_id (unified table)."""
+    return await get_goal_by_id(db_path, goal_id)

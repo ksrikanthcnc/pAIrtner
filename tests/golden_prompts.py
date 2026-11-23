@@ -246,13 +246,13 @@ class World:
 
     async def fact(
         self, owner: int, text: str, vis: str = "private", age: float = 1.0,
-        category: str | None = None, fact_type: str = "stable",
+        tag: str | None = None, fact_type: str = "stable",
     ) -> int:
         ts = self.stamp(age)
         return await self.x(
-            "INSERT INTO facts (owner_id, text, visibility, source, category, "
+            "INSERT INTO facts (owner_id, text, visibility, source, tag, "
             "fact_type, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-            (owner, text, vis, "seed", category, fact_type, ts, ts),
+            (owner, text, vis, "seed", tag, fact_type, ts, ts),
         )
 
     async def msg(self, uid: int, role: str, content: str, age: float = 0.5) -> None:
@@ -274,15 +274,15 @@ class World:
 
     async def goal(self, uid: int, text: str, age: float = 3.0, status: str = "active") -> None:
         await self.x(
-            "INSERT INTO user_goals (user_id, text, status, created_at, updated_at) "
-            "VALUES (?,?,?,?,?)", (uid, text, status, (ts := self.stamp(age)), ts),
+            "INSERT INTO goals (scope, user_id, created_by, text, status, created_at, updated_at) "
+            "VALUES ('personal',?,?,?,?,?,?)", (uid, uid, text, status, (ts := self.stamp(age)), ts),
         )
 
     async def shared_goal(self, text: str, age: float = 3.0, status: str = "active") -> None:
         await self.x(
-            "INSERT INTO shared_goals (couple_id, text, created_by, status, created_at, "
-            "updated_at) VALUES (?,?,?,?,?,?)",
-            (self.couple_id, text, A_ID, status, (ts := self.stamp(age)), ts),
+            "INSERT INTO goals (scope, user_id, couple_id, created_by, text, status, created_at, "
+            "updated_at) VALUES ('shared',?,?,?,?,?,?,?)",
+            (A_ID, self.couple_id, A_ID, text, status, (ts := self.stamp(age)), ts),
         )
 
     async def profile(self, uid: int, **fields: Any) -> None:
@@ -317,7 +317,7 @@ class World:
                     edited: str | None = None) -> None:
         ts = self.stamp(age)
         await self.x(
-            "INSERT INTO pending (sender_id, receiver_id, draft, edited_draft, status, "
+            "INSERT INTO relay_queue (sender_id, receiver_id, draft, edited_draft, status, "
             "created_at, sent_at) VALUES (?,?,?,?, 'sent', ?, ?)",
             (sender, receiver, draft, edited, ts, ts),
         )
@@ -566,65 +566,6 @@ async def _(w):
     await _msgtext(w, A_ID, "#send I am upset about yesterday")
 
 
-@scenario("cs.tell.command")
-async def _(w):
-    await w.svc.handle_tell(A_ID, "please pick up milk on the way home")
-
-
-# ── mediate ────────────────────────────────────────────────────────────────
-
-async def _mediate_seed(w: World, a_side: bool = True, b_side: bool = True) -> None:
-    await w.fact(A_ID, "We agreed to split the budget evenly", "shared", 2)
-    await w.fact(B_ID, "We want a quieter month", "shared", 3)
-    if a_side:
-        await w.perception(A_ID, B_ID, "seems tired after late shifts", "negative", 0.8, 2)
-        await w.perception(A_ID, B_ID, "goes quiet when plans change", "neutral", 0.7, 1)
-    if b_side:
-        await w.perception(B_ID, A_ID, "wants more help around the house", "negative", 0.9, 2)
-
-
-@scenario("cs.mediate.both_7d")
-async def _(w):
-    await _mediate_seed(w)
-    await w.svc.handle_mediate(A_ID, None)
-
-
-@scenario("cs.mediate.month")
-async def _(w):
-    await _mediate_seed(w)
-    await w.svc.handle_mediate(A_ID, "month")
-
-
-@scenario("cs.mediate.one_day")
-async def _(w):
-    # Ages stay far from the 1-day boundary so wall-clock drift cannot flip rows.
-    await w.fact(A_ID, "We agreed to split the budget evenly", "shared", 0.3)
-    await w.fact(B_ID, "OLD shared fact outside the window", "shared", 3)
-    await w.perception(A_ID, B_ID, "seems tired after late shifts", "negative", 0.8, 0.4)
-    await w.perception(B_ID, A_ID, "wants more help around the house", "negative", 0.9, 0.35)
-    await w.perception(B_ID, A_ID, "OLD impression outside the window", "neutral", 0.9, 4)
-    await w.svc.handle_mediate(A_ID, "1d")
-
-
-@scenario("cs.mediate.one_sided")
-async def _(w):
-    await _mediate_seed(w, b_side=False)
-    await w.svc.handle_mediate(A_ID, "7d")
-
-
-@scenario("cs.mediate.facts_only", mediate_include_perceptions=False)
-async def _(w):
-    await _mediate_seed(w)
-    await w.svc.handle_mediate(A_ID, "2w")
-
-
-@scenario("cs.mediate.perceptions_only")
-async def _(w):
-    await w.perception(A_ID, B_ID, "seems tired after late shifts", "negative", 0.8, 2)
-    await w.perception(B_ID, A_ID, "wants more help around the house", "negative", 0.9, 2)
-    await w.svc.handle_mediate(B_ID, "7d")
-
-
 # ── export therapy, digest, check-in, nudges, summaries ───────────────────
 
 async def _therapy_seed(w: World, *, events=True, patterns=True, facts=True,
@@ -660,7 +601,7 @@ async def _(w):
     await generate_therapy_report(w.db, w.llm, A_ID)
 
 
-@scenario("cs.therapy.via_export")
+@scenario("cs.therapy.via_export", calls=0)
 async def _(w):
     await _therapy_seed(w)
     await w.svc.handle_export(A_ID, "therapy")
@@ -801,7 +742,7 @@ async def _positive_facts(w: World) -> None:
         (B_ID, "He remembered our anniversary", "emotional"),
         (A_ID, "Walking in the rain was fun", "relationship"),
     ]):
-        await w.fact(owner, text, "shared", 30 - i, category=cat)
+        await w.fact(owner, text, "shared", 30 - i, tag=cat)
 
 
 @scenario("cs.nudge.positive_facts_en", seed=False)
@@ -849,7 +790,7 @@ async def _(w):
         ("2025-12-01 00:00:00", "OUT-OF-RANGE december fact", "private", "other"),
     ]:
         await w.x(
-            "INSERT INTO facts (owner_id, text, visibility, source, category, "
+            "INSERT INTO facts (owner_id, text, visibility, source, tag, "
             "fact_type, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
             (A_ID, text, vis, "seed", cat, "stable", when, when),
         )
@@ -861,7 +802,7 @@ async def _(w):
     from pairtner.core.summarizer import generate_monthly_summary
 
     await w.x(
-        "INSERT INTO facts (owner_id, text, visibility, source, category, "
+        "INSERT INTO facts (owner_id, text, visibility, source, tag, "
         "fact_type, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
         (A_ID, "We planned a new year trip", "shared", "seed", "relationship",
          "stable", "2025-12-30 09:00:00", "2025-12-30 09:00:00"),

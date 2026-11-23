@@ -19,6 +19,7 @@ from pairtner.core.context_composer import ComposedContext, ContextComposer
 from pairtner.core.memory import _has_v2_columns
 from pairtner.features.nudge_engine import deliver_nudge
 from pairtner.storage.schema_v2 import make_relationship_id
+from pairtner.storage.tagfmt import normalize_tags, parse_fact_tags
 from pairtner.features.checkin import process_checkin_answer
 from pairtner.config import Config, is_user_allowed
 from pairtner.crypto import decrypt_value
@@ -81,6 +82,8 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         self._edit_state: dict[int, int] = {}
         self._relay_choices: dict[str, dict[str, Any]] = {}
         self._forget_confirm: set[int] = set()
+        self._visibility_confirm: dict[int, tuple[str, str]] = {}
+        self._password_pending: set[int] = set()
         self._batch_item_edit_state: dict[int, int] = {}
         self._pending_contradictions: list[BotResponse] = []
         self._last_saved_facts: list[str] = []
@@ -104,6 +107,23 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         """Return the user's preferred language code, defaulting to ``'en'``."""
         user = await db_mod.get_user(self.db_path, user_id)
         return (user or {}).get("lang") or "en"
+
+    @property
+    def _default_mode(self) -> str:
+        """Mode assigned to newly created users (SOLO_MODE env)."""
+        return "solo" if getattr(self.config, "solo_mode", False) else "couple"
+
+    async def _is_solo(self, user_id: int) -> bool:
+        return await db_mod.get_user_mode(self.db_path, user_id) == "solo"
+
+    async def _solo_blocked(self, user_id: int, what: str) -> list[BotResponse] | None:
+        """Return a notice when *user_id* is solo (partner feature unavailable)."""
+        if not await self._is_solo(user_id):
+            return None
+        return [BotResponse(
+            f"🧘 {what} is a partner feature and isn't available in solo mode. "
+            "Switch back with /mode couple."
+        )]
 
     async def _get_couple_api_key(self, user_id: int) -> str | None:
         """Resolve the BYO Gemini key with three-tier lookup.
@@ -170,7 +190,7 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='facts'"
             ) as cur:
                 row = await cur.fetchone()
-        if not row or "nudge_eligible" not in (row[0] or ""):
+        if not row or "DEFAULT 'shared'" not in (row[0] or ""):
             return None
         relationship_id = make_relationship_id(user_id, partner_id)
         async with aiosqlite.connect(self.db_path) as db:
@@ -194,6 +214,8 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         try:
             composed = await ContextComposer(
                 self.db_path, context_tokens=context_tokens,
+                rolling_summary_enabled=getattr(
+                    self.config, "rolling_summary_enabled", True),
             ).build_context(
                 user_id, relationship_id, text,
             )
@@ -270,19 +292,19 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
                 if key in seen:
                     continue
                 seen.add(key)
-            category = fact.get("category") or None
+            tag = normalize_tags(fact.get("tag")) or None
             fact_type = fact.get("fact_type", "stable")
             if fact_type not in ("transient", "situational", "stable"):
                 fact_type = "stable"
             if text:
                 new_id = await db_mod.add_fact(
                     self.db_path, user_id, text, vis, source="llm",
-                    category=category, fact_type=fact_type,
+                    tag=tag, fact_type=fact_type,
                 )
                 count += 1
 
                 contradiction = await self._check_contradiction(
-                    user_id, new_id, text, category, lang,
+                    user_id, new_id, text, tag, lang,
                 )
                 if contradiction:
                     self._pending_contradictions.append(contradiction)
@@ -296,14 +318,17 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         return result
 
     def _format_fact_saved(self, lang: str, count: int) -> str:
-        """Format the 'saved N facts' notice with inline details."""
+        """Format the 'saved N facts' notice — subtle with key facts."""
         facts = self._last_saved_facts
         self._last_saved_facts = []
-        if facts:
-            details = "\n".join(f"  💾 {f}" for f in facts[:5])
-        else:
-            details = ""
-        return t(lang, "fact_saved", count=count, details=details).rstrip()
+        if not facts:
+            return f"✅ Saved {count} new fact(s)."
+        if count <= 2:
+            # Compact: show what was remembered inline
+            items = "  ".join(f"💕 {f}" for f in facts[:2])
+            return f"✅ {items}"
+        # 3+ facts: just the count, user can /debug for details
+        return f"✅ Saved {count} new fact(s)."
 
     @staticmethod
     def _format_settings_confirmation(ops_result: OpsResult) -> str:
@@ -410,11 +435,11 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         user_id: int,
         new_fact_id: int,
         new_text: str,
-        category: str | None,
+        tag: list[str] | None,
         lang: str,
     ) -> BotResponse | None:
         """Check if a new fact contradicts an existing active fact."""
-        if not category:
+        if not tag:
             return None
 
         existing = await db_mod.get_active_facts(self.db_path, user_id)
@@ -434,7 +459,7 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         for fact in existing:
             if fact["id"] == new_fact_id:
                 continue
-            if (fact.get("category") or None) != category:
+            if not set(parse_fact_tags(fact.get("tag"))) & set(tag):
                 continue
             old_lower = fact["text"].lower()
             for pos, neg in opposites:
@@ -503,8 +528,17 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         if not is_user_allowed(self.config, user_id):
             return []
 
-        user = await db_mod.ensure_user(self.db_path, user_id, user_name)
+        user = await db_mod.ensure_user(
+            self.db_path, user_id, user_name, mode=self._default_mode,
+        )
         lang = user.get("lang") or "en"
+
+        if user.get("mode") == "solo":
+            return [BotResponse(
+                f"👋 Welcome{', ' + user_name if user_name else ''}! I'm your "
+                "personal journal and coach. Tell me what's on your mind.\n\n"
+                + self._disclaimer(lang) + "\n\n" + t(lang, "crisis_resources")
+            )]
 
         if user.get("partner_id"):
             partner = await db_mod.get_user(self.db_path, user["partner_id"])
@@ -534,8 +568,12 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         if not is_user_allowed(self.config, user_id):
             return []
 
-        user = await db_mod.ensure_user(self.db_path, user_id, user_name)
+        user = await db_mod.ensure_user(
+            self.db_path, user_id, user_name, mode=self._default_mode,
+        )
         lang = user.get("lang") or "en"
+        if user.get("mode") == "solo":
+            return await self._solo_blocked(user_id, "/join") or []
 
         if not code:
             return [BotResponse(t(lang, "join_need_code"))]
@@ -579,9 +617,8 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
                 await db_mod.ensure_user_profile(self.db_path, uid)
                 q = await get_onboarding_question(self.db_path, uid, ulang)
                 if q:
-                    welcome = t(ulang, "onboard_welcome")
                     responses.append(BotResponse(
-                        f"{welcome}\n\n{q[0]}",
+                        q[0],
                         target_user_id=uid if uid != user_id else None,
                     ))
 
@@ -602,25 +639,6 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         ]
         return [BotResponse("\n\n".join(parts))]
 
-    # ── /lang ────────────────────────────────────────────────────────────
-
-    async def handle_lang(
-        self, user_id: int, arg: str | None
-    ) -> list[BotResponse]:
-        """Switch the user's language preference."""
-        if not is_user_allowed(self.config, user_id):
-            return []
-
-        await db_mod.ensure_user(self.db_path, user_id)
-        lang = await self._get_lang(user_id)
-
-        if not arg or arg.strip().lower() not in ("en", "te"):
-            return [BotResponse(t(lang, "lang_usage"))]
-
-        new_lang = arg.strip().lower()
-        await db_mod.update_user_lang(self.db_path, user_id, new_lang)
-        return [BotResponse(t(new_lang, "lang_changed"))]
-
     # ── plain message ────────────────────────────────────────────────────
 
     async def handle_message(
@@ -630,10 +648,13 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         if not is_user_allowed(self.config, user_id):
             return []
 
-        await db_mod.ensure_user(self.db_path, user_id, user_name)
+        await db_mod.ensure_user(
+            self.db_path, user_id, user_name, mode=self._default_mode,
+        )
 
         # Clear any stale forget-confirm state on new message
         self._forget_confirm.discard(user_id)
+        self._visibility_confirm.pop(user_id, None)
 
         # Check if user is in profile-edit state (settings)
         # Emergency / crisis detection — fires FIRST, before edit states,
@@ -671,7 +692,17 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
                 self.db_path, user_id, text, lang, llm=self.llm,
             )
             if consumed:
-                return [BotResponse(next_q)] if next_q else []
+                out = [BotResponse(next_q)] if next_q else []
+                return out
+
+        # Password step right after onboarding (skippable; /password works later)
+        if user_id in self._password_pending:
+            self._password_pending.discard(user_id)
+            candidate = text.strip()
+            if candidate and not candidate.startswith("/"):
+                lang = await self._get_lang(user_id)
+                await db_mod.set_password(self.db_path, user_id, candidate)
+                return [BotResponse(t(lang, "password_set"))]
 
         # Sanitize input — strip injection patterns before LLM processing
         clean, stripped = sanitize_input(clean)
@@ -702,6 +733,8 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
 
         if "#keep" in tags:
             return await self._handle_keep(user_id, clean)
+        if "#send" in tags and (blocked := await self._solo_blocked(user_id, "#send")):
+            return blocked
         if "#blunt" in tags or "#honest" in tags:
             if "#send" in tags:
                 # Blunt reply for sender + gentle relay draft for partner
@@ -756,12 +789,6 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         if callback_data.startswith("bix:"):
             return await self._cb_batch_item_discard(user_id, callback_data, lang)
 
-        # Style / voice callbacks
-        if callback_data.startswith("sv:"):
-            return await self._cb_style_voice(user_id, callback_data, lang)
-        if callback_data.startswith("si:"):
-            return await self._cb_style_intensity(user_id, callback_data, lang)
-
         # Fact contradiction callbacks
         if callback_data.startswith("fv:"):
             return await self._cb_fact_toggle_visibility(user_id, callback_data, lang)
@@ -792,28 +819,12 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
             return await self._cb_shared_goal_dropped(user_id, callback_data, lang)
 
         # Settings callbacks
-        if callback_data == "stv":
-            return await self._cb_settings_voice(user_id, callback_data, lang)
-        if callback_data == "std":
-            return await self._cb_settings_dampening(user_id, callback_data, lang)
         if callback_data == "stg":
             return await self._cb_settings_goals(user_id, callback_data, lang)
         if callback_data == "stp":
             return await self._cb_settings_profile(user_id, callback_data, lang)
-        if callback_data == "stm":
-            return await self._cb_settings_mood(user_id, callback_data, lang)
-        if callback_data == "sd_up":
-            return await self._cb_dampening_up(user_id, callback_data, lang)
-        if callback_data == "sd_down":
-            return await self._cb_dampening_down(user_id, callback_data, lang)
-        if callback_data == "sd_noop":
-            return []
         if callback_data.startswith("sp:"):
             return await self._cb_profile_edit(user_id, callback_data, lang)
-        if callback_data.startswith("sm:"):
-            return await self._cb_mood_set(user_id, callback_data, lang)
-        if callback_data == "sm_clear":
-            return await self._cb_mood_clear(user_id, callback_data, lang)
 
         # Feedback callbacks (FEAT-003)
         if callback_data.startswith("fb_y:"):

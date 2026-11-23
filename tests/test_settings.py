@@ -15,75 +15,10 @@ from pairtner.handlers import BotService
 # /settings command
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_settings_shows_menu(service: BotService, test_db, paired_users):
-    a_id, _ = paired_users
-    responses = await service.handle_settings(a_id)
-    assert len(responses) == 1
-    assert "Settings" in responses[0].text or "settings" in responses[0].text.lower()
-    assert responses[0].buttons is not None
-    # Should have 3 rows of buttons
-    assert len(responses[0].buttons) == 3
-
 
 # ---------------------------------------------------------------------------
 # Settings sub-menus via callbacks
 # ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_settings_voice_callback(service: BotService, test_db, paired_users):
-    """Voice settings button shows the voice picker."""
-    a_id, _ = paired_users
-    responses = await service.handle_callback(a_id, "stv")
-    assert len(responses) == 1
-    # Should show the style picker (same as /style)
-    assert "Style" in responses[0].text or "Voice" in responses[0].text or "voice" in responses[0].text.lower()
-
-
-@pytest.mark.asyncio
-async def test_settings_dampening_callback(service: BotService, test_db, paired_users):
-    """Dampening settings button shows current level with +/- buttons."""
-    a_id, _ = paired_users
-    await ensure_user_profile(test_db, a_id)
-    responses = await service.handle_callback(a_id, "std")
-    assert len(responses) == 1
-    assert responses[0].buttons is not None
-    # Should have +/- buttons
-    button_texts = [b.text for row in responses[0].buttons for b in row]
-    assert "➖" in button_texts
-    assert "➕" in button_texts
-
-
-@pytest.mark.asyncio
-async def test_dampening_up(service: BotService, test_db, paired_users):
-    """Dampening + button increases the base level."""
-    a_id, _ = paired_users
-    await ensure_user_profile(test_db, a_id)
-
-    profile_before = await get_user_profile(test_db, a_id)
-    base_before = profile_before["dampening_base"]
-
-    responses = await service.handle_callback(a_id, "sd_up")
-    assert len(responses) == 1
-
-    profile_after = await get_user_profile(test_db, a_id)
-    assert profile_after["dampening_base"] == min(1.0, round(base_before + 0.1, 1))
-
-
-@pytest.mark.asyncio
-async def test_dampening_down(service: BotService, test_db, paired_users):
-    """Dampening - button decreases the base level."""
-    a_id, _ = paired_users
-    await ensure_user_profile(test_db, a_id)
-
-    profile_before = await get_user_profile(test_db, a_id)
-    base_before = profile_before["dampening_base"]
-
-    responses = await service.handle_callback(a_id, "sd_down")
-    assert len(responses) == 1
-
-    profile_after = await get_user_profile(test_db, a_id)
-    assert profile_after["dampening_base"] == max(0.1, round(base_before - 0.1, 1))
 
 
 @pytest.mark.asyncio
@@ -158,31 +93,25 @@ async def test_profile_edit_flow(service: BotService, test_db, paired_users):
 
 
 @pytest.mark.asyncio
-async def test_settings_mood_callback(service: BotService, test_db, paired_users):
-    """Mood settings button shows mood presets."""
+async def test_settings_shows_text_summary(service: BotService, test_db, paired_users):
+    """/settings is a plain-text summary with no button grid."""
     a_id, _ = paired_users
-    responses = await service.handle_callback(a_id, "stm")
+    await ensure_user_profile(test_db, a_id)
+    responses = await service.handle_settings(a_id)
     assert len(responses) == 1
-    assert responses[0].buttons is not None
-    # Should have mood buttons
-    button_texts = [b.text for row in responses[0].buttons for b in row]
-    assert any("Stressed" in t for t in button_texts)
-    assert any("Happy" in t for t in button_texts)
+    assert "settings" in responses[0].text.lower()
+    assert "tell me what you want" in responses[0].text.lower()
+    assert not responses[0].buttons
 
 
 @pytest.mark.asyncio
-async def test_mood_set_via_callback(service: BotService, test_db, paired_users):
-    """Setting mood via settings callback works."""
+async def test_removed_style_callbacks_are_inert(service: BotService, test_db, paired_users):
+    """Old style/dampening/mood callbacks no longer change the profile."""
     a_id, _ = paired_users
-    responses = await service.handle_callback(a_id, "sm:stressed")
-    assert len(responses) == 1
-    assert "stressed" in responses[0].text.lower()
-
-
-@pytest.mark.asyncio
-async def test_mood_clear_via_callback(service: BotService, test_db, paired_users):
-    """Clearing mood via settings callback works."""
-    a_id, _ = paired_users
-    responses = await service.handle_callback(a_id, "sm_clear")
-    assert len(responses) == 1
-    assert "No active mood" in responses[0].text or "mood" in responses[0].text.lower()
+    await ensure_user_profile(test_db, a_id)
+    before = await get_user_profile(test_db, a_id)
+    for data in ("sv:telugu", "si:0.8", "sd_up", "sd_down", "sm:happy", "stv", "std", "stm"):
+        await service.handle_callback(a_id, data)
+    after = await get_user_profile(test_db, a_id)
+    assert after["default_voice"] == before["default_voice"]
+    assert after["dampening_base"] == before["dampening_base"]

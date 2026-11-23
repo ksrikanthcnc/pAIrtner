@@ -110,7 +110,7 @@ async def test_approval_flow(service: BotService, test_db, paired_users):
         {"reply": "I understand", "new_facts": [], "relay_draft": "Hey, can we talk?"}
     ])
 
-    responses = await service.handle_tell(a_id, "I need to talk")
+    responses = await service.handle_message(a_id, "Alice", "#send " + "I need to talk")
     assert len(responses) == 1
     assert responses[0].buttons is not None
     # Should have approval buttons
@@ -135,7 +135,7 @@ async def test_discard_flow(service: BotService, test_db, paired_users):
         {"reply": "Got it", "new_facts": [], "relay_draft": "A draft"}
     ])
 
-    responses = await service.handle_tell(a_id, "Nevermind")
+    responses = await service.handle_message(a_id, "Alice", "#send " + "Nevermind")
     discard_btn = responses[0].buttons[0][2]  # 3rd button = Discard
     responses = await service.handle_callback(a_id, discard_btn.callback_data)
     assert any("discard" in r.text.lower() or "🗑️" in r.text for r in responses)
@@ -149,7 +149,7 @@ async def test_edit_flow(service: BotService, test_db, paired_users):
         {"reply": "Ok", "new_facts": [], "relay_draft": "Original draft"}
     ])
 
-    responses = await service.handle_tell(a_id, "Need to say something")
+    responses = await service.handle_message(a_id, "Alice", "#send " + "Need to say something")
     edit_btn = responses[0].buttons[0][1]  # 2nd button = Edit
 
     # Click edit
@@ -233,7 +233,7 @@ async def test_cooldown(service: BotService, test_db, paired_users):
         {"reply": "Ok", "new_facts": [], "relay_draft": "Draft"}
     ])
 
-    responses = await service.handle_tell(a_id, "Tell them")
+    responses = await service.handle_message(a_id, "Alice", "#send " + "Tell them")
     approve_btn = responses[0].buttons[0][0]
     await service.handle_callback(a_id, approve_btn.callback_data)
 
@@ -253,7 +253,7 @@ async def test_now_tag_skips_cooldown(service: BotService, test_db, paired_users
         {"reply": "Ok", "new_facts": [], "relay_draft": "Urgent draft"}
     ])
 
-    responses = await service.handle_tell(a_id, "#now Tell them now")
+    responses = await service.handle_message(a_id, "Alice", "#send #now Tell them now")
     # The approve button should have apn: prefix
     approve_btn = responses[0].buttons[0][0]
     assert approve_btn.callback_data.startswith("apn:")
@@ -325,7 +325,7 @@ async def test_deep_tag_uses_heavy_model(service: BotService, test_db, paired_us
 
 @pytest.mark.asyncio
 async def test_no_tag_asks_user(service: BotService, test_db, paired_users):
-    """A plain message with a relay_draft should show choice buttons."""
+    """A plain message with relay_draft + no urgency defaults to auto-nudge (info)."""
     a_id, _ = paired_users
 
     service.llm = MockLLMClient([{
@@ -336,11 +336,26 @@ async def test_no_tag_asks_user(service: BotService, test_db, paired_users):
 
     responses = await service.handle_message(a_id, "Alice", "I need to tell my partner something")
     assert len(responses) == 1
-    # Should have relay button (just one — dismissing is implicit "keep to myself")
+    # Default urgency=info → auto-nudge, no buttons
+    assert responses[0].buttons is None
+    assert "pass that along" in responses[0].text.lower() or "📨" in responses[0].text
+
+
+@pytest.mark.asyncio
+async def test_relay_urgency_review_shows_buttons(service: BotService, test_db, paired_users):
+    """relay_urgency='review' should show choice buttons."""
+    a_id, _ = paired_users
+
+    service.llm = MockLLMClient([{
+        "reply": "That sounds important",
+        "new_facts": [],
+        "relay_draft": "A sensitive message",
+        "relay_urgency": "review",
+    }])
+
+    responses = await service.handle_message(a_id, "Alice", "I'm upset about how things went")
+    assert len(responses) == 1
     assert responses[0].buttons is not None
-    labels = [b.text for row in responses[0].buttons for b in row]
-    assert len(labels) == 1, f"expected 1 button, got {labels}"
-    assert any("share" in l.lower() or "💬" in l for l in labels)
 
 
 @pytest.mark.asyncio
@@ -364,13 +379,6 @@ async def test_no_tag_no_relay_draft(service: BotService, test_db, paired_users)
 # /whatdoyouknow & /forget
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_whatdoyouknow(service: BotService, test_db, paired_users):
-    a_id, _ = paired_users
-    responses = await service.handle_whatdoyouknow(a_id)
-    text = responses[0].text
-    assert "Alice feels stressed" in text
-    assert "morning walks" in text
 
 
 @pytest.mark.asyncio
@@ -431,7 +439,9 @@ async def test_help(service: BotService, test_db, paired_users):
     responses = await service.handle_help(a_id)
     text = responses[0].text
     assert "/start" in text
-    assert "/tell" in text
+    assert "/tell" not in text
+    assert "/mediate" not in text
+    assert "tell her I'll be late" in text
     assert "not" in text.lower() and "therapy" in text.lower()
 
 
@@ -439,42 +449,12 @@ async def test_help(service: BotService, test_db, paired_users):
 # /lang
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_lang_creates_user_if_not_exists(service: BotService, test_db):
-    """Calling /lang for a new user should create the user row first."""
-    user_id = 9999
-    # User does not exist yet
-    user = await get_user(test_db, user_id)
-    assert user is None
-
-    responses = await service.handle_lang(user_id, "en")
-    assert len(responses) == 1
-
-    # User should now exist in DB
-    user = await get_user(test_db, user_id)
-    assert user is not None
 
 
 # ---------------------------------------------------------------------------
 # FEAT-002: /whatdoyouknow with timestamps
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_whatdoyouknow_shows_timestamps(service: BotService, test_db, paired_users):
-    """Facts should display with [id] references, timestamps, and visibility icons."""
-    a_id, _ = paired_users
-    responses = await service.handle_whatdoyouknow(a_id)
-    text = responses[0].text
-    # Must contain fact IDs in brackets
-    assert "[" in text and "]" in text
-    # Must contain visibility icons
-    assert "🔒" in text  # private
-    assert "🔓" in text  # shared
-    # Must contain kind header
-    assert "Working Memory" in text or "💭" in text
-    # Fact content still present
-    assert "Alice feels stressed" in text
-    assert "morning walks" in text
 
 
 # ---------------------------------------------------------------------------
@@ -491,7 +471,7 @@ async def test_status_paired(service: BotService, test_db, paired_users):
     assert "Bob" in text  # partner name
     assert "private" in text.lower()
     assert "shared" in text.lower()
-    assert "pending" in text.lower() or "📬" in text
+    assert "relay_queue" in text.lower() or "📬" in text
     assert "API" in text or "usage" in text.lower() or "📈" in text
 
 
@@ -715,7 +695,7 @@ async def test_approve_shows_pause_notice(service: BotService, test_db, paired_u
         {"reply": "Ok", "new_facts": [], "relay_draft": "Draft"}
     ])
 
-    responses = await service.handle_tell(a_id, "Tell them")
+    responses = await service.handle_message(a_id, "Alice", "#send " + "Tell them")
     approve_btn = responses[0].buttons[0][0]
 
     # Pause the receiver
@@ -931,7 +911,7 @@ async def test_batch_accumulation_two_relays(service: BotService, test_db, paire
     service.llm = MockLLMClient([
         {"reply": "Ok", "new_facts": [], "relay_draft": "First draft"},
     ])
-    responses = await service.handle_tell(a_id, "First message")
+    responses = await service.handle_message(a_id, "Alice", "#send " + "First message")
     approve_btn = responses[0].buttons[0][0]
     assert approve_btn.callback_data.startswith("ap:")
     await service.handle_callback(a_id, approve_btn.callback_data)
@@ -947,7 +927,7 @@ async def test_batch_accumulation_two_relays(service: BotService, test_db, paire
     service.llm = MockLLMClient([
         {"reply": "Ok", "new_facts": [], "relay_draft": "Second draft"},
     ])
-    responses = await service.handle_tell(a_id, "Second message")
+    responses = await service.handle_message(a_id, "Alice", "#send " + "Second message")
     approve_btn = responses[0].buttons[0][0]
     await service.handle_callback(a_id, approve_btn.callback_data)
 
@@ -970,7 +950,7 @@ async def test_batch_timer_reset(service: BotService, test_db, paired_users):
     service.llm = MockLLMClient([
         {"reply": "Ok", "new_facts": [], "relay_draft": "D1"},
     ])
-    responses = await service.handle_tell(a_id, "Msg 1")
+    responses = await service.handle_message(a_id, "Alice", "#send " + "Msg 1")
     await service.handle_callback(a_id, responses[0].buttons[0][0].callback_data)
     batch = await get_active_batch_for_sender(test_db, a_id, b_id)
     first_send_after = batch["send_after"]
@@ -983,7 +963,7 @@ async def test_batch_timer_reset(service: BotService, test_db, paired_users):
     service.llm = MockLLMClient([
         {"reply": "Ok", "new_facts": [], "relay_draft": "D2"},
     ])
-    responses = await service.handle_tell(a_id, "Msg 2")
+    responses = await service.handle_message(a_id, "Alice", "#send " + "Msg 2")
     await service.handle_callback(a_id, responses[0].buttons[0][0].callback_data)
     batch = await get_active_batch_for_sender(test_db, a_id, b_id)
     second_send_after = batch["send_after"]
@@ -1001,7 +981,7 @@ async def test_skip_cooldown_bypasses_batch(service: BotService, test_db, paired
     service.llm = MockLLMClient([
         {"reply": "Ok", "new_facts": [], "relay_draft": "Urgent"},
     ])
-    responses = await service.handle_tell(a_id, "#now Tell them urgently")
+    responses = await service.handle_message(a_id, "Alice", "#send #now Tell them urgently")
     approve_btn = responses[0].buttons[0][0]
     assert approve_btn.callback_data.startswith("apn:")
     await service.handle_callback(a_id, approve_btn.callback_data)
@@ -1344,10 +1324,10 @@ async def test_rate_limit_on_tell(test_db, paired_users):
     ])
     svc = _make_rate_limited_service(test_db, mock, per_minute=1)
 
-    r1 = await svc.handle_tell(a_id, "First tell")
+    r1 = await svc.handle_message(a_id, "Alice", "#send " + "First tell")
     assert r1[0].buttons is not None  # approval buttons
 
-    r2 = await svc.handle_tell(a_id, "Second tell")
+    r2 = await svc.handle_message(a_id, "Alice", "#send " + "Second tell")
     assert "breather" in r2[0].text.lower() or "limit" in r2[0].text.lower()
     assert len(mock.calls) == 1
 
@@ -1380,7 +1360,7 @@ async def test_edit_not_rate_limited(service: BotService, test_db, paired_users)
     service.llm = MockLLMClient([
         {"reply": "Ok", "new_facts": [], "relay_draft": "Draft"},
     ])
-    responses = await service.handle_tell(a_id, "Tell them")
+    responses = await service.handle_message(a_id, "Alice", "#send " + "Tell them")
     edit_btn = responses[0].buttons[0][1]
     await service.handle_callback(a_id, edit_btn.callback_data)
 
@@ -1686,52 +1666,23 @@ async def test_fact_category_saved(service: BotService, test_db, paired_users):
     service.llm = MockLLMClient([{
         "reply": "Noted!",
         "new_facts": [
-            {"text": "Works late on Wednesdays", "visibility": "private", "category": "work"},
-            {"text": "Loves hiking together", "visibility": "shared", "category": "relationship"},
+            {"text": "Works late on Wednesdays", "visibility": "private", "tag": "work"},
+            {"text": "Loves hiking together", "visibility": "shared", "tag": "relationship"},
         ],
         "relay_draft": None,
     }])
 
     await service.handle_message(a_id, "Alice", "#keep I work late on Wed and we love hiking")
     facts = await get_facts(test_db, a_id)
-    cat_facts = [f for f in facts if f.get("category")]
+    cat_facts = [f for f in facts if f.get("tag")]
     assert len(cat_facts) >= 2
-    categories = {f["category"] for f in cat_facts}
-    assert "work" in categories
-    assert "relationship" in categories
+    categories = {f["tag"] for f in cat_facts}
+    assert "[\"work\"]" in categories
+    assert "[\"relationship\"]" in categories
 
 
-@pytest.mark.asyncio
-async def test_whatdoyouknow_groups_by_kind(
-    service: BotService, test_db, paired_users
-):
-    """When facts have different kinds, /whatdoyouknow groups them under kind headers."""
-    from pairtner.db import add_fact, promote_to_core
-
-    a_id, _ = paired_users
-
-    # Add a fact and promote it to core
-    fid = await add_fact(test_db, a_id, "I'm an introvert", "private")
-    await promote_to_core(test_db, fid)
-
-    responses = await service.handle_whatdoyouknow(a_id)
-    text = responses[0].text
-    # Should contain kind headers
-    assert "Core" in text or "📌" in text
-    assert "Working Memory" in text or "💭" in text
-    assert "introvert" in text.lower()
 
 
-@pytest.mark.asyncio
-async def test_whatdoyouknow_shows_kind_counts(
-    service: BotService, test_db, paired_users
-):
-    """Kind headers should show count of facts in each group."""
-    a_id, _ = paired_users
-    # The paired_users fixture adds 3 facts — all default 'working' kind
-    responses = await service.handle_whatdoyouknow(a_id)
-    text = responses[0].text
-    assert "Working Memory" in text or "💭" in text
 
 
 # ---------------------------------------------------------------------------
@@ -1770,7 +1721,7 @@ async def test_cooldown_behavior_accumulate(test_db, paired_users):
     svc = _make_cooldown_service(test_db, mock, "accumulate")
 
     # First relay
-    r1 = await svc.handle_tell(a_id, "Msg 1")
+    r1 = await svc.handle_message(a_id, "Alice", "#send " + "Msg 1")
     await svc.handle_callback(a_id, r1[0].buttons[0][0].callback_data)
     batch = await get_active_batch_for_sender(test_db, a_id, b_id)
     first_send_after = batch["send_after"]
@@ -1778,7 +1729,7 @@ async def test_cooldown_behavior_accumulate(test_db, paired_users):
     await asyncio.sleep(0.05)
 
     # Second relay
-    r2 = await svc.handle_tell(a_id, "Msg 2")
+    r2 = await svc.handle_message(a_id, "Alice", "#send " + "Msg 2")
     await svc.handle_callback(a_id, r2[0].buttons[0][0].callback_data)
     batch = await get_active_batch_for_sender(test_db, a_id, b_id)
     second_send_after = batch["send_after"]
@@ -1802,7 +1753,7 @@ async def test_cooldown_behavior_reset(test_db, paired_users):
     svc = _make_cooldown_service(test_db, mock, "reset")
 
     # First relay
-    r1 = await svc.handle_tell(a_id, "Msg 1")
+    r1 = await svc.handle_message(a_id, "Alice", "#send " + "Msg 1")
     await svc.handle_callback(a_id, r1[0].buttons[0][0].callback_data)
     batch = await get_active_batch_for_sender(test_db, a_id, b_id)
     first_send_after = batch["send_after"]
@@ -1810,7 +1761,7 @@ async def test_cooldown_behavior_reset(test_db, paired_users):
     await asyncio.sleep(0.05)
 
     # Second relay
-    r2 = await svc.handle_tell(a_id, "Msg 2")
+    r2 = await svc.handle_message(a_id, "Alice", "#send " + "Msg 2")
     await svc.handle_callback(a_id, r2[0].buttons[0][0].callback_data)
     batch = await get_active_batch_for_sender(test_db, a_id, b_id)
     second_send_after = batch["send_after"]

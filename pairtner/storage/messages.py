@@ -4,11 +4,18 @@ Canonical implementations of message-related database operations.
 """
 from __future__ import annotations
 
+import contextvars
 from typing import Any
 
 import aiosqlite
 
 from pairtner.storage.helpers import _fetch_all, _execute
+
+
+# Origin of the message currently being handled ('telegram' | 'pwa' | None).
+# Adapters set it around service calls; log_message tags rows with it.
+msg_source: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "msg_source", default=None)
 
 
 async def log_message(
@@ -19,17 +26,18 @@ async def log_message(
 
     ``relationship_id`` is only valid on a v2 DB (messages.relationship_id).
     """
+    source = msg_source.get()
     if relationship_id is not None:
         return await _execute(
             db_path,
-            "INSERT INTO messages (user_id, role, content, relationship_id) "
-            "VALUES (?, ?, ?, ?)",
-            (user_id, role, content, relationship_id),
+            "INSERT INTO messages (user_id, role, content, relationship_id, source) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (user_id, role, content, relationship_id, source),
         )
     return await _execute(
         db_path,
-        "INSERT INTO messages (user_id, role, content) VALUES (?, ?, ?)",
-        (user_id, role, content),
+        "INSERT INTO messages (user_id, role, content, source) VALUES (?, ?, ?, ?)",
+        (user_id, role, content, source),
     )
 
 
@@ -57,7 +65,7 @@ async def get_full_history(
     """
     return await _fetch_all(
         db_path,
-        "SELECT id, role, content, created_at FROM messages "
+        "SELECT id, role, content, created_at, source FROM messages "
         "WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ? OFFSET ?",
         (user_id, limit, offset),
     )
@@ -69,7 +77,7 @@ async def get_history_after_id(
     """Return messages after a given ID (for delta fetching by the PWA)."""
     return await _fetch_all(
         db_path,
-        "SELECT id, role, content, created_at FROM messages "
+        "SELECT id, role, content, created_at, source FROM messages "
         "WHERE user_id = ? AND id > ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?",
         (user_id, after_id, limit),
     )

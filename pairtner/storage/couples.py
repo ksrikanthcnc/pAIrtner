@@ -30,7 +30,7 @@ async def set_couple_config(
     """Insert or update a couple config entry."""
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            """INSERT INTO couple_config (couple_id, config_key, config_value, updated_at)
+            """INSERT INTO relationship_config (couple_id, config_key, config_value, updated_at)
                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                ON CONFLICT(couple_id, config_key) DO UPDATE
                SET config_value = excluded.config_value,
@@ -46,7 +46,7 @@ async def get_couple_config(
     """Return a single config value for a couple, or None."""
     row = await _fetch_one(
         db_path,
-        "SELECT config_value FROM couple_config WHERE couple_id = ? AND config_key = ?",
+        "SELECT config_value FROM relationship_config WHERE couple_id = ? AND config_key = ?",
         (couple_id, key),
     )
     return row["config_value"] if row else None
@@ -58,7 +58,7 @@ async def delete_couple_config(
     """Delete a couple config entry. Returns True if something was deleted."""
     async with aiosqlite.connect(db_path) as db:
         cur = await db.execute(
-            "DELETE FROM couple_config WHERE couple_id = ? AND config_key = ?",
+            "DELETE FROM relationship_config WHERE couple_id = ? AND config_key = ?",
             (couple_id, key),
         )
         await db.commit()
@@ -105,6 +105,17 @@ async def get_open_conflicts(
         db_path,
         "SELECT * FROM conflicts WHERE couple_id = ? AND status = 'open' "
         "ORDER BY opened_at DESC",
+        (couple_id,),
+    )
+
+
+async def get_all_conflicts(
+    db_path: str, couple_id: str
+) -> list[dict[str, Any]]:
+    """Return every conflict (any status) for a couple, oldest first."""
+    return await _fetch_all(
+        db_path,
+        "SELECT * FROM conflicts WHERE couple_id = ? ORDER BY opened_at, id",
         (couple_id,),
     )
 

@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from pairtner import db as db_mod
 from pairtner.features.conflict_detector import check_conflict_resolutions
 from pairtner.i18n import t
-from pairtner.llm import LLMClient
+from pairtner.llm import LLMClient, get_reply_text
 from pairtner.core.prompts import build_digest_prompt
 from pairtner.storage.helpers import _now_iso
 
@@ -122,7 +122,7 @@ async def _send_digest_for_couple(
     # Build prompt and call LLM
     system_prompt, user_content = build_digest_prompt(recent_shared, relay_texts)
     response = await llm.generate(user_content, system_prompt)
-    summary = response.get("reply", "")
+    summary = get_reply_text(response)
 
     if not summary:
         return

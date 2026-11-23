@@ -200,15 +200,30 @@ class TestParseOps:
         assert len(ops) == 1
         assert ops[0].id == 42
 
-    def test_category_validated(self):
-        raw = [{"op": "add", "kind": "working", "text": "Test", "category": "work"}]
+    def test_tag_parsed(self):
+        raw = [{"op": "add", "kind": "working", "text": "Test", "tag": "work"}]
         ops = parse_memory_ops(raw, user_fact_ids=set())
-        assert ops[0].category == "work"
+        assert ops[0].tag == ["work"]
 
-    def test_invalid_category_nulled(self):
-        raw = [{"op": "add", "kind": "working", "text": "Test", "category": "secret"}]
+    def test_tag_is_free_form_and_normalised(self):
+        raw = [{"op": "add", "kind": "working", "text": "Test", "tag": "  Kids-Chores "}]
         ops = parse_memory_ops(raw, user_fact_ids=set())
-        assert ops[0].category is None
+        assert ops[0].tag == ["kids-chores"]
+
+    def test_tag_list_accepted(self):
+        raw = [{"op": "add", "kind": "working", "text": "Test", "tag": ["Kids", " school ", "kids"]}]
+        ops = parse_memory_ops(raw, user_fact_ids=set())
+        assert ops[0].tag == ["kids", "school"]
+
+    def test_empty_tag_list_is_none(self):
+        raw = [{"op": "add", "kind": "working", "text": "Test", "tag": []}]
+        ops = parse_memory_ops(raw, user_fact_ids=set())
+        assert ops[0].tag is None
+
+    def test_empty_tag_is_none(self):
+        raw = [{"op": "add", "kind": "working", "text": "Test", "tag": "  "}]
+        ops = parse_memory_ops(raw, user_fact_ids=set())
+        assert ops[0].tag is None
 
 
 # ---------------------------------------------------------------------------

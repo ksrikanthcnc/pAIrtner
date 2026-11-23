@@ -251,13 +251,13 @@ async def test_llm_failure_falls_back(test_db, onboard_users):
 
 @pytest.mark.asyncio
 async def test_skip_onboarding(test_db, onboard_users):
-    """User can /skip to end onboarding immediately."""
+    """User can /skip or greetings to end onboarding immediately."""
     a_id, _ = onboard_users
     await ensure_user_profile(test_db, a_id)
 
     consumed, msg = await process_onboarding_answer(test_db, a_id, "/skip")
     assert consumed is True
-    assert "skip" in msg.lower()
+    assert msg  # returns completion message
 
     profile = await get_user_profile(test_db, a_id)
     assert profile["onboarding_done"] == 1

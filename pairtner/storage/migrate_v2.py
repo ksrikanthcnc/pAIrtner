@@ -19,11 +19,17 @@ Compatibility notes (v1 code still runs against the migrated database):
 
 from __future__ import annotations
 
+import json
 import logging
 
 import aiosqlite
 
-from pairtner.storage.schema_v2 import make_relationship_id
+from pairtner.storage.schema_v2 import (
+    USERS_MODE_DDL,
+    USERS_VISIBILITY_MODE_DDL,
+    VISIBILITY_MIGRATION_SQL,
+    make_relationship_id,
+)
 
 __all__ = ["migrate_to_v2", "make_relationship_id", "SCHEMA_VERSION"]
 
@@ -58,8 +64,8 @@ CREATE TABLE {name} (
     owner_id        INTEGER REFERENCES users(tg_id),
     relationship_id TEXT REFERENCES relationships(id),
     text            TEXT NOT NULL,
-    visibility      TEXT NOT NULL DEFAULT 'nudge_eligible'
-                    CHECK(visibility IN ('private','nudge_eligible','shareable','shared')),
+    visibility      TEXT NOT NULL DEFAULT 'shared'
+                    CHECK(visibility IN ('private','shared')),
     kind            TEXT NOT NULL DEFAULT 'working',
     status          TEXT NOT NULL DEFAULT 'active',
     intensity       REAL DEFAULT 0.5,
@@ -92,7 +98,7 @@ CREATE TABLE {name} (
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     -- legacy columns, kept for v1 code; do not reference from new code
     source          TEXT,
-    category        TEXT DEFAULT NULL,
+    tag             TEXT DEFAULT NULL,
     fact_type       TEXT DEFAULT 'stable'
 )
 """
@@ -201,7 +207,7 @@ CREATE TABLE {name} (
 _INDEXES: list[tuple[str, str, str]] = [
     # v1 indexes dropped along with the facts rebuild
     ("idx_facts_owner_visibility", "facts", "facts(owner_id, visibility)"),
-    ("idx_facts_owner_category", "facts", "facts(owner_id, category)"),
+    ("idx_facts_owner_tag", "facts", "facts(owner_id, tag)"),
     ("idx_facts_owner_vis", "facts", "facts(owner_id, visibility)"),
     ("idx_facts_owner_created", "facts", "facts(owner_id, created_at)"),
     ("idx_facts_kind", "facts", "facts(owner_id, kind)"),
@@ -216,7 +222,7 @@ _INDEXES: list[tuple[str, str, str]] = [
     ("idx_mood_user_expires", "user_mood_styles", "user_mood_styles(user_id, expires_at)"),
     ("idx_analysis_rel", "analysis_results", "analysis_results(relationship_id, result_type)"),
     ("idx_goals_user_status", "goals", "goals(user_id, status)"),
-    ("idx_goals_relationship", "goals", "goals(relationship_id, status)"),
+    ("idx_goals_relationship", "goals", "goals(couple_id, status)"),
     ("idx_conflicts_relationship", "conflicts", "conflicts(relationship_id, status)"),
     ("idx_timeline_couple_created", "timeline_events",
      "timeline_events(couple_id, created_at)"),  # v1 index, dropped by the rebuild
@@ -457,9 +463,13 @@ async def _copy_analysis(db: aiosqlite.Connection) -> None:
 
 
 async def _copy_goals(db: aiosqlite.Connection) -> None:
-    if await _table_exists(db, "user_goals"):
+    # Skip if goals already has the unified schema (scope column exists)
+    cols = {r[1] for r in await (await db.execute("PRAGMA table_info(goals)")).fetchall()}
+    if "scope" in cols:
+        return  # already v2 unified goals table
+    if await _table_exists(db, "goals"):
         async with db.execute(
-            "SELECT user_id, text, status, progress, created_at, updated_at FROM user_goals"
+            "SELECT user_id, text, status, progress, created_at, updated_at FROM goals"
         ) as cur:
             rows = await cur.fetchall()
         for uid, text, status, progress, created, updated in rows:
@@ -470,10 +480,10 @@ async def _copy_goals(db: aiosqlite.Connection) -> None:
                 (uid, await _partner_relationship(db, uid), text, uid, status,
                  progress, created, updated),
             )
-    if await _table_exists(db, "shared_goals"):
+    if await _table_exists(db, "goals"):
         async with db.execute(
             "SELECT couple_id, text, created_by, status, progress, created_at, "
-            "updated_at FROM shared_goals"
+            "updated_at FROM goals"
         ) as cur:
             rows = await cur.fetchall()
         for cid, text, by, status, progress, created, updated in rows:
@@ -494,15 +504,63 @@ async def _copy_config(db: aiosqlite.Connection) -> None:
         rows = await cur.fetchall()
     for cid, key, value, created, updated in rows:
         await db.execute(
-            "INSERT OR IGNORE INTO relationship_config (relationship_id, config_key, "
+            "INSERT OR IGNORE INTO relationship_config (couple_id, config_key, "
             "config_value, created_at, updated_at) VALUES (?,?,?,?,?)",
-            (_rel_from_couple(cid), key, value, created, updated),
+            (cid, key, value, created, updated),
         )
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
+def _clean_leaked_content(content: str) -> str | None:
+    """Return replacement text for an assistant message that leaked ops JSON.
+
+    None means leave the row untouched.
+    """
+    try:
+        data = json.loads(content)
+    except (ValueError, TypeError):
+        data = None
+    if isinstance(data, dict):
+        if "memory_ops" not in data and "settings_ops" not in data:
+            return None
+        reply = data.get("reply")
+        if isinstance(reply, str) and reply.strip():
+            return reply.strip()
+        return "\U0001F4AD"
+    # Mixed content: text plus an embedded JSON object.
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(content):
+        if ch != "{":
+            continue
+        try:
+            obj, end = decoder.raw_decode(content, i)
+        except ValueError:
+            continue
+        if isinstance(obj, dict) and ("memory_ops" in obj or "settings_ops" in obj):
+            text = (content[:i] + content[end:]).strip()
+            text = text.replace("```json", "").replace("```", "").strip()
+            return text or "\U0001F4AD"
+    return None
+
+
+async def _clean_leaked_json_messages(db: aiosqlite.Connection) -> None:
+    """Strip leaked memory_ops/settings_ops JSON from old assistant messages."""
+    cleaned = 0
+    async with db.execute(
+        "SELECT id, content FROM messages WHERE role = 'assistant' "
+        "AND content LIKE '%memory_ops%' AND content LIKE '%settings_ops%'"
+    ) as cur:
+        rows = await cur.fetchall()
+    for msg_id, content in rows:
+        new = _clean_leaked_content(content)
+        if new is not None and new != content:
+            await db.execute("UPDATE messages SET content = ? WHERE id = ?", (new, msg_id))
+            cleaned += 1
+    logger.info("Cleaned %d assistant messages with leaked JSON", cleaned)
+
 
 async def migrate_to_v2(db_path: str) -> None:
     """Upgrade a v1 database (or a fresh ``init_db`` one) to the v2 schema.
@@ -523,17 +581,65 @@ async def migrate_to_v2(db_path: str) -> None:
 
         # 2. facts: widen CHECKs / default via rebuild, else add missing columns
         if await _table_exists(db, "facts"):
-            if "nudge_eligible" not in await _table_sql(db, "facts"):
+            facts_sql = await _table_sql(db, "facts")
+            # Collapse legacy levels first so the narrower CHECK accepts the copy.
+            await db.execute(VISIBILITY_MIGRATION_SQL)
+            # A kind CHECK without 'rolling' (schema_v2-created DBs) rejects
+            # rolling summaries; the rebuild DDL carries no kind CHECK.
+            old_kind_check = "CHECK(kind IN" in facts_sql and "'rolling'" not in facts_sql
+            if ("DEFAULT 'shared'" not in facts_sql or "nudge_eligible" in facts_sql
+                    or old_kind_check):
                 await _rebuild_table(db, "facts", _FACTS_DDL)
                 facts_rebuilt = True
             else:
                 for col, decl in _FACTS_NEW_COLUMNS:
                     await _add_column_if_missing(db, "facts", col, decl)
 
+        # users.default_visibility_mode (open|ask|private)
+        await _add_column_if_missing(
+            db, "users", "default_visibility_mode", USERS_VISIBILITY_MODE_DDL
+        )
+
+        # users.mode (couple|solo)
+        await _add_column_if_missing(db, "users", "mode", USERS_MODE_DDL)
+
+        # users.private_tags (JSON array of tags always extracted as private)
+        await _add_column_if_missing(
+            db, "users", "private_tags", "TEXT NOT NULL DEFAULT '[]'"
+        )
+
         # 3. messages.relationship_id
         await _add_column_if_missing(
             db, "messages", "relationship_id", "TEXT REFERENCES relationships(id)"
         )
+
+        # messages.source ('telegram' | 'pwa'; NULL for old rows)
+        await _add_column_if_missing(db, "messages", "source", "TEXT")
+        await _clean_leaked_json_messages(db)
+
+        # auth_tokens: allow multiple tokens per user (multi-device login)
+        auth_cols = await _columns(db, "auth_tokens")
+        if "id" not in auth_cols:
+            # Old schema: user_id is PRIMARY KEY (single device).
+            # Rebuild to allow multiple rows per user.
+            await db.execute(
+                "CREATE TABLE IF NOT EXISTS auth_tokens_v2 ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  user_id INTEGER NOT NULL,"
+                "  token TEXT NOT NULL,"
+                "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                ")"
+            )
+            await db.execute(
+                "INSERT OR IGNORE INTO auth_tokens_v2 (user_id, token, created_at) "
+                "SELECT user_id, token, created_at FROM auth_tokens"
+            )
+            await db.execute("DROP TABLE auth_tokens")
+            await db.execute("ALTER TABLE auth_tokens_v2 RENAME TO auth_tokens")
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_auth_tokens_user "
+                "ON auth_tokens(user_id)"
+            )
 
         # 4. relay_queue
         await db.execute(_RELAY_QUEUE_DDL)

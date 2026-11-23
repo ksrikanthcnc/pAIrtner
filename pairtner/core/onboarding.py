@@ -134,15 +134,16 @@ async def process_onboarding_answer(
     if profile["onboarding_done"]:
         return False, None
 
-    # /skip ends onboarding immediately
-    if text.strip().lower() == "/skip":
-        await db_mod.update_user_profile(db_path, user_id, onboarding_done=1)
-        await save_onboarding_as_facts(db_path, user_id)
-        return True, t(lang, "onboard_skip")
-
+    # /skip or any greeting-like message → just complete onboarding
     clean = text.strip()
     if not clean:
         return True, t(lang, "onboard_welcome")
+
+    low = clean.lower()
+    if low == "/skip" or low in ("hi", "hey", "hello", "yo", "sup"):
+        await db_mod.update_user_profile(db_path, user_id, onboarding_done=1)
+        await save_onboarding_as_facts(db_path, user_id)
+        return True, t(lang, "onboard_complete")
 
     # Try LLM extraction first
     extracted: dict[str, Any] = {}

@@ -22,7 +22,7 @@ import json
 from pathlib import Path
 
 from pairtner.dashboard import (
-    admin_actions, explorer, overview_page, stats, store, timeline_page,
+    admin_actions, explorer, overview_page, pipeline, stats, store, timeline_page,
 )
 from pairtner.dashboard.config import DashboardConfig
 from pairtner.dashboard.render import (
@@ -41,6 +41,7 @@ _TABLE_RE = re.compile(r"^/db/([A-Za-z0-9_]+)$")
 _USER_RE = re.compile(r"^/users/(\d+)$")
 _COUPLE_RE = re.compile(r"^/couples/(\d+:\d+)$")
 _CLEAR_USER_RE = re.compile(r"^/admin/clear-user/(\d+)$")
+_PIPELINE_FACT_RE = re.compile(r"^/pipeline/fact/(\d+)$")
 _TIMELINE_PAGE_RE = re.compile(r"^/timeline/(\d+_\d+)$")
 STATIC_DIR = Path(__file__).parent / "static"
 _STATIC_TYPES = {
@@ -242,6 +243,10 @@ class DashboardApp:
             return self._conversation(ctx, couple_id)
         if path == "/queue":
             return self._queue(ctx)
+        if path == "/pipeline":
+            return self._pipeline(ctx, query)
+        if m := _PIPELINE_FACT_RE.match(path):
+            return self._pipeline_fact(ctx, int(m.group(1)))
         if m := _TIMELINE_PAGE_RE.match(path):
             return self._timeline_page(ctx, m.group(1), query)
         if m := _TIMELINE_API_RE.match(path):
@@ -340,7 +345,7 @@ class DashboardApp:
         body = table(
             ["couple", "open conflicts", "timeline events", "shared goals"],
             [[link(f"/couples/{x['couple_id']}", x["couple_id"]), x["open_conflicts"],
-              x["timeline_events"], x["shared_goals"]] for x in couples],
+              x["timeline_events"], x["goals"]] for x in couples],
         ) + "<h2>Conflicts</h2>" + table(
             ["id", "couple", "theme", "status", "opened", "resolved"],
             [[x["id"], x["couple_id"], x["theme"], x["status"], x["opened_at"],
@@ -348,11 +353,11 @@ class DashboardApp:
         ) + "<h2>Shared goals</h2>" + table(
             ["id", "couple", "text", "status", "progress"],
             [[x["id"], x["couple_id"], x["text"], x["status"], x["progress"]]
-             for x in goals["shared_goals"]],
+             for x in goals["goals"]],
         ) + "<h2>User goals</h2>" + table(
             ["id", "user", "text", "status", "progress"],
             [[x["id"], x["user_id"], x["text"], x["status"], x["progress"]]
-             for x in goals["user_goals"]],
+             for x in goals["goals"]],
         )
         return self._page(ctx, "Couples", body, "/couples")
 
@@ -413,10 +418,12 @@ class DashboardApp:
         .conversation { max-width: 720px; }
         .chat-msg { padding: 8px 12px; margin: 4px 0; border-radius: 12px; }
         .msg-user-a { background: var(--me, #2b5cff); color: #fff; margin-right: 20%; }
-        .msg-user-b { background: var(--relay, #efe3fa); margin-left: 20%; }
-        .msg-bot { background: var(--bot, #e6e9f2); margin-left: 10%; margin-right: 10%; opacity: 0.85; }
+        .msg-user-b { background: var(--relay, #efe3fa); color: var(--text, #1c1f24); margin-left: 20%; }
+        .msg-bot { background: var(--bot, #e6e9f2); color: var(--text, #1c1f24); margin-left: 10%; margin-right: 10%; opacity: 0.85; }
         .chat-sender { font-size: 12px; font-weight: bold; margin-bottom: 2px; }
         .msg-user-a .chat-sender { color: rgba(255,255,255,0.8); }
+        .msg-user-b .chat-sender { color: var(--muted, #6b7280); }
+        .msg-bot .chat-sender { color: var(--muted, #6b7280); }
         .chat-text { white-space: pre-wrap; word-wrap: break-word; }
         .chat-ts { font-size: 11px; opacity: 0.6; margin-top: 2px; }
         </style>
@@ -465,6 +472,26 @@ class DashboardApp:
         body = timeline_page.render_timeline(
             rid, events, limit=limit, before=before, has_more=has_more)
         return self._page(ctx, f"Timeline {rid}", body, "/couples")
+
+    def _pipeline(self, ctx: "_Ctx", query: dict[str, str]) -> Response:
+        limit = pipeline.parse_limit(query.get("limit"))
+        raw_uid = query.get("user_id", "").strip()
+        user_id = store.parse_user_id(raw_uid) if raw_uid else None
+        before = query.get("before", "").strip()
+        before_id = int(before) if before.isdigit() else None
+        with self._ro() as c:
+            data = pipeline.build_pipeline(
+                c, limit=limit, before_id=before_id, user_id=user_id,
+                show_raw=self.config.show_raw_text)
+        body = pipeline.render_pipeline(data, user_id=user_id, limit=limit)
+        return self._page(ctx, "Pipeline debug", body, "/pipeline")
+
+    def _pipeline_fact(self, ctx: "_Ctx", fact_id: int) -> Response:
+        with self._ro() as c:
+            trace = pipeline.build_fact_trace(
+                c, fact_id, show_raw=self.config.show_raw_text)
+        return self._page(ctx, f"Fact {fact_id} trace",
+                          pipeline.render_fact_trace(trace), "/pipeline")
 
     def _queue(self, ctx: "_Ctx") -> Response:
         with self._ro() as c:

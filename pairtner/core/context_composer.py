@@ -5,7 +5,7 @@ puts in the prompt. When composing user X's context:
 
 * X's own facts (any visibility) are included.
 * The partner's facts are included ONLY when visibility is
-  ``nudge_eligible`` or ``shareable``. Private partner facts are never
+  ``shared``. Private partner facts are never
   selected, so they cannot reach the prompt.
 * Nudge suggestions are injected as generic guidance (the ``nudge_suggestion``
   column). The source fact's ``text`` is never read for nudges.
@@ -13,6 +13,7 @@ puts in the prompt. When composing user X's context:
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # The only visibilities that may cross from one partner to the other.
-PARTNER_VISIBLE: tuple[str, ...] = ("nudge_eligible", "shareable")
+PARTNER_VISIBLE: tuple[str, ...] = ("shared",)
 
 if "private" in PARTNER_VISIBLE:  # pragma: no cover - import-time guard
     raise RuntimeError("PARTNER_VISIBLE must never contain 'private'")
@@ -75,6 +76,7 @@ def compute_budgets(context_tokens: int) -> dict[str, int]:
 
 
 RECENT_MESSAGE_LIMIT = 20
+CORE_FACT_CAP = 20
 WORKING_TOP_K = 30
 PROACTIVE_WINDOW_DAYS = 7
 
@@ -89,6 +91,7 @@ class ComposedContext:
     proactive: list[str] = field(default_factory=list)
     recent_messages: list[tuple[str, str, str]] = field(default_factory=list)
     pending_nudge_count: int = 0
+    core_cap_warning: str | None = None
 
     def total_words(self) -> int:
         n = 0
@@ -121,8 +124,10 @@ class ContextComposer:
         db_path: str,
         budgets: dict[str, int] | None = None,
         context_tokens: int | None = None,
+        rolling_summary_enabled: bool = True,
     ):
         self.db_path = db_path
+        self.rolling_summary_enabled = rolling_summary_enabled
         base = compute_budgets(context_tokens) if context_tokens else DEFAULT_BUDGETS
         self.budgets = {**base, **(budgets or {})}
 
@@ -164,6 +169,13 @@ class ContextComposer:
                 (user_id,),
             )
             ctx.core_facts = _apply_word_cap([r["text"] for r in rows], b["core"])
+            if len(rows) > CORE_FACT_CAP:
+                urow = await fetch("SELECT name FROM users WHERE tg_id = ?", (user_id,))
+                user_name = (urow[0]["name"] if urow else None) or "The user"
+                ctx.core_cap_warning = (
+                    f"Note: {user_name} has {len(rows)} permanent preferences/facts. "
+                    "Consider reviewing which ones are still relevant."
+                )
 
             # 2. Top-K working facts by score (own).
             rows = await fetch(
@@ -206,17 +218,30 @@ class ContextComposer:
                     sugg.append(s)
             ctx.nudge_suggestions = _apply_word_cap(sugg, b["nudge"])
 
-            # 6 + 7. Relationship-level and own summaries, most recent first.
-            kinds = ",".join(f"'{k}'" for k in SUMMARY_KINDS)
-            srows = await fetch(
-                f"SELECT text, kind, created_at FROM facts WHERE kind IN ({kinds}) AND {live} "
-                "AND ((owner_id IS NULL AND relationship_id = ?) OR owner_id = ?)",
-                (relationship_id, user_id),
-            )
-            srows.sort(key=lambda r: r["created_at"] or "", reverse=True)
-            ctx.summaries = _apply_word_cap(
-                [f"({r['kind']}) {r['text']}" for r in srows], b["summaries"],
-            )
+            # 6 + 7. Summaries. Pre-computed rolling summaries (one per level,
+            # at most ~5 entries) are preferred; otherwise assemble per level.
+            rolling = await self._rolling_entries(fetch, user_id, relationship_id) \
+                if self.rolling_summary_enabled else []
+            if rolling:
+                ctx.summaries = rolling
+            else:
+                kinds = ",".join(f"'{k}'" for k in SUMMARY_KINDS)
+                srows = await fetch(
+                    f"SELECT text, kind, created_at FROM facts WHERE kind IN ({kinds}) AND {live} "
+                    "AND ((owner_id IS NULL AND relationship_id = ?) OR owner_id = ?)",
+                    (relationship_id, user_id),
+                )
+                # Gap-filling assembly: one entry per level (newest rows first within
+                # a level, joined), ordered finest -> coarsest. No word cap: entry
+                # count is bounded by the number of levels.
+                srows.sort(key=lambda r: r["created_at"] or "", reverse=True)
+                by_kind: dict[str, list[str]] = {}
+                for r in srows:
+                    by_kind.setdefault(r["kind"], []).append(r["text"])
+                ctx.summaries = [
+                    f"({k}) " + "\n".join(by_kind[k])
+                    for k in SUMMARY_KINDS if k in by_kind
+                ]
 
             # 8. Proactive injections: own dated facts inside the window.
             today = date.today()
@@ -253,6 +278,33 @@ class ContextComposer:
             ctx.recent_messages = list(reversed(kept))
 
         return ctx
+
+    @staticmethod
+    async def _rolling_entries(fetch, user_id: int, relationship_id: str) -> list[str]:
+        """One entry per level from rolling rows visible to *user_id*.
+
+        Visible: the user's own private/shared rolling rows plus the couple
+        rolling (owner NULL). The partner's rolling rows are never selected.
+        """
+        rows = await fetch(
+            "SELECT text, owner_id, visibility, metadata FROM facts WHERE kind = 'rolling' "
+            "AND archived_at IS NULL AND status NOT IN ('outdated') "
+            "AND ((owner_id = ? AND (relationship_id = ? OR relationship_id IS NULL)) "
+            "OR (owner_id IS NULL AND relationship_id = ?)) ORDER BY id",
+            (user_id, relationship_id, relationship_id),
+        )
+        by_level: dict[str, list[str]] = {}
+        for r in rows:
+            try:
+                level = json.loads(r["metadata"] or "{}").get("level")
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                level = None
+            if level in _SUMMARY_RANK and r["text"] and r["text"] not in by_level.get(level, []):
+                by_level.setdefault(level, []).append(r["text"])
+        return [
+            f"(rolling {lv}) " + "\n".join(by_level[lv])
+            for lv in sorted(by_level, key=_SUMMARY_RANK.__getitem__)
+        ]
 
 
 def _next_occurrence(event_date: str, recurring: bool, today: date) -> date | None:

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pAIrtner — Mock B: Timeline-First</title>
+<style>
+  :root { --bg: #f5f0eb; --card: #fff; --text: #2d2d2d; --muted: #999; --accent: #e07a5f;
+    --accent-soft: #fce8e2; --ok: #81b29a; --warn: #f2cc8f; --danger: #e07a5f; --border: #e5ddd5;
+    font-family: 'Georgia', serif; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1c1917; --card: #292524; --text: #e7e5e4; --muted: #a8a29e;
+      --accent: #fb923c; --accent-soft: #431407; --ok: #86efac; --warn: #fde68a;
+      --danger: #fca5a5; --border: #44403c; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); min-height: 100vh; }
+  .top { padding: 24px 20px 16px; }
+  .top h1 { font-size: 24px; font-weight: 400; font-style: italic; }
+  .top .sub { font-size: 14px; color: var(--muted); margin-top: 4px; }
+  .insight-card { margin: 0 16px 16px; background: var(--accent-soft); border: 1px solid var(--accent);
+    border-radius: 12px; padding: 16px; }
+  .insight-card .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent);
+    font-family: -apple-system, sans-serif; font-weight: 600; }
+  .insight-card .text { font-size: 15px; margin-top: 6px; line-height: 1.5; }
+  .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin: 0 16px; }
+  .tab { flex: 1; text-align: center; padding: 10px 0; font-size: 13px; font-family: -apple-system, sans-serif;
+    color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -2px; cursor: pointer; }
+  .tab.active { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .feed { padding: 16px; }
+  .day { margin-bottom: 24px; }
+  .day-label { font-size: 12px; font-family: -apple-system, sans-serif; text-transform: uppercase;
+    letter-spacing: 0.8px; color: var(--muted); margin-bottom: 10px; font-weight: 600; }
+  .event { display: flex; gap: 14px; margin-bottom: 14px; }
+  .event-line { width: 2px; background: var(--border); position: relative; flex-shrink: 0; margin-left: 5px; }
+  .event-line::before { content: ''; position: absolute; top: 4px; left: -4px; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--accent); }
+  .event-line.ok::before { background: var(--ok); }
+  .event-line.warn::before { background: var(--warn); }
+  .event-line.danger::before { background: var(--danger); }
+  .event-body { flex: 1; }
+  .event-body .time { font-size: 11px; color: var(--muted); font-family: -apple-system, sans-serif; }
+  .event-body .content { font-size: 14px; line-height: 1.5; margin-top: 2px; }
+  .event-body .tag { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 10px;
+    background: var(--accent-soft); color: var(--accent); font-family: -apple-system, sans-serif;
+    font-weight: 600; margin-top: 4px; }
+  .knowledge { padding: 16px; }
+  .k-group { margin-bottom: 20px; }
+  .k-group h3 { font-size: 14px; font-family: -apple-system, sans-serif; font-weight: 600;
+    margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .k-group h3 .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .k-item { font-size: 14px; line-height: 1.6; padding: 4px 0 4px 20px; border-left: 2px solid var(--border); }
+  .k-item.core { border-color: var(--warn); }
+  .health { margin: 16px; padding: 20px; background: var(--card); border-radius: 12px; border: 1px solid var(--border); }
+  .health h3 { font-size: 14px; font-family: -apple-system, sans-serif; margin-bottom: 12px; }
+  .meter { display: flex; gap: 4px; height: 20px; border-radius: 10px; overflow: hidden; }
+  .meter .seg { height: 100%; }
+  .meter .seg.pos { background: var(--ok); flex: 8; }
+  .meter .seg.neg { background: var(--danger); flex: 2; }
+  .meter-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted);
+    font-family: -apple-system, sans-serif; margin-top: 6px; }
+  nav { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--card);
+    border-top: 1px solid var(--border); padding: 8px 0 env(safe-area-inset-bottom);
+    font-family: -apple-system, sans-serif; }
+  nav a { flex: 1; text-align: center; font-size: 11px; color: var(--muted); text-decoration: none; padding: 6px 0; }
+  nav a.active { color: var(--accent); font-weight: 600; }
+  nav a .icon { font-size: 20px; display: block; }
+  .pb { padding-bottom: 80px; }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Alice & Bob</h1>
+  <div class="sub">Together 8 years · Your story, remembered</div>
+</div>
+
+<div class="insight-card">
+  <div class="label">💡 Insight for you</div>
+  <div class="text">Bob's been stressed about a work deadline. He said it ends Friday — might be a good time to check in this weekend.</div>
+</div>
+
+<div class="tabs">
+  <div class="tab active">Timeline</div>
+  <div class="tab">Knowledge</div>
+  <div class="tab">Health</div>
+</div>
+
+<div class="feed pb">
+  <div class="day">
+    <div class="day-label">Today</div>
+    <div class="event">
+      <div class="event-line warn"></div>
+      <div class="event-body">
+        <div class="time">10:00</div>
+        <div class="content">Planning first date night in months</div>
+        <div class="tag">milestone</div>
+      </div>
+    </div>
+  </div>
+  <div class="day">
+    <div class="day-label">Yesterday</div>
+    <div class="event">
+      <div class="event-line ok"></div>
+      <div class="event-body">
+        <div class="time">08:00</div>
+        <div class="content">Hour-long heart-to-heart conversation — felt like old times</div>
+        <div class="tag">resolution</div>
+      </div>
+    </div>
+    <div class="event">
+      <div class="event-line"></div>
+      <div class="event-body">
+        <div class="time">08:05</div>
+        <div class="content">He even asked about my pottery class</div>
+        <div class="tag">communication</div>
+      </div>
+    </div>
+  </div>
+  <div class="day">
+    <div class="day-label">2 days ago</div>
+    <div class="event">
+      <div class="event-line ok"></div>
+      <div class="event-body">
+        <div class="time">18:00</div>
+        <div class="content">Bob brought home flowers, out of nowhere 💐</div>
+        <div class="tag">appreciation</div>
+      </div>
+    </div>
+  </div>
+  <div class="day">
+    <div class="day-label">3 days ago</div>
+    <div class="event">
+      <div class="event-line danger"></div>
+      <div class="event-body">
+        <div class="time">09:00</div>
+        <div class="content">Feeling overwhelmed handling kids solo while Bob works late</div>
+        <div class="tag">family</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<nav>
+  <a href="#"><span class="icon">💬</span>Chat</a>
+  <a href="#" class="active"><span class="icon">📖</span>Story</a>
+  <a href="#"><span class="icon">🧠</span>Knowledge</a>
+  <a href="#"><span class="icon">⚙️</span>Settings</a>
+</nav>
+</body>
+</html>

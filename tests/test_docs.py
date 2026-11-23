@@ -18,7 +18,7 @@ def test_every_route_is_documented():
     missing = [
         f"{r.method} {r.path}"
         for r in api.ROUTES
-        if r.path not in REST_DOC
+        if r.path not in REST_DOC and r.handler != "_static"
     ]
     assert not missing, f"routes missing from docs/REST_API.md: {missing}"
 

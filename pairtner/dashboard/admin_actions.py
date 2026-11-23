@@ -41,11 +41,11 @@ _COUPLE = "(couple_id LIKE :cid_a OR couple_id LIKE :cid_b)"
 # Every user-keyed table in the schema must appear here or in GLOBAL_TABLES;
 # a test introspects the real schema to enforce that.
 USER_SCOPES: list[tuple[str, str]] = [
-    ("pending_batch_items",
-     "batch_id IN (SELECT id FROM pending_batch "
+    ("relay_batch_items",
+     "batch_id IN (SELECT id FROM relay_batch "
      "WHERE sender_id = :uid OR receiver_id = :uid)"),
-    ("pending_batch", "sender_id = :uid OR receiver_id = :uid"),
-    ("pending", "sender_id = :uid OR receiver_id = :uid"),
+    ("relay_batch", "sender_id = :uid OR receiver_id = :uid"),
+    ("relay_queue", "sender_id = :uid OR receiver_id = :uid"),
     ("messages", "user_id = :uid"),
     ("facts", "owner_id = :uid"),
     ("memory_versions",
@@ -56,13 +56,12 @@ USER_SCOPES: list[tuple[str, str]] = [
     ("user_mood_styles", "user_id = :uid"),
     ("partner_perceptions", "user_id = :uid OR about_id = :uid"),
     ("user_patterns", "user_id = :uid"),
-    ("user_goals", "user_id = :uid"),
+    ("goals", "user_id = :uid"),
     ("interaction_scores", f"user_id = :uid OR {_COUPLE}"),
-    ("shared_goals", f"created_by = :uid OR {_COUPLE}"),
     ("checkins", f"partner_a_id = :uid OR partner_b_id = :uid OR {_COUPLE}"),
     ("conflicts", _COUPLE),
     ("timeline_events", _COUPLE),
-    ("couple_config", _COUPLE),
+    ("relationship_config", _COUPLE),
     ("rate_limit", "user_id = :uid"),
     ("auth_tokens", "user_id = :uid"),
     ("rest_outbox", "user_id = :uid"),
@@ -72,7 +71,7 @@ USER_SCOPES: list[tuple[str, str]] = [
     ("relay_queue", "sender_id = :uid OR receiver_id = :uid"),
     ("analysis_results", "user_id = :uid OR about_id = :uid"),
     ("goals", f"user_id = :uid OR created_by = :uid"),
-    ("relationship_config", f"relationship_id LIKE :cid_a OR relationship_id LIKE :cid_b"),
+    ("relationship_config", f"couple_id LIKE :cid_a OR couple_id LIKE :cid_b"),
     ("relationships", "user_a_id = :uid OR user_b_id = :uid"),
 ]
 # Tables with no per-user key (aggregate counters).

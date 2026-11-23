@@ -19,11 +19,11 @@ async def test_remember_with_positive_facts(service, test_db, paired_users):
     # Add positive shared facts
     await db_mod.add_fact(
         test_db, a_id, "We had an amazing trip to Goa", "shared",
-        category="relationship",
+        tag="relationship",
     )
     await db_mod.add_fact(
         test_db, a_id, "We love cooking biryani together", "shared",
-        category="emotional",
+        tag="emotional",
     )
 
     responses = await service.handle_remember(a_id)
@@ -45,7 +45,7 @@ async def test_remember_picks_random_fact(service, test_db, paired_users):
     ]
     for f in facts:
         await db_mod.add_fact(
-            test_db, a_id, f, "shared", category="relationship",
+            test_db, a_id, f, "shared", tag="relationship",
         )
 
     # Call multiple times — should get valid responses each time
@@ -102,7 +102,7 @@ async def test_remember_ignores_private_facts(service, test_db, paired_users):
     # Add a private fact (should not appear in /remember)
     await db_mod.add_fact(
         test_db, a_id, "I secretly love chocolate", "private",
-        category="relationship",
+        tag="relationship",
     )
 
     responses = await service.handle_remember(a_id)
@@ -118,7 +118,7 @@ async def test_remember_ignores_non_positive_categories(service, test_db, paired
     # Add shared fact with non-positive category
     await db_mod.add_fact(
         test_db, a_id, "We need to fix the plumbing", "shared",
-        category="household",
+        tag="household",
     )
 
     responses = await service.handle_remember(a_id)

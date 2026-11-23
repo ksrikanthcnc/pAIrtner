@@ -18,12 +18,10 @@ from pairtner.storage.helpers import _fetch_one, _fetch_all, _execute
 async def create_auth_token(
     db_path: str, user_id: int, token: str
 ) -> None:
-    """Store an authentication token for a user (upsert)."""
+    """Store an authentication token for a user (multi-device: each login creates a new token)."""
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            "INSERT INTO auth_tokens (user_id, token) VALUES (?, ?) "
-            "ON CONFLICT(user_id) DO UPDATE SET "
-            "token = excluded.token, created_at = CURRENT_TIMESTAMP",
+            "INSERT INTO auth_tokens (user_id, token) VALUES (?, ?)",
             (user_id, token),
         )
         await db.commit()
@@ -44,16 +42,21 @@ async def get_auth_token(
 async def validate_auth_token(
     db_path: str, user_id: int, token: str
 ) -> bool:
-    """Check if a token matches the stored token for *user_id*.
+    """Check if a token is valid for *user_id* (supports multiple devices).
 
     Uses constant-time comparison to prevent timing attacks.
     """
     import secrets as _secrets
+    import aiosqlite
 
-    stored = await get_auth_token(db_path, user_id)
-    if stored is None:
-        return False
-    return _secrets.compare_digest(stored, token)
+    async with aiosqlite.connect(db_path) as db:
+        rows = await db.execute_fetchall(
+            "SELECT token FROM auth_tokens WHERE user_id = ?", (user_id,),
+        )
+    for row in rows:
+        if _secrets.compare_digest(row[0], token):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------

@@ -89,7 +89,7 @@ class TestTables:
 class TestRedaction:
     def test_secret_columns_redacted_in_select(self, dash_db):
         conn = store.open_readonly(dash_db)
-        for table, col in (("auth_tokens", "token"), ("couple_config", "config_value")):
+        for table, col in (("auth_tokens", "token"), ("relationship_config", "config_value")):
             for show_raw in (True, False):
                 sel = redaction.select_expr(table, [col], show_raw)
                 rows = conn.execute(f"SELECT {sel} FROM {table}").fetchall()

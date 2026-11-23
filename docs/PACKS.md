@@ -79,6 +79,7 @@ Every key is required. A placeholder is a `{name}` the engine fills in; a key ma
 |---|---|
 | `label_private_notes` | none |
 | `label_shared_notes` | none |
+| `label_your_working` | none |
 | `label_recent_conversation` | none |
 | `label_current_message` | none |
 | `label_current_message_blunt` | none |

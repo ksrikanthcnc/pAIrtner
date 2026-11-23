@@ -80,7 +80,7 @@ async def test_generate_nudge_with_positive_facts(test_db, paired_users):
     # Add positive shared facts
     await db_mod.add_fact(
         test_db, a_id, "We love hiking together", "shared",
-        category="relationship",
+        tag="relationship",
     )
 
     mock_llm = MockLLMClient([
@@ -92,8 +92,11 @@ async def test_generate_nudge_with_positive_facts(test_db, paired_users):
 
 
 @pytest.mark.asyncio
-async def test_generate_nudge_without_facts(test_db, paired_users):
-    a_id, b_id = paired_users
+async def test_generate_nudge_without_facts(test_db):
+    a_id, b_id = 2001, 2002
+    await db_mod.create_user(test_db, a_id, "Cara")
+    await db_mod.create_user(test_db, b_id, "Dev")
+    await db_mod.set_partner(test_db, a_id, b_id)
     mock_llm = MockLLMClient()
 
     result = await generate_nudge(test_db, mock_llm, a_id, b_id)
@@ -106,7 +109,7 @@ async def test_generate_nudge_without_facts(test_db, paired_users):
 async def test_generate_nudge_fallback_on_empty_reply(test_db, paired_users):
     a_id, b_id = paired_users
     await db_mod.add_fact(
-        test_db, a_id, "We enjoy cooking", "shared", category="emotional",
+        test_db, a_id, "We enjoy cooking", "shared", tag="emotional",
     )
 
     mock_llm = MockLLMClient([
@@ -248,3 +251,42 @@ async def test_nudge_cycle_disabled(test_db, paired_users):
     mock_llm = MockLLMClient()
     await _nudge_cycle(test_db, mock_llm, mock_send, FakeConfig())
     assert len(sent) == 0
+
+
+@pytest.fixture(autouse=True)
+def _reset_nudge_state():
+    from pairtner.features import nudges
+
+    nudges._nudge_state.clear()
+    yield
+    nudges._nudge_state.clear()
+
+
+@pytest.mark.asyncio
+async def test_nudge_cooldown_and_backoff(tmp_path):
+    from datetime import timedelta, timezone
+    from types import SimpleNamespace
+    from pairtner.features import nudges
+
+    cfg = SimpleNamespace(nudges_interval_hours=24)
+    db_path = str(tmp_path / "x.db")
+    await db_mod.init_db(db_path)
+    assert await nudges._may_nudge(db_path, 1, cfg) is True
+    await nudges._record_nudge(db_path, 1)
+    assert await nudges._may_nudge(db_path, 1, cfg) is False  # cooldown
+    last = datetime.now(timezone.utc) - timedelta(hours=30)
+    nudges._nudge_state[1] = {"last": last, "ignored": 0}
+    assert await nudges._may_nudge(db_path, 1, cfg) is True
+    nudges._nudge_state[1] = {"last": last, "ignored": 2}  # 4x = 96h
+    assert await nudges._may_nudge(db_path, 1, cfg) is False
+
+
+@pytest.mark.asyncio
+async def test_generate_nudge_uses_negative_shared_facts(test_db, paired_users):
+    a_id, b_id = paired_users
+    await db_mod.add_fact(
+        test_db, a_id, "Feeling overwhelmed with chores", "shared", tag="household",
+    )
+    mock_llm = MockLLMClient([{"reply": "Thinking of you", "new_facts": [], "relay_draft": None}])
+    await generate_nudge(test_db, mock_llm, b_id, a_id)
+    assert "overwhelmed with chores" in mock_llm.calls[0]["user_content"]

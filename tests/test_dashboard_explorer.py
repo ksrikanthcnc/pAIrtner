@@ -53,7 +53,7 @@ def test_bad_table_names_rejected(conn, name):
 
 @pytest.mark.parametrize("show_raw", [True, False])
 def test_secret_tables_redacted(conn, show_raw):
-    for table, col in (("auth_tokens", "token"), ("couple_config", "config_value")):
+    for table, col in (("auth_tokens", "token"), ("relationship_config", "config_value")):
         data = explorer.rows(conn, table, 1, 50, show_raw)
         idx = data["columns"].index(col)
         assert data["rows"] and all(r[idx] == "[redacted]" for r in data["rows"])

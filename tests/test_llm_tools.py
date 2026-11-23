@@ -29,7 +29,7 @@ async def test_search_own_facts(tmp_path):
                    kind="working", relationship_id=rel)
     await add_fact(db, alice, "Alice is stressed about the presentation", "private",
                    kind="working", relationship_id=rel)
-    await add_fact(db, alice, "Alice enjoys cooking pasta", "nudge_eligible",
+    await add_fact(db, alice, "Alice enjoys cooking pasta", "shared",
                    kind="working", relationship_id=rel)
 
     results = await execute_search_memory(db, alice, "hiking mountains")
@@ -52,7 +52,7 @@ async def test_search_respects_partner_privacy(tmp_path):
     await add_fact(db, alice, "Alice has a crush on coworker Daniel", "private",
                    kind="working", relationship_id=rel)
     # Alice's shareable fact
-    await add_fact(db, alice, "Alice wants to try Italian restaurants", "shareable",
+    await add_fact(db, alice, "Alice wants to try Italian restaurants", "shared",
                    kind="working", relationship_id=rel)
 
     # Bob searches -- should NOT see Alice's private fact

@@ -90,20 +90,20 @@ class TestClearUser:
         conn = sqlite3.connect(db)
         q = lambda sql: conn.execute(sql).fetchone()[0]  # noqa: E731
         for table, col in [("messages", "user_id"), ("facts", "owner_id"),
-                           ("user_goals", "user_id"), ("auth_tokens", "user_id"),
+                           ("goals", "user_id"), ("auth_tokens", "user_id"),
                            ("user_profiles", "user_id"), ("rate_limit", "user_id"),
                            ("user_mood_styles", "user_id"), ("user_patterns", "user_id"),
                            ("fact_summaries", "user_id")]:
             assert q(f"SELECT COUNT(*) FROM {table} WHERE {col}=1") == 0, table
         assert q("SELECT COUNT(*) FROM users WHERE tg_id=1") == 0
-        assert q("SELECT COUNT(*) FROM pending WHERE sender_id=1 OR receiver_id=1") == 0
-        assert q("SELECT COUNT(*) FROM pending_batch WHERE sender_id=1 OR receiver_id=1") == 0
-        assert q("SELECT COUNT(*) FROM pending_batch_items WHERE batch_id=1") == 0
+        assert q("SELECT COUNT(*) FROM relay_queue WHERE sender_id=1 OR receiver_id=1") == 0
+        assert q("SELECT COUNT(*) FROM relay_batch WHERE sender_id=1 OR receiver_id=1") == 0
+        assert q("SELECT COUNT(*) FROM relay_batch_items WHERE batch_id=1") == 0
         assert q("SELECT COUNT(*) FROM partner_perceptions WHERE user_id=1 OR about_id=1") == 0
-        assert q("SELECT COUNT(*) FROM couple_config WHERE couple_id='1:2'") == 0
+        assert q("SELECT COUNT(*) FROM relationship_config WHERE couple_id='1:2'") == 0
         assert q("SELECT COUNT(*) FROM conflicts WHERE couple_id='1:2'") == 0
         assert q("SELECT COUNT(*) FROM timeline_events WHERE couple_id='1:2'") == 0
-        assert q("SELECT COUNT(*) FROM shared_goals WHERE couple_id='1:2'") == 0
+        assert q("SELECT COUNT(*) FROM goals WHERE couple_id='1:2'") == 0
         assert q("SELECT COUNT(*) FROM checkins WHERE couple_id='1:2'") == 0
         assert q("SELECT COUNT(*) FROM interaction_scores WHERE couple_id='1:2'") == 0
         # partner survives, unpaired, with their own rows
@@ -112,9 +112,9 @@ class TestClearUser:
         assert q("SELECT COUNT(*) FROM facts WHERE owner_id=2") == 1
         # unrelated couple untouched
         for sql in ("SELECT COUNT(*) FROM users WHERE tg_id IN (3,4,5)",
-                    "SELECT COUNT(*) FROM couple_config WHERE couple_id='3:4'",
+                    "SELECT COUNT(*) FROM relationship_config WHERE couple_id='3:4'",
                     "SELECT COUNT(*) FROM conflicts WHERE couple_id='3:4'",
-                    "SELECT COUNT(*) FROM pending_batch_items WHERE batch_id=2",
+                    "SELECT COUNT(*) FROM relay_batch_items WHERE batch_id=2",
                     "SELECT COUNT(*) FROM auth_tokens WHERE user_id=3"):
             assert q(sql) >= 1, sql
         assert q("SELECT COUNT(*) FROM usage") == 2

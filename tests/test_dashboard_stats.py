@@ -50,7 +50,7 @@ def test_user_activity(conn):
     rows = {r["tg_id"]: r for r in stats.user_activity(conn, True)}
     assert rows[1]["messages"] == 2 and rows[1]["facts"] == 1
     assert rows[1]["relays_sent"] == 1 and rows[2]["relays_received"] == 1
-    assert rows[1]["goals"] == 1
+    assert rows[1]["goals"] == 2  # 1 personal + 1 shared (created_by)
     assert rows[5]["messages"] == 0 and rows[5]["last_seen"] is None
     assert rows[1]["name"].startswith("CANARY-RAW")
 
@@ -61,13 +61,13 @@ def test_queue_and_conflicts_and_goals(conn):
     assert {b["items"] for b in q["batches"]} == {1}
     assert len(stats.conflicts(conn, True)) == 2
     g = stats.goals(conn, True)
-    assert len(g["user_goals"]) == 2 and len(g["shared_goals"]) == 1
+    assert len(g["goals"]) == 3  # 2 personal + 1 shared in unified table
 
 
 def test_couples(conn):
     cs = {c["couple_id"]: c for c in stats.couples(conn)}
     assert set(cs) == {"1:2", "3:4"}
-    assert cs["1:2"]["open_conflicts"] == 1 and cs["1:2"]["shared_goals"] == 1
+    assert cs["1:2"]["open_conflicts"] == 1 and cs["1:2"]["goals"] == 1
 
 
 def test_user_timeline_merges_sources_sorted(conn):

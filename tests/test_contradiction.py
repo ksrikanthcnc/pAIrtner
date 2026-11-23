@@ -22,14 +22,14 @@ async def test_contradiction_detected(test_db, config, paired_users):
     a_id, b_id = paired_users
 
     # Pre-existing fact
-    await add_fact(test_db, a_id, "Alice likes cooking", "private", category="household")
+    await add_fact(test_db, a_id, "Alice likes cooking", "private", tag="household")
 
     mock = MockLLMClient(responses=[{
         "reply": "Noted",
         "new_facts": [{
             "text": "Alice dislikes cooking",
             "visibility": "private",
-            "category": "household",
+            "tag": "household",
             "fact_type": "stable",
         }],
         "relay_draft": None,
@@ -58,8 +58,8 @@ async def test_contradiction_detected(test_db, config, paired_users):
 async def test_callback_keep_new(test_db, config, paired_users):
     """fc_new callback archives old fact and keeps new."""
     a_id, _ = paired_users
-    old_id = await add_fact(test_db, a_id, "old preference", "private", category="household")
-    new_id = await add_fact(test_db, a_id, "new preference", "private", category="household")
+    old_id = await add_fact(test_db, a_id, "old preference", "private", tag="household")
+    new_id = await add_fact(test_db, a_id, "new preference", "private", tag="household")
 
     mock = MockLLMClient()
     svc = BotService(config=config, db_path=test_db, llm=mock)
@@ -112,14 +112,14 @@ async def test_no_contradiction_different_categories(test_db, config, paired_use
     """No contradiction if facts are in different categories."""
     a_id, _ = paired_users
 
-    await add_fact(test_db, a_id, "Alice likes walking", "private", category="health")
+    await add_fact(test_db, a_id, "Alice likes walking", "private", tag="health")
 
     mock = MockLLMClient(responses=[{
         "reply": "Noted",
         "new_facts": [{
             "text": "Alice dislikes office politics",
             "visibility": "private",
-            "category": "work",
+            "tag": "work",
             "fact_type": "stable",
         }],
         "relay_draft": None,

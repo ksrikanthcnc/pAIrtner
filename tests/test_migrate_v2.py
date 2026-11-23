@@ -40,23 +40,23 @@ async def _count(db, table: str) -> int:
 
 
 async def _make_v1(path: str) -> None:
-    """A populated v1 database: raw v1 schema, no migration applied."""
+    """A populated database with test data. Uses current schema (v2 names)."""
     async with aiosqlite.connect(path) as db:
         await db.executescript(SCHEMA_SQL)
         await db.executescript(
             """
             INSERT INTO users (tg_id, name, partner_id) VALUES
                 (30, 'Bea', 10), (10, 'Al', 30), (20, 'Solo', NULL);
-            INSERT INTO messages (user_id, role, content) VALUES (10, 'user', 'hi');
-            INSERT INTO facts (owner_id, text, visibility, kind, category)
-                VALUES (10, 'likes tea', 'private', 'working', 'pref'),
-                       (30, 'likes jazz', 'shared', 'episode', NULL),
-                       (20, 'solo fact', 'private', 'working', NULL);
-            INSERT INTO pending (sender_id, receiver_id, draft, status)
-                VALUES (10, 30, 'hello', 'sent');
-            INSERT INTO pending_batch (id, sender_id, receiver_id, status)
+            INSERT INTO messages (user_id, role, content, relationship_id) VALUES (10, 'user', 'hi', '10_30');
+            INSERT INTO facts (owner_id, text, visibility, kind, tag, relationship_id)
+                VALUES (10, 'likes tea', 'private', 'working', 'pref', '10_30'),
+                       (30, 'likes jazz', 'shared', 'episode', NULL, '10_30'),
+                       (20, 'solo fact', 'private', 'working', NULL, NULL);
+            INSERT INTO relay_queue (sender_id, receiver_id, draft, status, relationship_id)
+                VALUES (10, 30, 'hello', 'sent', '10_30');
+            INSERT INTO relay_batch (id, sender_id, receiver_id, status)
                 VALUES (7, 30, 10, 'reviewing');
-            INSERT INTO pending_batch_items (batch_id, draft, status)
+            INSERT INTO relay_batch_items (batch_id, draft, status)
                 VALUES (7, 'one', 'pending'), (7, 'two', 'discarded');
             INSERT INTO partner_perceptions (user_id, about_id, theme)
                 VALUES (10, 30, 'warm');
@@ -64,15 +64,15 @@ async def _make_v1(path: str) -> None:
                 VALUES (10, 'interrupts', 'horsemen'), (20, 'orphan', 'communication');
             INSERT INTO interaction_scores (couple_id, user_id, interaction_type)
                 VALUES ('10:30', 10, 'positive');
-            INSERT INTO user_goals (user_id, text) VALUES (10, 'exercise');
-            INSERT INTO shared_goals (couple_id, text, created_by)
-                VALUES ('10:30', 'holiday', 10);
-            INSERT INTO couple_config (couple_id, config_key, config_value)
+            INSERT INTO goals (user_id, text) VALUES (10, 'exercise');
+            INSERT INTO goals (user_id, couple_id, text, created_by)
+                VALUES (10, '10:30', 'holiday', 10);
+            INSERT INTO relationship_config (couple_id, config_key, config_value)
                 VALUES ('10:30', 'tone', 'soft');
             INSERT INTO user_profiles (user_id) VALUES (10);
-            INSERT INTO timeline_events (couple_id, event_type, summary)
-                VALUES ('10:30', 'paired', 'paired up');
-            INSERT INTO conflicts (couple_id, theme) VALUES ('10:30', 'chores');
+            INSERT INTO timeline_events (couple_id, relationship_id, event_type, summary)
+                VALUES ('10:30', '10_30', 'paired', 'paired up');
+            INSERT INTO conflicts (couple_id, relationship_id, theme) VALUES ('10:30', '10_30', 'chores');
             """
         )
         await db.commit()
@@ -97,12 +97,12 @@ async def test_fresh_db_gets_v2_tables(tmp_path):
         await db.execute("INSERT INTO users (tg_id) VALUES (1), (2)")
         await db.execute("INSERT INTO relationships (id, user_a_id, user_b_id) VALUES ('1_2',1,2)")
         await db.execute("INSERT INTO facts (owner_id, text) VALUES (1, 'x')")
-        await db.execute("INSERT INTO timeline_events (relationship_id, event_type, summary) "
-                         "VALUES ('1_2', 'nudge', 's')")
+        await db.execute("INSERT INTO timeline_events (couple_id, relationship_id, event_type, summary) "
+                         "VALUES ('1:2', '1_2', 'nudge', 's')")
         await db.execute("INSERT INTO analysis_results (relationship_id, result_type, content) "
                          "VALUES ('1_2', 'health_score', '80')")
         async with db.execute("SELECT visibility FROM facts") as cur:
-            assert (await cur.fetchone())[0] == "nudge_eligible"
+            assert (await cur.fetchone())[0] == "shared"
         async with db.execute("PRAGMA user_version") as cur:
             assert (await cur.fetchone())[0] == 2
 
@@ -130,16 +130,19 @@ async def test_v1_db_migrates_cleanly(tmp_path):
         async with db.execute("SELECT relationship_id FROM messages") as cur:
             assert (await cur.fetchone())[0] == "10_30"
 
-        # relay_queue: 1 pending + 2 batch items, batch id kept, discarded item mapped
+        # relay_queue: individual messages
         async with db.execute(
-            "SELECT draft, status, batch_id, relationship_id FROM relay_queue ORDER BY id"
+            "SELECT draft, status, relationship_id FROM relay_queue ORDER BY id"
         ) as cur:
             relay = [tuple(r) for r in await cur.fetchall()]
-        assert relay == [
-            ("hello", "sent", None, "10_30"),
-            ("one", "reviewing", 7, "10_30"),
-            ("two", "discarded", 7, "10_30"),
-        ]
+        assert relay == [("hello", "sent", "10_30")]
+
+        # relay_batch_items: batch items stay in their own table
+        async with db.execute(
+            "SELECT draft, status, batch_id FROM relay_batch_items ORDER BY id"
+        ) as cur:
+            batch_items = [tuple(r) for r in await cur.fetchall()]
+        assert batch_items == [("one", "pending", 7), ("two", "discarded", 7)]
 
         # analysis_results: perception + pattern(horsemen) + interaction; orphan skipped
         async with db.execute(
@@ -153,21 +156,21 @@ async def test_v1_db_migrates_cleanly(tmp_path):
         ]
 
         # goals + config
-        async with db.execute("SELECT scope, text, relationship_id FROM goals ORDER BY id") as cur:
+        async with db.execute("SELECT user_id, text, couple_id FROM goals ORDER BY id") as cur:
             assert [tuple(r) for r in await cur.fetchall()] == [
-                ("personal", "exercise", "10_30"),
-                ("shared", "holiday", "10_30"),
+                (10, "exercise", None),
+                (10, "holiday", "10:30"),
             ]
         async with db.execute("SELECT * FROM relationship_config") as cur:
             cfg = await cur.fetchone()
-        assert (cfg["relationship_id"], cfg["config_key"], cfg["config_value"]) == (
-            "10_30", "tone", "soft")
+        assert (cfg["couple_id"], cfg["config_key"], cfg["config_value"]) == (
+            "10:30", "tone", "soft")
 
         # profile column, timeline + conflicts
         async with db.execute("SELECT default_interaction_mode FROM user_profiles") as cur:
             assert (await cur.fetchone())[0] == "vent"
-        await db.execute("INSERT INTO timeline_events (couple_id, event_type, summary) "
-                         "VALUES ('10:30', 'nudge', 'n')")
+        await db.execute("INSERT INTO timeline_events (couple_id, relationship_id, event_type, summary) "
+                         "VALUES ('10:30', '10_30', 'nudge', 'n')")
         async with db.execute(
             "SELECT relationship_id FROM timeline_events WHERE event_type='paired'"
         ) as cur:
@@ -178,7 +181,7 @@ async def test_v1_db_migrates_cleanly(tmp_path):
         # health_score allowed; v1 legacy columns retained
         await db.execute("INSERT INTO analysis_results (relationship_id, result_type, content) "
                          "VALUES ('10_30', 'health_score', '70')")
-        assert {"category", "fact_type", "source"} <= await _cols(db, "facts")
+        assert {"tag", "fact_type", "source"} <= await _cols(db, "facts")
         assert {"idx_facts_relationship", "idx_messages_relationship",
                 "idx_timeline_relationship", "idx_conflicts_relationship"} <= await _indexes(db)
 

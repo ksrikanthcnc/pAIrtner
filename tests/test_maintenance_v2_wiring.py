@@ -133,7 +133,7 @@ async def test_error_in_one_user_does_not_block_others(db_path):
                       "VALUES (?,?,'x','working')", (uid, rel))
     seen = []
 
-    async def fake_v2(_db, _llm, uid):
+    async def fake_v2(_db, _llm, uid, **_kw):
         seen.append(uid)
         if uid == ALICE:
             raise RuntimeError("boom")

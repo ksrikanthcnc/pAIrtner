@@ -140,7 +140,7 @@ async def test_search_command_pagination(db_path, service):
 
 async def test_search_relationship_scoped(db_path, service):
     mine = await add(db_path, ALICE, "picnic idea mine")
-    shared = await add(db_path, BOB, "picnic idea shared by bob", "nudge_eligible")
+    shared = await add(db_path, BOB, "picnic idea shared by bob", "shared")
     secret = await add(db_path, BOB, "picnic idea bob secret", "private")
     other = await add(db_path, ALICE, "picnic idea other relationship", rel=None)
     r = await paginated_search(db_path, ALICE, "picnic", REL)

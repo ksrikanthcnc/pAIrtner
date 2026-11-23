@@ -243,3 +243,93 @@ class TestParseRetryDelay:
         import pairtner.llm as llm_mod
         assert callable(llm_mod.parse_retry_delay)
         assert not hasattr(GeminiClient, "_parse_retry_delay")
+
+
+def test_parse_llm_response_flags_parse_failure():
+    bad = parse_llm_response("not json")
+    assert bad["_parse_failed"] is True
+    assert bad["_parse_error"]
+    assert bad["reply"] == "not json"
+    assert "_parse_failed" not in parse_llm_response('{"reply": "hi"}')
+
+
+# ---------------------------------------------------------------------------
+# MultiProviderLLM routing
+# ---------------------------------------------------------------------------
+
+class TestMultiProviderRouting:
+    """Verify model-name routing between Ollama and Gemini backends."""
+
+    def setup_method(self):
+        from unittest.mock import AsyncMock
+        self.ollama = AsyncMock()
+        self.ollama.generate = AsyncMock(return_value={"reply": "from-ollama"})
+        self.gemini = AsyncMock()
+        self.gemini.generate = AsyncMock(return_value={"reply": "from-gemini"})
+
+    def _make(self, default="ollama"):
+        from pairtner.llm import MultiProviderLLM
+        return MultiProviderLLM(self.ollama, self.gemini, default)
+
+    @pytest.mark.asyncio
+    async def test_default_routes_to_ollama(self):
+        mp = self._make("ollama")
+        await mp.generate("hi", "sys")
+        self.ollama.generate.assert_awaited_once()
+        self.gemini.generate.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_default_routes_to_gemini(self):
+        mp = self._make("gemini")
+        await mp.generate("hi", "sys")
+        self.gemini.generate.assert_awaited_once()
+        self.ollama.generate.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_gemini_prefix_routes_to_gemini(self):
+        mp = self._make("ollama")
+        await mp.generate("hi", "sys", model="gemini:flash-2")
+        self.gemini.generate.assert_awaited_once()
+        # Model name should be stripped of prefix
+        call_args = self.gemini.generate.call_args
+        assert call_args[0][2] == "flash-2"  # positional arg: model
+        self.ollama.generate.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_ollama_prefix_routes_to_ollama(self):
+        mp = self._make("gemini")
+        await mp.generate("hi", "sys", model="ollama:qwen3:8b")
+        self.ollama.generate.assert_awaited_once()
+        call_args = self.ollama.generate.call_args
+        assert call_args[0][2] == "qwen3:8b"
+        self.gemini.generate.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_native_gemini_model_name(self):
+        mp = self._make("ollama")
+        await mp.generate("hi", "sys", model="gemini-3.1-flash-lite")
+        self.gemini.generate.assert_awaited_once()
+        self.ollama.generate.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_native_ollama_model_name(self):
+        mp = self._make("ollama")
+        await mp.generate("hi", "sys", model="qwen3:8b")
+        self.ollama.generate.assert_awaited_once()
+        self.gemini.generate.assert_not_awaited()
+
+    def test_providers_list(self):
+        mp = self._make()
+        assert set(mp.providers) == {"ollama", "gemini"}
+
+    def test_providers_ollama_only(self):
+        from pairtner.llm import MultiProviderLLM
+        mp = MultiProviderLLM(self.ollama, None, "ollama")
+        assert mp.providers == ["ollama"]
+
+    @pytest.mark.asyncio
+    async def test_missing_gemini_raises(self):
+        from pairtner.llm import MultiProviderLLM
+        mp = MultiProviderLLM(self.ollama, None, "ollama")
+        with pytest.raises(RuntimeError, match="Gemini not configured"):
+            await mp.generate("hi", "sys", model="gemini:flash")

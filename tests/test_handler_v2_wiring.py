@@ -90,7 +90,7 @@ async def test_v1_schema_falls_back_even_if_paired(v1_db, monkeypatch):
 
 async def test_partner_private_facts_never_in_prompt(v2_db):
     await _add(v2_db, ALICE, "ALICE_PRIVATE_SECRET_XYZ", "private")
-    await _add(v2_db, ALICE, "Alice loves surprise picnics", "nudge_eligible")
+    await _add(v2_db, ALICE, "Alice loves surprise picnics", "shared")
     await _add(v2_db, BOB, "Bob private worry about work", "private")
     llm = MockLLMClient()
     svc = _service(v2_db, llm)
@@ -125,7 +125,7 @@ async def test_memory_ops_v2_set_visibility_and_nudge(v2_db):
         "reply": "ok", "relay_draft": None, "new_facts": [],
         "memory_ops": [{
             "op": "add", "kind": "working", "text": "Bob wants more date nights",
-            "visibility": "nudge_eligible", "nudge_type": "behavior",
+            "visibility": "shared", "nudge_type": "behavior",
             "nudge_suggestion": "Plan a date night this week",
             "nudge_target": "partner",
         }],
@@ -139,7 +139,7 @@ async def test_memory_ops_v2_set_visibility_and_nudge(v2_db):
         ) as cur:
             row = await cur.fetchone()
     assert row is not None
-    assert row["visibility"] == "nudge_eligible"
+    assert row["visibility"] == "shared"
     assert row["relationship_id"] == REL
     assert row["nudge_target_id"] == ALICE
     assert row["nudge_status"] == "pending"

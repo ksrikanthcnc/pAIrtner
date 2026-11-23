@@ -134,6 +134,18 @@ _STRINGS: dict[str, dict[str, str]] = {
         "forget_not_found": "❌ Fact not found or doesn't belong to you.",
         "forget_usage": "Usage: /forget <id> or /forget all",
 
+        # Share / private (bulk visibility)
+        "share_usage": "Usage: /share <tag> or /share all",
+        "share_none": "No private facts found for \"{tag}\".",
+        "share_confirm": (
+            "These {count} fact(s) tagged \"{tag}\" will be shared with your partner:\n"
+            "{facts}\nSend /share {tag} again to confirm."
+        ),
+        "share_done": "🔓 Shared {count} fact(s) tagged \"{tag}\".",
+        "private_usage": "Usage: /private <tag> or /private all",
+        "private_none": "No shared facts found for \"{tag}\".",
+        "private_done": "🔒 Marked {count} fact(s) tagged \"{tag}\" as private.",
+
         # Export
         "export_empty": "No facts to export yet.",
         "export_header": "# My Facts Export\n\n",
@@ -142,43 +154,28 @@ _STRINGS: dict[str, dict[str, str]] = {
         # Help
         "help": (
             "📖 <b>pAIrtner Commands:</b>\n\n"
-            "<b>Basic</b>\n"
+            "<b>Pairing</b>\n"
             "/start — Get a pairing code\n"
-            "/join &lt;code&gt; — Pair with your partner\n"
-            "/help — Show this message\n"
-            "/lang &lt;en|te&gt; — Switch language\n"
-            "/status — Check your relationship dashboard\n\n"
-            "<b>Communication</b>\n"
-            "/tell &lt;message&gt; — Draft a gentle message for your partner\n"
-            "/mediate — Get a neutral perspective on shared issues\n"
-            "/pause — Pause relay delivery\n"
-            "/resume — Resume relay delivery\n"
-            "/history — View recent sent and received messages\n"
-            "/conflicts — View open discussion topics\n"
-            "/timeline — View your relationship timeline\n\n"
-            "<b>Memory</b>\n"
-            "/whatdoyouknow — See what I remember about you\n"
-            "/review — Review and correct my core memories\n"
-            "/forget &lt;id|all&gt; — Delete your facts\n"
-            "/export — Download your facts as a file\n"
-            "/export therapy — Download a therapy report\n"
-            "/remember — Revisit a positive shared memory\n"
+            "/join &lt;code&gt; — Pair with your partner\n\n"
+            "<b>Core</b>\n"
+            "/share — Make your facts visible to your partner\n"
+            "/private — Make your facts private\n"
             "/search &lt;query&gt; — Search your memories\n"
-            "/goal &lt;text&gt; — Set a personal goal\n"
-            "/goal shared &lt;text&gt; — Set a shared goal with your partner\n"
-            "/goal — View your active goals\n\n"
-            "<b>Personalization</b>\n"
-            "/settings — Open settings menu\n"
-            "/mode — Switch between mediator and voice mode\n"
-            "/yolo — Toggle auto-send relay mode (skip review)\n"
-            "/style — View voice profile, set mood, adjust traits\n"
-            "/style mood &lt;mood&gt; — Set mood (stressed|happy|angry|reflective)\n"
-            "/style set &lt;trait&gt; &lt;value&gt; — Override a voice trait\n"
-            "/setup — Configure Gemini API keys\n"
-            "/skip — Skip onboarding questions\n\n"
-            "<b>Testing</b>\n"
-            "/dryrun &lt;message&gt; — Test without saving anything\n"
+            "/forget &lt;id|all&gt; — Delete your facts\n"
+            "/goal &lt;text&gt; — Set a goal (/goal shared &lt;text&gt; for a shared one)\n"
+            "/topics — View your discussed topics by recency\n\n"
+            "<b>Settings</b>\n"
+            "/settings — See your current preferences\n"
+            "/mode — Switch between couple and solo mode\n"
+            "/pause, /resume — Pause or resume relay delivery\n\n"
+            "<b>Info</b>\n"
+            "/help — Show this message\n"
+            "/status — Check your relationship dashboard\n"
+            "/export — Download your facts as a file\n"
+            "/history — View recent sent and received messages\n\n"
+            "<b>Dev</b>\n"
             "/debug &lt;message&gt; — See what the bot thinks (facts, nudges, context)\n"
+            "/dryrun &lt;message&gt; — Test without saving anything\n"
             "/model &lt;name&gt; &lt;message&gt; — Use a different model for one message\n\n"
             "<b>Tags (in regular messages):</b>\n"
             "#keep — Save only, no relay\n"
@@ -186,7 +183,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "#deep — Use a more thoughtful model\n"
             "#blunt — Get direct, honest feedback\n"
             "#now — Skip cooldown on an approved relay\n\n"
-            "Just send a plain message to chat with me!"
+            "Most things you can just say naturally -- \"be more direct\", \"what do you know about me?\", \"tell her I'll be late\", \"remind me of a good memory\""
         ),
 
         # Language
@@ -209,6 +206,7 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # Delivery
         "relay_delivered": "✅ Your message was delivered to your partner.",
+        "relay_auto_nudged": "📨 I'll pass that along to them shortly.",
         "yolo_auto_sent": "Auto-sending in ~{minutes} min (yolo mode). /yolo off to review first.",
 
         # Ask user (no tag)
@@ -316,11 +314,11 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # Onboarding interview
         "onboard_welcome": (
-            "🎉 Great, you're paired! Tell me a bit about yourself and "
-            "your relationship — anything you'd like me to know. For example: "
-            "how long you've been together, if you have kids, what you "
-            "appreciate about your partner, or what you'd like to work on.\n\n"
-            "Or send /skip to jump right into chatting."
+            "🎉 Great, you're paired! Just chat naturally — tell me about "
+            "yourself, your relationship, anything you'd like me to know. "
+            "I'll remember the important things automatically.\n\n"
+            "💡 Tip: You can set a password anytime with /password <your-password> "
+            "to access your chat history from any browser."
         ),
         "onboard_q_relationship_type": "What's your relationship type? (married / dating / other)",
         "onboard_q_duration": "How many years have you been together? (just the number)",
@@ -331,6 +329,12 @@ _STRINGS: dict[str, dict[str, str]] = {
         "onboard_complete": (
             "✅ Got it, thanks for sharing! I'll keep this in mind as we chat. "
             "Send any message to start talking."
+        ),
+        "password_usage": "Usage: /password <your-password>",
+        "password_set": "Password set! You can now log in at the companion app.",
+        "onboard_password_prompt": (
+            "Set a password for your companion app (you can access your chat "
+            "history from any browser):"
         ),
         "onboard_skip": "👍 No worries, skipped! You can always update your profile later.",
 
@@ -391,14 +395,12 @@ _STRINGS: dict[str, dict[str, str]] = {
         "together_no_partner": "You need to pair with a partner first. Use /start.",
 
         # Settings (FEAT-004)
-        "settings_header": "⚙️ <b>Settings</b>\n\nChoose a category:",
-        "settings_voice": "🗣 Voice",
-        "settings_dampening": "🎚 Dampening",
+        "settings_header": "⚙ <b>Settings</b>\n",
+        "settings_prefs_title": "What I remember about your preferences",
+        "settings_current_title": "Current settings",
+        "settings_footer": "Just tell me what you want and I'll adjust. Commands: /mode, /goal.",
         "settings_goals": "🎯 Goals",
         "settings_profile": "👤 Profile",
-        "settings_mood": "🎭 Mood Presets",
-        "settings_dampening_current": "🎚 Current dampening base: <b>{level:.1f}</b>",
-        "settings_dampening_updated": "🎚 Dampening updated to <b>{level:.1f}</b>.",
         "settings_profile_current": (
             "👤 <b>Your Profile</b>\n"
             "Type: {relationship_type}\n"

@@ -100,7 +100,7 @@ def all_pages(client) -> list[str]:
              "/admin/clear-user/1"]
     _, text, _ = client.request("GET", "/db")
     tables = re.findall(r'href="/db/([a-z_]+)"', text)
-    assert "auth_tokens" in tables and "couple_config" in tables
+    assert "auth_tokens" in tables and "relationship_config" in tables
     pages += [f"/db/{t}" for t in tables] + [f"/db/{t}?page=2&size=1" for t in tables]
     return pages
 
@@ -227,7 +227,7 @@ class TestPages:
                     assert s not in blob, (path, s)
         _, body, _ = client.request("GET", "/db/auth_tokens")
         assert "[redacted]" in body
-        _, body, _ = client.request("GET", "/db/couple_config")
+        _, body, _ = client.request("GET", "/db/relationship_config")
         assert "[redacted]" in body
 
     def test_no_raw_text_when_switched_off(self, dash_no_raw):

@@ -24,7 +24,7 @@ _CSS = CSS
 
 NAV = [
     ("/", "Overview"), ("/usage", "Usage"), ("/users", "Users"),
-    ("/couples", "Couples"), ("/queue", "Queue"), ("/db", "Explorer"),
+    ("/couples", "Couples"), ("/queue", "Queue"), ("/pipeline", "Pipeline"), ("/db", "Explorer"),
     ("/admin", "Admin"),
 ]
 

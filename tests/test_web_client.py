@@ -17,7 +17,9 @@ from tests.helpers import MockLLMClient
 
 ROOT = Path(__file__).resolve().parent.parent
 JS_DIR = ROOT / "tests" / "js"
-CLIENT_TEXT = sorted(list(WEB_DIR.glob("*.js")) + list(WEB_DIR.glob("*.html")))
+CLIENT_TEXT = sorted(
+    list(WEB_DIR.glob("*.js")) + list(WEB_DIR.glob("components/*.js")) + list(WEB_DIR.glob("*.html")),
+    key=lambda p: str(p))
 
 FORBIDDEN = [
     r"\.innerHTML", r"\.outerHTML", r"insertAdjacentHTML", r"document\.write",
@@ -28,7 +30,8 @@ FORBIDDEN = [
 
 def test_client_files_exist():
     names = {p.name for p in CLIENT_TEXT}
-    assert {"app.js", "render.js", "sw.js", "index.html", "duo.html"} <= names
+    assert {"app.js", "render.js", "sw.js", "index.html", "duo.html", "duo_keep.html"} <= names
+    assert {"chat.js", "dashboard.js", "settings.js", "couple.js", "admin.js"} <= names
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -110,6 +113,15 @@ def test_duo_has_no_secrets_and_uses_same_origin_iframes():
     assert "token" not in src.lower() and "http" not in src.lower()
 
 
+def test_duo_keep_uses_persistent_profiles_and_same_origin_iframes():
+    src = (WEB_DIR / "duo_keep.html").read_text(encoding="utf-8")
+    assert src.count("<iframe") == 2
+    # New sandbox-based: iframes populated by duo_keep.js via API
+    assert "duo_keep.js" in src
+    assert "persistent" in src.lower()
+    assert "token" not in src.lower() and "http" not in src.lower()
+
+
 def test_ui_strings_have_en_te_parity():
     src = (WEB_DIR / "app.js").read_text(encoding="utf-8")
     block = re.search(r"var UI = \{(.*?)\n  \};", src, re.S).group(1)
@@ -117,3 +129,18 @@ def test_ui_strings_have_en_te_parity():
     keys = lambda s: set(re.findall(r"^\s*(?:\w+: .*?)?\b(\w+): \"", s, re.M)) | set(
         re.findall(r"\b(\w+): \"", s))
     assert keys(en) == keys(te) and len(keys(en)) > 10
+
+
+def test_service_worker_caches_every_component():
+    src = (WEB_DIR / "sw.js").read_text(encoding="utf-8")
+    shell = re.search(r"var SHELL = \[(.*?)\];", src, re.S).group(1)
+    for path in WEB_DIR.glob("components/*.js"):
+        assert f'"/components/{path.name}"' in shell, path.name
+    assert "pairtner-shell-v16" in src
+
+
+def test_components_follow_lifecycle_contract():
+    for path in WEB_DIR.glob("components/*.js"):
+        src = path.read_text(encoding="utf-8")
+        for fn in ("init", "show", "hide", "destroy"):
+            assert re.search(rf"export function {fn}\(", src), f"{path.name} lacks {fn}()"

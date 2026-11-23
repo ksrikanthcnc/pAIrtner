@@ -11,7 +11,7 @@ Changes from v1 (22 tables → 17 + FTS5):
 - kind CHECK expanded: working|core + 9 summary levels (daily through yearly)
   Ship with 5 active; intermediates (triday, biweekly, bimonthly, semiannual)
   activate via config with no schema migration
-- Changed: visibility default 'private' → 'nudge_eligible'
+- Changed: visibility is two-level: private|shared, default 'shared'
 - Added: relationships table (multi-relationship support, deterministic IDs)
 - Added: relationship_id on facts (replaces couple_id; links to relationships)
 - Added: msg_source column (user|bot|system) — extract facts from bot responses too
@@ -21,7 +21,7 @@ Changes from v1 (22 tables → 17 + FTS5):
   level) is the real safety mechanism. Sensitivity was redundant gatekeeping.
 - Added: user_profiles.default_interaction_mode (solution|vent|adaptive, default vent)
 - Simplified: dropped self_nudge/probe_partner flags — visibility alone drives
-  LLM behavior (private = engage owner + probe partner on topic; nudge_eligible
+  LLM behavior (private = engage owner + probe partner on topic; shared
   = also steer partner directly)
 - Added: messages.relationship_id (which relationship context)
 """
@@ -31,6 +31,22 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+# Migration: collapse the old three-level visibility into private|shared.
+VISIBILITY_MIGRATION_SQL = (
+    "UPDATE facts SET visibility='shared' "
+    "WHERE visibility IN ('nudge_eligible','shareable')"
+)
+
+USERS_VISIBILITY_MODE_DDL = (
+    "TEXT NOT NULL DEFAULT 'open' "
+    "CHECK(default_visibility_mode IN ('open','ask','private'))"
+)
+
+
+# users.mode: 'couple' (default, paired features) | 'solo' (personal journal/coach).
+USERS_MODE_DDL = "TEXT NOT NULL DEFAULT 'couple' CHECK(mode IN ('couple','solo'))"
+
 
 def make_relationship_id(user_a_id: int, user_b_id: int) -> str:
     """Deterministic, order-independent relationship ID from two user IDs."""
@@ -52,6 +68,11 @@ CREATE TABLE IF NOT EXISTS users (
     name        TEXT,
     lang        TEXT DEFAULT 'en',
     paused      INTEGER DEFAULT 0,
+    password_hash TEXT,
+    default_visibility_mode TEXT NOT NULL DEFAULT 'open'
+                CHECK(default_visibility_mode IN ('open','ask','private')),
+    mode        TEXT NOT NULL DEFAULT 'couple'
+                CHECK(mode IN ('couple','solo')),
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -84,14 +105,15 @@ CREATE TABLE IF NOT EXISTS facts (
     owner_id        INTEGER REFERENCES users(tg_id),    -- NULL for relationship-level summaries
     relationship_id TEXT REFERENCES relationships(id),   -- which relationship this belongs to
     text            TEXT NOT NULL,
-    visibility      TEXT NOT NULL DEFAULT 'nudge_eligible'
-                    CHECK(visibility IN ('private', 'nudge_eligible', 'shareable')),
+    visibility      TEXT NOT NULL DEFAULT 'shared'
+                    CHECK(visibility IN ('private', 'shared')),
     kind            TEXT NOT NULL DEFAULT 'working'
                     CHECK(kind IN ('working','core',
                                    'daily','triday','weekly','biweekly',
                                    'monthly','bimonthly','quarterly',
                                    'semiannual','yearly',
-                                   'biennium','quinquennium','decade')),
+                                   'biennium','quinquennium','decade',
+                                   'rolling')),
     status          TEXT NOT NULL DEFAULT 'active',
     intensity       REAL DEFAULT 0.5,
     -- source tracking

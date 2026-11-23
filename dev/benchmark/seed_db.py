@@ -178,7 +178,7 @@ CONVERSATIONS = [
 ]
 
 
-async def build_benchmark_db(output_path: str) -> dict:
+async def build_benchmark_db(output_path: str, scenario_days: int = 90) -> dict:
     """Build the benchmark DB and return ground truth metadata."""
     await init_db(output_path)
 
@@ -188,7 +188,7 @@ async def build_benchmark_db(output_path: str) -> dict:
     await db_mod.set_partner(output_path, ALICE_ID, BOB_ID)
 
     # Insert conversations with realistic timestamps
-    base_date = datetime.now(timezone.utc) - timedelta(days=90)
+    base_date = datetime.now(timezone.utc) - timedelta(days=scenario_days)
     msg_count = 0
     for conv in CONVERSATIONS:
         day = conv["day"]
@@ -233,16 +233,22 @@ async def build_benchmark_db(output_path: str) -> dict:
 
 
 async def main():
-    output = "dev/benchmark/bench.db"
-    if len(sys.argv) > 1:
-        output = sys.argv[1]
+    import argparse
+    ap = argparse.ArgumentParser(description="Build benchmark seed DB")
+    ap.add_argument("--output", default="dev/benchmark/bench.db", help="DB path")
+    ap.add_argument("--days", type=int, default=90, help="Scenario span in days (30=quick, 90=standard, 365=full)")
+    ap.add_argument("--quick", action="store_true", help="Quick mode: 30 days, fewer messages")
+    args = ap.parse_args()
+
+    days = 30 if args.quick else args.days
+    output = args.output
 
     import os
     if os.path.exists(output):
         os.remove(output)
 
-    gt = await build_benchmark_db(output)
-    print(f"Created benchmark DB: {output}")
+    gt = await build_benchmark_db(output, scenario_days=days)
+    print(f"Created benchmark DB: {output} ({days}-day scenario)")
     print(f"  Messages: {gt['message_count']}")
     print(f"  Expected core facts: {gt['expected_core_facts']}")
     print(f"  Expected working (should resolve): {gt['expected_working_resolve']}")

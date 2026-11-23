@@ -23,6 +23,8 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
+
+from pairtner.storage.tagfmt import normalize_tags
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -41,13 +43,13 @@ class MemoryOp:
     id: int | None = None       # fact id (for revise, status)
     status: str = ""            # new status (for status op)
     why: str = ""               # reason for status change
-    category: str | None = None
+    tag: list[str] | None = None
     fact_type: str = "stable"
     intensity: float = 0.5      # v2: how strongly user feels (0.0-1.0)
     event_date: str | None = None  # v2: structured date (YYYY-MM-DD) from LLM
     recurring: bool = False        # v2: True for birthdays/anniversaries
     # --- v2 fields ---
-    visibility: str = "nudge_eligible"  # private, nudge_eligible, shareable
+    visibility: str = "shared"  # private, shared
     msg_source: str = "user"            # user, bot, system
     nudge_type: str | None = None       # see VALID_NUDGE_TYPES
     nudge_suggestion: str | None = None  # LLM-written, partner-safe guidance
@@ -108,6 +110,125 @@ def is_near_duplicate(new_text: str, existing_text: str, threshold: float = 0.85
 
 
 # ---------------------------------------------------------------------------
+# Semantic dedup — FTS5 + SequenceMatcher
+# ---------------------------------------------------------------------------
+
+_DEDUP_STOPWORDS = frozenset({
+    "the", "is", "are", "was", "were", "been", "being", "have", "has",
+    "had", "do", "does", "did", "will", "would", "could", "should",
+    "may", "might", "can", "not", "and", "but", "for", "yet", "so",
+    "in", "on", "at", "to", "of", "with", "by", "from", "up", "about",
+    "into", "over", "after", "that", "this", "it", "its", "my", "your",
+    "our", "his", "her", "their", "them", "very", "really", "just",
+    "also", "too", "much", "more", "most", "some", "any", "all", "both",
+    "each", "few", "many", "than", "user", "partner", "feels", "feeling",
+    "think", "thinks", "like", "want", "needs", "get", "got", "or", "nor",
+})
+
+
+async def find_semantic_duplicates(
+    db_path: str,
+    new_text: str,
+    owner_id: int,
+    *,
+    threshold: float = 0.75,
+    limit: int = 5,
+) -> list[dict]:
+    """Find semantically similar existing facts using FTS5 + SequenceMatcher.
+
+    Strategy: extract keywords from new_text, run FTS5 MATCH (or LIKE
+    fallback when FTS isn't available), then rank candidates by string
+    similarity. Returns facts above *threshold*.
+    """
+    import aiosqlite
+
+    words = _normalise_text(new_text).split()
+    keywords = [w for w in words if len(w) >= 3 and w not in _DEDUP_STOPWORDS]
+    if not keywords:
+        return []
+
+    fts_query = " OR ".join(keywords[:8])
+
+    candidates: list[dict] = []
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='facts_fts'"
+        )
+        has_fts = await cur.fetchone() is not None
+
+        if has_fts:
+            try:
+                cur = await db.execute(
+                    "SELECT f.id, f.text, f.kind, f.status FROM facts_fts ft "
+                    "JOIN facts f ON f.id = ft.rowid "
+                    "WHERE ft.text MATCH ? AND f.owner_id = ? "
+                    "AND f.status = 'active' AND f.archived_at IS NULL "
+                    "LIMIT ?",
+                    (fts_query, owner_id, limit * 3),
+                )
+                candidates = [dict(r) for r in await cur.fetchall()]
+            except Exception:
+                has_fts = False  # fall through to LIKE
+
+        if not has_fts and keywords:
+            cur = await db.execute(
+                "SELECT id, text, kind, status FROM facts "
+                "WHERE owner_id = ? AND status = 'active' AND archived_at IS NULL "
+                "AND text LIKE ? LIMIT ?",
+                (owner_id, f"%{keywords[0]}%", limit * 3),
+            )
+            candidates = [dict(r) for r in await cur.fetchall()]
+
+    norm_new = _normalise_text(new_text)
+    results = []
+    for c in candidates:
+        ratio = difflib.SequenceMatcher(None, norm_new, _normalise_text(c["text"])).ratio()
+        if ratio >= threshold:
+            results.append({**c, "similarity": round(ratio, 3)})
+
+    results.sort(key=lambda x: x["similarity"], reverse=True)
+    return results[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Contradiction detection
+# ---------------------------------------------------------------------------
+
+_POSITIVE_WORDS = frozenset({
+    "loves", "likes", "enjoys", "happy", "good", "great", "appreciates",
+    "comfortable", "confident", "excited", "grateful", "satisfied", "proud",
+})
+_NEGATIVE_WORDS = frozenset({
+    "hates", "dislikes", "avoids", "unhappy", "bad", "terrible", "resents",
+    "uncomfortable", "insecure", "anxious", "frustrated", "disappointed", "angry",
+})
+
+
+def detect_contradiction(new_text: str, existing_text: str) -> bool:
+    """Heuristic contradiction check: same subject, opposite sentiment.
+
+    Flags potential contradictions for review — not auto-resolved.
+    Requires at least 2 shared content words (same subject) and opposing
+    sentiment signals.
+    """
+    norm_new = set(_normalise_text(new_text).split())
+    norm_old = set(_normalise_text(existing_text).split())
+
+    content_new = {w for w in norm_new if len(w) >= 4}
+    content_old = {w for w in norm_old if len(w) >= 4}
+    if len(content_new & content_old) < 2:
+        return False
+
+    new_pos = bool(norm_new & _POSITIVE_WORDS)
+    new_neg = bool(norm_new & _NEGATIVE_WORDS)
+    old_pos = bool(norm_old & _POSITIVE_WORDS)
+    old_neg = bool(norm_old & _NEGATIVE_WORDS)
+
+    return (new_pos and old_neg) or (new_neg and old_pos)
+
+
+# ---------------------------------------------------------------------------
 # Explicit core request detection
 # ---------------------------------------------------------------------------
 
@@ -160,7 +281,7 @@ def is_explicit_core_request(
 
 VALID_OPS = {"add", "revise", "status", "propose_core", "pin_core"}
 VALID_OPS_V2 = VALID_OPS | {"cancel_nudge"}
-VALID_VISIBILITY = {"private", "nudge_eligible", "shareable"}
+VALID_VISIBILITY = {"private", "shared"}
 VALID_MSG_SOURCES = {"user", "bot", "system"}
 VALID_NUDGE_TYPES = {
     "appreciation", "attention", "communication", "support",
@@ -174,8 +295,14 @@ ALLOWED_SETTINGS: dict[str, dict[str, Any]] = {
     "interaction_mode": {"values": ["vent", "solution", "adaptive"], "default": "vent"},
     "voice": {"values": ["casual", "warm", "formal"], "default": "casual"},
     "response_length": {"values": ["short", "normal", "long"], "default": "normal"},
+    # Per-user nudge timing. "time" values are HH:MM; None default = fall back to config.
+    "nudge_quiet_start": {"type": "time", "default": None},
+    "nudge_quiet_end": {"type": "time", "default": None},
+    "nudge_frequency": {"values": ["daily", "weekly", "rare", "off"], "default": None},
+    "nudge_skip_weekends": {"values": ["true", "false"], "default": "false"},
 }
 SETTINGS_META_PREFIX = "setting:"
+_HHMM_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
 
 # Core = biographical axioms only (decision 311/316): "could this go on a
 # profile card?" Anything else is working. This is the engine-side backstop for
@@ -205,6 +332,14 @@ def validate_setting(key: Any, value: Any) -> SettingsOp | None:
         value_s = "true" if value else "false"
     else:
         value_s = str(value).strip().lower()
+    if spec.get("type") == "time":
+        m = _HHMM_RE.match(value_s)
+        if m is None:
+            return None
+        hh, mm = int(m.group(1)), int(m.group(2))
+        if hh > 23 or mm > 59:
+            return None
+        return SettingsOp(key=key_s, value=f"{hh:02d}:{mm:02d}")
     if value_s not in spec["values"]:
         return None
     return SettingsOp(key=key_s, value=value_s)
@@ -249,9 +384,6 @@ def _parse_event_date(raw: Any) -> str | None:
         return None
 VALID_KINDS = {"working", "core"}
 VALID_STATUSES = {"active", "improving", "resolved", "outdated"}
-VALID_CATEGORIES = {
-    "relationship", "household", "emotional", "work", "health", "other", None,
-}
 VALID_FACT_TYPES = {"transient", "situational", "stable"}
 
 
@@ -315,17 +447,16 @@ def parse_memory_ops(
             if kind not in VALID_KINDS:
                 kind = "working"
 
-            category = raw.get("category")
-            if category not in VALID_CATEGORIES:
-                category = None
+            # LLM may send a single string or a list; normalize to a list.
+            tag = normalize_tags(raw.get("tag")) or None
             fact_type = str(raw.get("fact_type", "stable")).strip().lower()
             if fact_type not in VALID_FACT_TYPES:
                 fact_type = "stable"
 
             if v2:
-                visibility = str(raw.get("visibility", "nudge_eligible")).strip().lower()
+                visibility = str(raw.get("visibility", "shared")).strip().lower()
                 if visibility not in VALID_VISIBILITY:
-                    visibility = "nudge_eligible"
+                    visibility = "shared"
                 msg_source = str(raw.get("msg_source", "user")).strip().lower()
                 if msg_source not in VALID_MSG_SOURCES:
                     msg_source = "user"
@@ -338,7 +469,7 @@ def parse_memory_ops(
                     target = None
                 valid.append(MemoryOp(
                     op="add", kind=kind, text=text,
-                    category=category, fact_type=fact_type,
+                    tag=tag, fact_type=fact_type,
                     intensity=_parse_intensity(raw.get("intensity")),
                     event_date=_parse_event_date(raw.get("date")),
                     recurring=bool(raw.get("recurring", False)),
@@ -351,7 +482,7 @@ def parse_memory_ops(
             # v1: visibility is ALWAYS forced to private
             valid.append(MemoryOp(
                 op="add", kind=kind, text=text,
-                category=category, fact_type=fact_type,
+                tag=tag, fact_type=fact_type,
                 intensity=_parse_intensity(raw.get("intensity")),
                 event_date=_parse_event_date(raw.get("date")),
                 recurring=bool(raw.get("recurring", False)),
@@ -512,7 +643,41 @@ async def apply_memory_ops(
     for op in ops:
         # --- add ---
         if op.op == "add":
-            # Check near-duplicate
+            # Semantic dedup: check for semantically similar existing facts
+            sem_dups = await find_semantic_duplicates(
+                db_path, op.text, user_id, threshold=0.75, limit=3,
+            )
+            if sem_dups and sem_dups[0]["similarity"] >= 0.90:
+                best = sem_dups[0]
+                logger.info(
+                    "Semantic dedup: '%s' ≈ fact %d (%.0f%%), skipping",
+                    op.text[:50], best["id"], best["similarity"] * 100,
+                )
+                await db_mod.log_memory_op(
+                    db_path, user_id, json.dumps({"op": "add", "text": op.text[:100]}),
+                    "merged", reason=f"semantic dup of fact {best['id']}", fact_id=best["id"],
+                )
+                result.outcomes.append(OpOutcome(
+                    op=op, outcome="merged",
+                    reason=f"semantic duplicate of fact {best['id']} ({best['similarity']:.0%} similar)",
+                    memory_id=best["id"],
+                ))
+                continue
+
+            # Contradiction check on semantic near-matches
+            contradiction_warning = ""
+            for dup in sem_dups:
+                if detect_contradiction(op.text, dup["text"]):
+                    contradiction_warning = (
+                        f"may contradict fact #{dup['id']}: {dup['text'][:60]}"
+                    )
+                    logger.info(
+                        "Contradiction detected: '%s' vs fact #%d '%s'",
+                        op.text[:50], dup["id"], dup["text"][:50],
+                    )
+                    break
+
+            # Check near-duplicate (syntactic)
             for fact_id, fact_text in existing_texts.items():
                 if is_near_duplicate(op.text, fact_text):
                     logger.info(
@@ -560,7 +725,7 @@ async def apply_memory_ops(
                             logger.info("Core downgraded to working: %r", op.text[:60])
                 fact_id = await db_mod.add_fact(
                     db_path, user_id, op.text, visibility,
-                    category=op.category, fact_type=op.fact_type,
+                    tag=op.tag, fact_type=op.fact_type,
                     source_message_id=message_id,
                     intensity=op.intensity,
                     event_date=op.event_date,
@@ -579,7 +744,9 @@ async def apply_memory_ops(
                 )
                 existing_texts[fact_id] = op.text
                 result.outcomes.append(OpOutcome(
-                    op=op, outcome=outcome, reason=reason, memory_id=fact_id,
+                    op=op, outcome=outcome,
+                    reason=contradiction_warning or reason,
+                    memory_id=fact_id,
                 ))
 
         # --- cancel_nudge ---
@@ -654,7 +821,7 @@ async def apply_memory_ops(
             # Store as working (nothing lost if user ignores) and queue for confirm
             fact_id = await db_mod.add_fact(
                 db_path, user_id, op.text, "private",
-                category=op.category or "relationship",
+                tag=op.tag or ["relationship"],
                 fact_type="stable",
                 source_message_id=message_id,
             )

@@ -6,19 +6,14 @@ via the :class:`CommandsMixin` base class.
 
 from __future__ import annotations
 
+import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 from pairtner import db as db_mod
-from pairtner.core.sanitize import detect_crisis
-from pairtner.storage.helpers import _to_iso
 from pairtner.config import is_user_allowed
 from pairtner.crypto import decrypt_value, encrypt_value, mask_key
 from pairtner.i18n import t
-from pairtner.core.mediate import filter_perceptions, parse_window, since_timestamp
-from pairtner.core.profile_updater import process_llm_extras
-from pairtner.core.prompts import build_mediate_prompt, build_tell_prompt
-from pairtner.core.search import search_facts
 from pairtner.core.search_v2 import paginated_search
 
 import re
@@ -27,7 +22,7 @@ import aiosqlite
 
 from pairtner.storage.schema_v2 import make_relationship_id
 
-from .models import BotResponse, InlineButton, format_fact_date, format_relative_time, parse_tags
+from .models import BotResponse, InlineButton, format_relative_time
 
 _MAX_SHARE_BUTTONS = 30
 
@@ -55,66 +50,16 @@ def _split_page_arg(arg: str) -> tuple[str, int]:
     return arg, 1
 
 
+logger = logging.getLogger(__name__)
+
+_PREF_RE = re.compile(
+    r"prefer|style|tone|direct|gentle|soft|blunt|casual|formal|humor|emoji|"
+    r"short|brief|detail|nudge|remind|quiet|call me|speak|language", re.I,
+)
+
+
 class CommandsMixin:
     """Mixin providing slash-command handlers for BotService."""
-
-    # ── /tell ────────────────────────────────────────────────────────────
-
-    async def handle_tell(
-        self, user_id: int, text: str | None
-    ) -> list[BotResponse]:
-        """Draft a softened relay message for the user's partner."""
-        if not is_user_allowed(self.config, user_id):
-            return []
-
-        lang = await self._get_lang(user_id)
-        # Safety first: a disclosure of violence or self-harm must never be
-        # turned into a relay draft.
-        if text and detect_crisis(text)[0]:
-            return [BotResponse(t(lang, "emergency_response"))]
-
-        rate_resp = await self._check_rate_limit(user_id)
-        if rate_resp:
-            return rate_resp
-
-        user = await db_mod.get_user(self.db_path, user_id)
-        if not user or not user.get("partner_id"):
-            return [BotResponse(t(lang, "tell_no_partner"))]
-        if not text or not text.strip():
-            return [BotResponse(t(lang, "tell_need_message"))]
-
-        await self._increment_rate_counters(user_id)
-
-        tags, clean = parse_tags(text)
-        skip_cooldown = "#now" in tags
-
-        ctx = await self._build_ctx(user_id, current_message=clean)
-        mode = await db_mod.get_user_preference(self.db_path, user_id, "mode", default="mediator") or "mediator"
-        system, content = build_tell_prompt(ctx, clean, mode=mode)
-
-        api_key = await self._get_couple_api_key(user_id)
-        await db_mod.log_message(self.db_path, user_id, "user", clean)
-        result = await self.llm.generate(
-            content, system, api_key_override=api_key,
-        )
-        await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
-
-        await self._apply_memory_ops_from_result(user_id, result, clean, allow_pin=False)
-
-        # Fire-and-forget: auto-update profiles from LLM extras
-        await process_llm_extras(self.db_path, user_id, result, self.config)
-
-        draft = result.get("relay_draft") or result["reply"]
-
-        pending_id = await db_mod.create_pending(
-            self.db_path, user_id, user["partner_id"], draft
-        )
-
-        buttons = self._approval_buttons(pending_id, lang, skip_cooldown)
-        return [BotResponse(
-            t(lang, "tell_draft_header") + draft,
-            buttons=buttons,
-        )]
 
     # ── /history ───────────────────────────────────────────────────────
 
@@ -158,171 +103,6 @@ class CommandsMixin:
                 parts.append(t(lang, "history_received", date=date_str, message=text))
 
         return [BotResponse("".join(parts))]
-
-    # ── /mediate ─────────────────────────────────────────────────────────
-
-    async def handle_mediate(
-        self, user_id: int, arg: str | None = None
-    ) -> list[BotResponse]:
-        """Neutral perspective from shared facts and filtered impressions in a window."""
-        if not is_user_allowed(self.config, user_id):
-            return []
-        lang = await self._get_lang(user_id)
-        user = await db_mod.get_user(self.db_path, user_id)
-        if not user or not user.get("partner_id"):
-            return [BotResponse(t(lang, "mediate_no_partner"))]
-        cfg = self.config
-        window = parse_window(arg, cfg.mediate_default_days, cfg.mediate_max_days)
-        if window is None:
-            return [BotResponse(t(lang, "mediate_usage"))]
-        days, label = window
-        partner_id = user["partner_id"]
-        since = since_timestamp(days)
-        shared = await db_mod.get_shared_facts_since(
-            self.db_path, user_id, partner_id, since
-        )
-        shared_texts = [f["text"] for f in shared]
-        perc_user: list[str] = []
-        perc_partner: list[str] = []
-        if cfg.mediate_include_perceptions:
-            rows = await db_mod.get_perceptions_between(
-                self.db_path, user_id, partner_id, since
-            )
-            # Observer facts are used only for the overlap check, never prompted.
-            for observer, out in ((user_id, perc_user), (partner_id, perc_partner)):
-                own = [
-                    f["text"]
-                    for f in await db_mod.get_active_facts(self.db_path, observer)
-                ]
-                out.extend(filter_perceptions(
-                    [r for r in rows if r["user_id"] == observer],
-                    own,
-                    cfg.mediate_min_confidence,
-                    cfg.mediate_max_themes_per_side,
-                ))
-        if not shared_texts and not perc_user and not perc_partner:
-            return [BotResponse(t(lang, "mediate_no_input", window=label))]
-        partner = await db_mod.get_user(self.db_path, partner_id)
-        system, content = build_mediate_prompt(
-            shared_texts,
-            perceptions_a=perc_user,
-            perceptions_b=perc_partner,
-            name_a=user.get("name") or "",
-            name_b=(partner or {}).get("name") or "",
-            window_label=label,
-        )
-        model = self.config.model_heavy[0] if self.config.model_heavy else None
-        api_key = await self._get_couple_api_key(user_id)
-        result = await self.llm.generate(
-            content, system, model=model, api_key_override=api_key,
-        )
-        await db_mod.log_message(self.db_path, user_id, "assistant", result["reply"])
-        if model and hasattr(self.llm, "check_usage_warning"):
-            warning = await self.llm.check_usage_warning(model)
-            if warning:
-                result["reply"] += "\n\n" + warning
-        return [BotResponse(result["reply"])]
-
-    # ── /whatdoyouknow ───────────────────────────────────────────────────
-
-    async def handle_whatdoyouknow(self, user_id: int) -> list[BotResponse]:
-        """List all stored facts for the user, grouped by memory kind."""
-        if not is_user_allowed(self.config, user_id):
-            return []
-
-        lang = await self._get_lang(user_id)
-
-        private_facts = await db_mod.get_active_facts(self.db_path, user_id, "private")
-        shared_facts = await db_mod.get_active_facts(self.db_path, user_id, "shared")
-
-        # Also include profile data as context
-        profile = await db_mod.get_user_profile(self.db_path, user_id)
-
-        if not private_facts and not shared_facts and not profile:
-            return [BotResponse(t(lang, "whatdoyouknow_empty"))]
-
-        parts = [t(lang, "whatdoyouknow_header")]
-
-        # Show profile summary if available
-        if profile:
-            profile_items = []
-            if profile.get("relationship_type"):
-                profile_items.append(f"Relationship: {profile['relationship_type']}")
-            if profile.get("duration_years"):
-                profile_items.append(f"Together: {profile['duration_years']} years")
-            if profile.get("has_kids") is not None:
-                profile_items.append(f"Kids: {'yes' if profile['has_kids'] else 'no'}")
-            if profile.get("message_count"):
-                profile_items.append(f"Messages: {profile['message_count']}")
-            if profile_items:
-                parts.append("\n📋 <b>Profile</b>\n")
-                for item in profile_items:
-                    parts.append(f"  {item}\n")
-
-        if not private_facts and not shared_facts:
-            parts.append(f"\n{t(lang, 'whatdoyouknow_empty')}")
-            return [BotResponse("".join(parts))]
-
-        all_facts = private_facts + shared_facts
-
-        parts = [t(lang, "whatdoyouknow_header")]
-
-        # Group by memory kind
-        kind_order = ["core", "working", "partner_view", "shared"]
-        kind_i18n = {
-            "core": "kind_core",
-            "working": "kind_working",
-            "partner_view": "kind_partner_view",
-            "shared": "kind_shared",
-        }
-        status_i18n = {
-            "active": "status_active",
-            "improving": "status_improving",
-            "resolved": "status_resolved",
-            "outdated": "status_outdated",
-        }
-
-        for kind in kind_order:
-            facts_of_kind = [
-                f for f in all_facts
-                if (f.get("kind") or "working") == kind
-            ]
-            if not facts_of_kind:
-                continue
-
-            header_key = kind_i18n.get(kind, "kind_working")
-            parts.append(f"\n<b>{t(lang, header_key)}</b> ({len(facts_of_kind)})\n")
-
-            for f in facts_of_kind:
-                age = format_relative_time(f.get("created_at"))
-                status = f.get("status") or "active"
-                status_label = t(lang, status_i18n.get(status, "status_active"))
-                vis = f["visibility"]
-                vis_icon = "🔓" if vis == "shared" else "🔒"
-                line = f"  [{f['id']}] {f['text']}"
-                # Add status if not active (active is the default, don't clutter)
-                if status != "active":
-                    line += f" <i>({status_label})</i>"
-                line += f" {vis_icon} <i>{age}</i>\n"
-                parts.append(line)
-                self._append_fact_expiry(parts, f, lang)
-
-        # Buttons: share/unshare + pin-to-core + archive
-        recent = sorted(all_facts, key=lambda f: f["id"], reverse=True)[:_MAX_SHARE_BUTTONS]
-        if len(all_facts) > len(recent):
-            parts.append(t(lang, "whatdoyouknow_more", count=len(all_facts) - len(recent)))
-        buttons: list[list[InlineButton]] = []
-        row: list[InlineButton] = []
-        for f in recent:
-            # Share/unshare toggle
-            key = "btn_unshare_fact" if f["visibility"] == "shared" else "btn_share_fact"
-            row.append(InlineButton(t(lang, key, id=f["id"]), f"fv:{f['id']}"))
-            # Pin to core (only for working facts)
-            if (f.get("kind") or "working") == "working":
-                row.append(InlineButton(t(lang, "btn_make_core", id=f["id"]), f"mc:confirm:{f['id']}"))
-            buttons.append(row)
-            row = []
-        return [BotResponse("".join(parts), buttons=buttons)]
 
     @staticmethod
     def _append_fact_expiry(parts: list[str], f: dict, lang: str) -> None:
@@ -428,6 +208,22 @@ class CommandsMixin:
 
         await db_mod.set_user_paused(self.db_path, user_id, True)
         return [BotResponse(t(lang, "paused_confirm"))]
+
+    # ── /password ────────────────────────────────────────────────────────
+
+    async def handle_password(
+        self, user_id: int, arg: str | None
+    ) -> list[BotResponse]:
+        """Set the password used to log in to the companion app."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+        user = await db_mod.ensure_user(self.db_path, user_id)
+        lang = user.get("lang") or "en"
+        value = (arg or "").strip()
+        if not value:
+            return [BotResponse(t(lang, "password_usage"))]
+        await db_mod.set_password(self.db_path, user_id, value)
+        return [BotResponse(t(lang, "password_set"))]
 
     # ── /resume ──────────────────────────────────────────────────────────
 
@@ -581,6 +377,131 @@ class CommandsMixin:
             return [BotResponse(t(lang, "forget_done", id=fact_id))]
         return [BotResponse(t(lang, "forget_not_found"))]
 
+    # ── /share and /private (bulk visibility by tag) ─────────────────────
+
+    @staticmethod
+    def _facts_with_tag(facts: list[dict], tag: str) -> list[dict]:
+        from pairtner.storage.tagfmt import parse_fact_tags
+        if tag == "all":
+            return list(facts)
+        return [f for f in facts if tag in parse_fact_tags(f.get("tag"))]
+
+    async def handle_share(
+        self, user_id: int, arg: str | None
+    ) -> list[BotResponse]:
+        """Bulk-flip private facts to shared by tag (``/share <tag>|all``).
+
+        The first call lists what would be shared; repeating the same command
+        confirms. A catch-up summary fact is created for the partner context.
+        """
+        from pairtner.storage import facts as facts_mod
+
+        if not is_user_allowed(self.config, user_id):
+            return []
+        lang = await self._get_lang(user_id)
+        tag = (arg or "").strip().lower().lstrip("#")
+        if not tag:
+            return [BotResponse(t(lang, "share_usage"))]
+
+        pending = self._visibility_confirm
+        private = await db_mod.get_active_facts(self.db_path, user_id, "private")
+        matched = self._facts_with_tag(private, tag)
+        if not matched:
+            pending.pop(user_id, None)
+            return [BotResponse(t(lang, "share_none", tag=tag))]
+
+        key = ("share", tag)
+        if pending.get(user_id) != key:
+            pending[user_id] = key
+            lines = "".join(f"  • {f['text']}\n" for f in matched)
+            return [BotResponse(t(
+                lang, "share_confirm", tag=tag, count=len(matched), facts=lines))]
+        pending.pop(user_id, None)
+
+        texts = [f["text"] for f in matched]
+        count = 0
+        for f in matched:
+            if await facts_mod.set_fact_visibility(
+                self.db_path, f["id"], user_id, "shared"
+            ):
+                count += 1
+        if tag == "all":
+            for pt in await facts_mod.get_private_tags(self.db_path, user_id):
+                await facts_mod.remove_private_tag(self.db_path, user_id, pt)
+        else:
+            await facts_mod.remove_private_tag(self.db_path, user_id, tag)
+
+        summary = await self._summarize_for_partner(user_id, texts)
+        await facts_mod.add_fact(
+            self.db_path, user_id, summary, visibility="shared",
+            tag=None if tag == "all" else tag, kind="working",
+            relationship_id=await self._relationship_id_for(user_id),
+        )
+        return [BotResponse(t(lang, "share_done", count=count, tag=tag))]
+
+    async def handle_private(
+        self, user_id: int, arg: str | None
+    ) -> list[BotResponse]:
+        """Bulk-flip shared facts to private by tag (``/private <tag>|all``)."""
+        from pairtner.storage import facts as facts_mod
+        from pairtner.storage.tagfmt import parse_fact_tags
+
+        if not is_user_allowed(self.config, user_id):
+            return []
+        lang = await self._get_lang(user_id)
+        tag = (arg or "").strip().lower().lstrip("#")
+        if not tag:
+            return [BotResponse(t(lang, "private_usage"))]
+
+        shared = await db_mod.get_active_facts(self.db_path, user_id, "shared")
+        matched = self._facts_with_tag(shared, tag)
+        if not matched:
+            return [BotResponse(t(lang, "private_none", tag=tag))]
+
+        count = 0
+        for f in matched:
+            if await facts_mod.set_fact_visibility(
+                self.db_path, f["id"], user_id, "private"
+            ):
+                count += 1
+        if tag == "all":
+            tags = {x for f in matched for x in parse_fact_tags(f.get("tag"))}
+        else:
+            tags = {tag}
+        for tg in sorted(tags):
+            await facts_mod.add_private_tag(self.db_path, user_id, tg)
+
+        await facts_mod.add_fact(
+            self.db_path, user_id,
+            f"User marked [{tag}] as private. Exclude from partner context.",
+            visibility="private", tag=None if tag == "all" else tag,
+            kind="working",
+            relationship_id=await self._relationship_id_for(user_id),
+        )
+        return [BotResponse(t(lang, "private_done", count=count, tag=tag))]
+
+    async def _relationship_id_for(self, user_id: int) -> str | None:
+        user = await db_mod.get_user(self.db_path, user_id)
+        if user and user.get("partner_id"):
+            return make_relationship_id(user_id, user["partner_id"])
+        return None
+
+    async def _summarize_for_partner(self, user_id: int, texts: list[str]) -> str:
+        """LLM catch-up summary of newly shared facts; falls back to a join."""
+        joined = "; ".join(texts)
+        system = (
+            "You write one concise catch-up entry for a partner's context. "
+            "Reply with JSON containing the entry in the 'reply' field."
+        )
+        content = (
+            "Summarize these facts into one catch-up entry for the partner "
+            f"context: {joined}"
+        )
+        api_key = await self._get_couple_api_key(user_id)
+        result = await self.llm.generate(content, system, api_key_override=api_key)
+        reply = (result.get("reply") or "").strip()
+        return reply or joined
+
     # ── /export ──────────────────────────────────────────────────────────
 
     async def handle_export(
@@ -594,22 +515,19 @@ class CommandsMixin:
 
         # /export therapy → structured therapy report
         if arg and arg.strip().lower() == "therapy":
-            from pairtner.features.therapy_export import generate_therapy_report
+            from pairtner.features.therapy_export import build_therapy_notes
 
             user = await db_mod.get_user(self.db_path, user_id)
             if not user or not user.get("partner_id"):
                 return [BotResponse(t(lang, "not_paired"))]
 
-            generating_msg = t(lang, "export_therapy_generating")
-            report = await generate_therapy_report(
-                self.db_path, self.llm, user_id,
-            )
+            report = await build_therapy_notes(self.db_path, user_id)
             if not report:
                 return [BotResponse(t(lang, "export_therapy_empty"))]
 
             from datetime import datetime, timezone
             date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
-            filename = f"therapy_report_{date_str}.txt"
+            filename = f"therapy_report_{date_str}.md"
             return [BotResponse(
                 t(lang, "export_therapy_caption"),
                 document=(filename, report),
@@ -630,174 +548,6 @@ class CommandsMixin:
             t(lang, "export_caption", count=len(facts)),
             document=("my_facts.txt", content),
         )]
-
-    # ── /style (voice + mood) ─────────────────────────────────────────────
-
-    async def _handle_vibe_inner(
-        self, user_id: int, arg: str | None
-    ) -> list[BotResponse]:
-        """Show learned voice profile, maturity status, and allow manual trait overrides."""
-        import json as _json
-
-        if not is_user_allowed(self.config, user_id):
-            return []
-
-        lang = await self._get_lang(user_id)
-        profile = await db_mod.ensure_user_profile(self.db_path, user_id)
-
-        # /vibe set <trait> <value> — manual override
-        if arg and arg.strip().lower().startswith("set "):
-            parts = arg.strip().split(None, 2)
-            if len(parts) < 3:
-                return [BotResponse(t(lang, "vibe_set_usage"))]
-            trait = parts[1].lower()
-            value = parts[2].lower()
-            valid_traits = {
-                "register": ["casual", "formal", "mixed"],
-                "sentence_length": ["short", "medium", "long"],
-                "emoji_use": ["none", "light", "heavy"],
-                "humor": ["none", "light", "frequent"],
-                "directness": ["indirect", "balanced", "very_direct"],
-            }
-            if trait not in valid_traits:
-                return [BotResponse(t(lang, "vibe_set_invalid_trait"))]
-            if value not in valid_traits[trait]:
-                allowed = ", ".join(valid_traits[trait])
-                return [BotResponse(t(lang, "vibe_set_invalid_value", trait=trait, values=allowed))]
-            # Load existing or create empty
-            raw = profile.get("learned_voice")
-            try:
-                traits = _json.loads(raw) if raw else {}
-            except (_json.JSONDecodeError, TypeError):
-                traits = {}
-            traits[trait] = value
-            await db_mod.update_learned_voice(
-                self.db_path, user_id, _json.dumps(traits),
-            )
-            return [BotResponse(t(lang, "vibe_set_success", trait=trait, value=value))]
-
-        # Show current vibe profile
-        msg_count = profile.get("message_count") or 0
-        threshold = getattr(self.config, "voice_learn_after_messages", 10)
-        is_mature = msg_count >= threshold
-
-        parts_out = [t(lang, "vibe_header")]
-
-        if is_mature:
-            parts_out.append(t(lang, "vibe_mature", count=msg_count))
-        else:
-            parts_out.append(t(lang, "vibe_not_mature", count=msg_count, threshold=threshold))
-
-        raw = profile.get("learned_voice")
-        if raw:
-            try:
-                traits = _json.loads(raw)
-                if isinstance(traits, dict):
-                    for k, v in traits.items():
-                        parts_out.append(t(lang, "vibe_trait_line", trait=k, value=v))
-            except (_json.JSONDecodeError, TypeError):
-                pass
-
-        # Also show static voice info
-        voice = profile.get("default_voice") or "casual_en"
-        intensity = profile.get("voice_intensity", 0.5)
-        voice_labels = {
-            "casual_en": "Casual English",
-            "telugu": "Telugu",
-            "hindi": "Hindi",
-            "formal_en": "Formal English",
-        }
-        voice_display = voice_labels.get(voice, voice)
-        parts_out.append(
-            "\n" + t(lang, "style_current", voice=voice_display, intensity=intensity)
-        )
-
-        voice_buttons = [
-            InlineButton("🗣️ Casual EN", "sv:casual_en"),
-            InlineButton("🗣️ Telugu", "sv:telugu"),
-            InlineButton("🗣️ Hindi", "sv:hindi"),
-            InlineButton("🗣️ Formal EN", "sv:formal_en"),
-        ]
-        intensity_buttons = [
-            InlineButton("Light 0.3", "si:0.3"),
-            InlineButton("Medium 0.5", "si:0.5"),
-            InlineButton("Deep 0.8", "si:0.8"),
-        ]
-
-        return [BotResponse("".join(parts_out), buttons=[voice_buttons, intensity_buttons])]
-
-    async def handle_style(
-        self, user_id: int, arg: str | None
-    ) -> list[BotResponse]:
-        """Unified style command: /style [voice|mood|set|<mood_name>].
-
-        - /style          → show voice profile + current mood
-        - /style voice     → same as old /vibe (voice settings)
-        - /style mood      → show current mood
-        - /style mood <x>  → set mood (e.g. /style mood gentle)
-        - /style set <trait> <value> → manual voice trait override
-        """
-        if not is_user_allowed(self.config, user_id):
-            return []
-
-        sub = (arg or "").strip().lower()
-
-        # /style mood ... → delegate to mood handler
-        if sub.startswith("mood"):
-            mood_arg = sub[4:].strip() or None
-            return await self._handle_mood_inner(user_id, mood_arg)
-
-        # /style set ... → delegate to vibe set
-        if sub.startswith("set "):
-            return await self._handle_vibe_inner(user_id, arg)
-
-        # Check if arg is a known mood name (shortcut: /style gentle)
-        if sub and sub in self.config.mood_styles:
-            return await self._handle_mood_inner(user_id, sub)
-
-        # Default: show voice profile
-        return await self._handle_vibe_inner(user_id, arg)
-
-    # ── mood (internal, called by /style mood) ────────────────────────────
-
-    async def _handle_mood_inner(
-        self, user_id: int, arg: str | None
-    ) -> list[BotResponse]:
-        """Show or set the user's current mood."""
-        if not is_user_allowed(self.config, user_id):
-            return []
-
-        lang = await self._get_lang(user_id)
-
-        if not arg or not arg.strip():
-            # Show current mood
-            active = await db_mod.get_active_mood(self.db_path, user_id)
-            if not active:
-                return [BotResponse(t(lang, "mood_none"))]
-            expires = active.get("expires_at", "")
-            return [BotResponse(t(
-                lang, "mood_current",
-                mood=active["mood"], expires=expires,
-            ))]
-
-        mood = arg.strip().lower()
-        valid_moods = set(self.config.mood_styles.keys())
-        if mood not in valid_moods:
-            return [BotResponse(t(lang, "mood_usage"))]
-
-        hours = self.config.mood_default_expiry_hours
-        expires_at = _to_iso(
-            datetime.now(timezone.utc) + timedelta(hours=hours)
-        )
-
-        style = self.config.mood_styles.get(mood, {})
-        await db_mod.set_user_mood(
-            self.db_path, user_id, mood, expires_at,
-            dampening_override=style.get("dampening_override"),
-            response_length=style.get("response_length", "normal"),
-        )
-
-        return [BotResponse(t(lang, "mood_set", mood=mood, hours=hours))]
 
     # ── /goal ────────────────────────────────────────────────────────────
 
@@ -933,78 +683,106 @@ class CommandsMixin:
     async def handle_settings(
         self, user_id: int, arg: str | None = None
     ) -> list[BotResponse]:
-        """Show an interactive settings menu with inline buttons."""
+        """Show a plain-text summary of current preferences (no buttons)."""
         if not is_user_allowed(self.config, user_id):
             return []
 
         lang = await self._get_lang(user_id)
+        profile = await db_mod.ensure_user_profile(self.db_path, user_id)
 
-        buttons = [
-            [
-                InlineButton(t(lang, "settings_voice"), "stv"),
-                InlineButton(t(lang, "settings_dampening"), "std"),
-            ],
-            [
-                InlineButton(t(lang, "settings_goals"), "stg"),
-                InlineButton(t(lang, "settings_profile"), "stp"),
-            ],
-            [
-                InlineButton(t(lang, "settings_mood"), "stm"),
-            ],
+        lines = [t(lang, "settings_header")]
+
+        # Preferences remembered as core facts
+        try:
+            facts = await db_mod.get_facts(self.db_path, user_id)
+        except Exception:  # noqa: BLE001 - summary must never break /settings
+            logger.warning("settings: could not load facts", exc_info=True)
+            facts = []
+        prefs = [
+            f for f in facts
+            if f.get("kind") == "core" and _PREF_RE.search(f.get("text") or "")
         ]
+        if prefs:
+            lines.append("\n<b>" + t(lang, "settings_prefs_title") + "</b>")
+            lines.extend(f"• {f['text']}" for f in prefs[:10])
 
-        return [BotResponse(t(lang, "settings_header"), buttons=buttons)]
-
-    # ── /remember ────────────────────────────────────────────────────────
-
-    async def handle_remember(self, user_id: int) -> list[BotResponse]:
-        """Return a random positive shared memory."""
-        if not is_user_allowed(self.config, user_id):
-            return []
-
-        import random
-
-        lang = await self._get_lang(user_id)
-        user = await db_mod.get_user(self.db_path, user_id)
-        if not user or not user.get("partner_id"):
-            return [BotResponse(t(lang, "not_paired"))]
-
-        partner_id = user["partner_id"]
-        positive_facts = await db_mod.get_positive_shared_facts(
-            self.db_path, user_id, partner_id,
+        # Current tuning
+        relay_mode = await db_mod.get_user_preference(
+            self.db_path, user_id, "relay_mode", default="review",
         )
+        level = profile.get("dampening_base")
+        lines.append("\n<b>" + t(lang, "settings_current_title") + "</b>")
+        lines.append(f"• relay: {relay_mode}")
+        if level is not None:
+            lines.append(f"• softening: {level:.1f}")
+        user_model = await self._get_user_model(user_id)
+        lines.append(
+            f"• model: {user_model or self._default_model_name() + ' (default)'}"
+        )
+        from pairtner.core.memory import SETTINGS_META_PREFIX
 
-        if not positive_facts:
-            return [BotResponse(t(lang, "remember_empty"))]
+        nudge_vals = {}
+        for key in (
+            "nudge_frequency", "nudge_quiet_start", "nudge_quiet_end",
+            "nudge_skip_weekends",
+        ):
+            nudge_vals[key] = await db_mod.get_user_preference(
+                self.db_path, user_id, SETTINGS_META_PREFIX + key, default=None,
+            )
+        lines.append(f"• nudge_frequency: {nudge_vals['nudge_frequency'] or 'daily'}")
+        start, end = nudge_vals["nudge_quiet_start"], nudge_vals["nudge_quiet_end"]
+        if start and end:
+            lines.append(f"• nudge quiet hours: {start}–{end}")
+        if nudge_vals["nudge_skip_weekends"] == "true":
+            lines.append("• nudges: skipped on weekends")
 
-        fact = random.choice(positive_facts)
-        header = t(lang, "remember_header")
-        item = t(lang, "remember_item", text=fact["text"])
-        return [BotResponse(f"{header}\n{item}")]
+        lines.append("\n" + t(lang, "settings_footer"))
+        return [BotResponse("\n".join(lines))]
 
     # ── /mode ──────────────────────────────────────────────────────────
 
     async def handle_mode(self, user_id: int, arg: str | None) -> list[BotResponse]:
-        """Switch between mediator (third-person) and voice (first-person) mode."""
+        """Show/switch mode.
+
+        ``/mode solo|couple`` switches the account between personal-journal and
+        couple use. ``/mode mediator|voice`` sets the relay drafting style.
+        """
         if not is_user_allowed(self.config, user_id):
             return []
 
-        lang = await self._get_lang(user_id)
-        valid_modes = {"mediator", "voice"}
+        await db_mod.ensure_user(
+            self.db_path, user_id, mode=self._default_mode,
+        )
+        choice = (arg or "").strip().lower()
 
-        if not arg or arg.strip().lower() not in valid_modes:
-            # Show current mode
+        if choice in ("solo", "couple"):
+            await db_mod.set_user_mode(self.db_path, user_id, choice)
+            if choice == "solo":
+                return [BotResponse(
+                    "🧘 Switched to <b>solo</b> mode. I'm now your personal "
+                    "journal and coach. Nudges, relays and partner insights are "
+                    "off. Switch back with /mode couple."
+                )]
+            return [BotResponse(
+                "💞 Switched to <b>couple</b> mode. Partner features "
+                "(relay, nudges, mediation) are back on."
+            )]
+
+        if choice not in ("mediator", "voice"):
             current = await db_mod.get_user_preference(
                 self.db_path, user_id, "mode", default="mediator",
             )
+            account = await db_mod.get_user_mode(self.db_path, user_id)
             return [BotResponse(
-                f"🎭 Current mode: <b>{current}</b>\n\n"
-                "<b>mediator</b> — I speak as a third party, helping you communicate\n"
-                "<b>voice</b> — I write as you, in your voice (relays sound like they came from you)\n\n"
-                "Switch with: /mode mediator  or  /mode voice"
+                f"🎭 Account mode: <b>{account}</b> · relay style: <b>{current}</b>\n\n"
+                "<b>solo</b> — personal journal/coach, no partner features\n"
+                "<b>couple</b> — paired features on\n"
+                "<b>mediator</b> — relays written as a neutral third party\n"
+                "<b>voice</b> — relays written as you, in first person\n\n"
+                "Switch with: /mode solo, /mode couple, /mode mediator or /mode voice"
             )]
 
-        mode = arg.strip().lower()
+        mode = choice
         await db_mod.set_user_preference(self.db_path, user_id, "mode", mode)
 
         if mode == "voice":
@@ -1013,96 +791,10 @@ class CommandsMixin:
                 "Relay drafts will now be written in first person, "
                 "as if coming directly from you."
             )]
-        else:
-            return [BotResponse(
-                "🎭 Switched to <b>mediator</b> mode.\n"
-                "I'll speak as a neutral third party when drafting relays."
-            )]
-
-    # ── /yolo ──────────────────────────────────────────────────────────
-
-    async def handle_yolo(self, user_id: int, arg: str | None) -> list[BotResponse]:
-        """Toggle yolo mode — auto-send relays without review prompts."""
-        if not is_user_allowed(self.config, user_id):
-            return []
-
-        lang = await self._get_lang(user_id)
-        current = await db_mod.get_user_preference(
-            self.db_path, user_id, "relay_mode", default="review",
-        )
-
-        if not arg or arg.strip().lower() not in ("on", "off"):
-            status = "🟢 ON" if current == "yolo" else "🔴 OFF"
-            return [BotResponse(
-                f"🚀 Yolo mode: {status}\n\n"
-                "When ON: relay drafts auto-send after cooldown (no review).\n"
-                "The AI still blocks unsafe messages (crisis, escalation).\n\n"
-                "Toggle: /yolo on  or  /yolo off"
-            )]
-
-        if arg.strip().lower() == "on":
-            await db_mod.set_user_preference(self.db_path, user_id, "relay_mode", "yolo")
-            return [BotResponse(
-                "🚀 Yolo mode <b>ON</b>.\n"
-                "Relay drafts will auto-send after cooldown — no more review prompts.\n"
-                "I'll still block anything that looks unsafe. /yolo off to go back."
-            )]
-        else:
-            await db_mod.set_user_preference(self.db_path, user_id, "relay_mode", "review")
-            return [BotResponse(
-                "🔒 Yolo mode <b>OFF</b>.\n"
-                "Back to review-before-send. You'll approve each relay."
-            )]
-
-    # ── /review ────────────────────────────────────────────────────────
-
-    async def handle_review(self, user_id: int) -> list[BotResponse]:
-        """Show a curated memory review — core + important working memories."""
-        if not is_user_allowed(self.config, user_id):
-            return []
-
-        lang = await self._get_lang(user_id)
-        all_facts = await db_mod.get_active_facts(self.db_path, user_id)
-
-        core_facts = [f for f in all_facts if (f.get("kind") or "working") == "core"]
-        working_active = [
-            f for f in all_facts
-            if (f.get("kind") or "working") == "working"
-            and (f.get("status") or "active") == "active"
-        ]
-
-        if not core_facts and not working_active:
-            return [BotResponse(t(lang, "review_empty"))]
-
-        parts = [t(lang, "review_header")]
-
-        if core_facts:
-            parts.append(t(lang, "review_core_section"))
-            for f in core_facts:
-                parts.append(f"  [{f['id']}] {f['text']}\n")
-
-        if working_active:
-            parts.append(t(lang, "review_working_section"))
-            # Show most recent 10 working memories
-            recent_working = sorted(working_active, key=lambda x: x["id"], reverse=True)[:10]
-            for f in recent_working:
-                age = format_relative_time(f.get("created_at"))
-                parts.append(f"  [{f['id']}] {f['text']} <i>({age})</i>\n")
-
-        parts.append(t(lang, "review_footer"))
-
-        # Buttons: forget + make-core for working, forget for core
-        buttons: list[list[InlineButton]] = []
-        shown = (core_facts + working_active)[:_MAX_SHARE_BUTTONS]
-        for f in shown:
-            row: list[InlineButton] = []
-            kind = f.get("kind") or "working"
-            if kind == "working":
-                row.append(InlineButton(t(lang, "btn_make_core", id=f["id"]), f"mc:confirm:{f['id']}"))
-            row.append(InlineButton(t(lang, "btn_archive", id=f["id"]), f"ar:{f['id']}"))
-            buttons.append(row)
-
-        return [BotResponse("".join(parts), buttons=buttons)]
+        return [BotResponse(
+            "🎭 Switched to <b>mediator</b> mode.\n"
+            "I'll speak as a neutral third party when drafting relays."
+        )]
 
     # ── /search ──────────────────────────────────────────────────────────
 
@@ -1166,41 +858,6 @@ class CommandsMixin:
             ) as cur:
                 return rel_id if await cur.fetchone() else None
 
-    # ── /conflicts ───────────────────────────────────────────────────────
-
-    async def handle_conflicts(self, user_id: int) -> list[BotResponse]:
-        """Show open conflicts for the user's couple."""
-        if not is_user_allowed(self.config, user_id):
-            return []
-
-        lang = await self._get_lang(user_id)
-        user = await db_mod.get_user(self.db_path, user_id)
-        if not user or not user.get("partner_id"):
-            return [BotResponse(t(lang, "not_paired"))]
-
-        couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
-        conflicts = await db_mod.get_open_conflicts(self.db_path, couple_id)
-
-        if not conflicts:
-            return [BotResponse(t(lang, "conflicts_empty"))]
-
-        parts = [t(lang, "conflicts_header") + "\n"]
-        for c in conflicts:
-            duration = format_relative_time(c.get("opened_at"))
-            import json
-            try:
-                relay_ids = json.loads(c.get("relay_ids") or "[]")
-            except (json.JSONDecodeError, TypeError):
-                relay_ids = []
-            parts.append(t(
-                lang, "conflicts_item",
-                theme=c["theme"],
-                duration=duration,
-                relay_count=len(relay_ids),
-            ))
-
-        return [BotResponse("".join(parts))]
-
     # ── /usage ───────────────────────────────────────────────────────────
 
     async def handle_usage(
@@ -1236,80 +893,121 @@ class CommandsMixin:
 
         return [BotResponse("".join(parts))]
 
-    # ── /timeline ────────────────────────────────────────────────────────
+    # ── /topics ──────────────────────────────────────────────────────────
 
-    async def handle_timeline(
-        self, user_id: int, arg: str | None
+    async def handle_topics(self, user_id: int) -> list[BotResponse]:
+        """List the user's topics (fact tags) by recency."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+        rows = await db_mod.get_topic_index(self.db_path, user_id)
+        if not rows:
+            return [BotResponse("No topics yet. Keep chatting and I'll build your index.")]
+        lines = ["🗂 Your topics:\n"]
+        for r in rows:
+            last = str(r["last_discussed"] or "")[:10]
+            priv = f", {r['private_count']} private" if r["private_count"] else ""
+            lines.append(
+                f"• {r['topic']} — {r['mention_count']} mention(s){priv}, last {last}"
+            )
+        return [BotResponse("\n".join(lines))]
+
+    # ── /debug (no args) and /warnings ───────────────────────────────────
+
+    async def handle_memory_debug(self, user_id: int) -> list[BotResponse]:
+        """Memory state: fact counts, date span, FTS5, summaries, pack, LLM."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+        from pairtner import pack as pack_mod
+        from pairtner.core.diagnostics import collect_debug, format_debug
+
+        data = await collect_debug(self.db_path, user_id)
+        p = pack_mod.current()
+        cfg = self.config
+        provider = getattr(cfg, "llm_provider", "") or "gemini"
+        model = getattr(cfg, "llm_model_default", "") or getattr(cfg, "model_default", "")
+        return [BotResponse(format_debug(
+            data, pack_name=p.name, pack_version=p.version,
+            provider=provider, model=model,
+        ))]
+
+    async def handle_warnings(self, user_id: int) -> list[BotResponse]:
+        """Memory quality issues: contradictions, duplicates, stale, orphans, gaps."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+        from pairtner.core.diagnostics import collect_warnings, format_warnings
+
+        data = await collect_warnings(self.db_path, user_id)
+        return [BotResponse(format_warnings(data))]
+
+    # ── /rewrite ─────────────────────────────────────────────────────────
+
+    async def handle_rewrite(
+        self, user_id: int, arg: str | None = None
     ) -> list[BotResponse]:
-        """Show the couple's relationship timeline events."""
+        """Rewrite working facts via LLM for clarity and conciseness.
+
+        /rewrite       — rewrite all working facts (up to 20)
+        /rewrite <id>  — rewrite a single fact by ID
+        """
         if not is_user_allowed(self.config, user_id):
             return []
 
-        lang = await self._get_lang(user_id)
-        user = await db_mod.get_user(self.db_path, user_id)
-        if not user or not user.get("partner_id"):
-            return [BotResponse(t(lang, "not_paired"))]
-
-        couple_id = db_mod.make_couple_id(user_id, user["partner_id"])
-
-        _emoji = {
-            "paired": "✨",
-            "conflict": "⚡",
-            "resolution": "✅",
-            "milestone": "🏆",
-            "goal": "🎯",
-            "relay": "💌",
-            "checkin": "🔄",
-        }
-
-        if arg and arg.strip().lower() == "month":
-            # Current month filter
-            now = datetime.now(timezone.utc)
-            start = now.strftime("%Y-%m-01")
-            # Next month start
-            if now.month == 12:
-                end = f"{now.year + 1}-01-01"
-            else:
-                end = f"{now.year}-{now.month + 1:02d}-01"
-
-            events = await db_mod.get_timeline_events_range(
-                self.db_path, couple_id, start, end,
-            )
-            if not events:
-                return [BotResponse(t(lang, "timeline_empty"))]
-
-            month_name = now.strftime("%B %Y")
-            parts = [t(lang, "timeline_month_header", month=month_name) + "\n"]
-            for ev in events:
-                emoji = _emoji.get(ev["event_type"], "📌")
-                try:
-                    dt = datetime.fromisoformat(ev["created_at"])
-                    date_str = dt.strftime("%b %d")
-                except (ValueError, TypeError):
-                    date_str = "?"
-                parts.append(
-                    t(lang, "timeline_event_item",
-                      emoji=emoji, date=date_str, summary=ev["summary"])
-                )
-            return [BotResponse("".join(parts))]
-
-        # Default: last 20 events
-        events = await db_mod.get_timeline_events(
-            self.db_path, couple_id, limit=20,
+        REWRITE_SYSTEM = (
+            "You are a fact editor. Rewrite each fact to be clear, concise, "
+            "and in third person. Keep the meaning identical. Remove filler. "
+            "Respond with ONLY valid JSON: {\"rewrites\": [{\"id\": N, \"text\": \"improved text\"}]}"
         )
-        if not events:
-            return [BotResponse(t(lang, "timeline_empty"))]
 
-        parts = [t(lang, "timeline_header") + "\n"]
-        for ev in reversed(events):  # chronological order
-            emoji = _emoji.get(ev["event_type"], "📌")
+        facts = await db_mod.get_facts(self.db_path, user_id)
+        working = [f for f in facts if f.get("kind") == "working" and f.get("status") == "active"]
+
+        if arg and arg.strip().isdigit():
+            target_id = int(arg.strip())
+            working = [f for f in working if f["id"] == target_id]
+            if not working:
+                return [BotResponse("No working fact found with that ID.")]
+
+        if not working:
+            return [BotResponse("No working facts to rewrite.")]
+
+        batch = working[:20]
+        lines = [f"[{f['id']}] {f['text']}" for f in batch]
+        user_msg = "Rewrite these facts:\n" + "\n".join(lines)
+
+        try:
+            result = await self.llm.generate(user_msg, REWRITE_SYSTEM)
+            import json
+            reply = result.get("reply", "")
             try:
-                dt = datetime.fromisoformat(ev["created_at"])
-                date_str = dt.strftime("%b %d")
-            except (ValueError, TypeError):
-                date_str = "?"
-            parts.append(
-                t(lang, "timeline_event_item",
-                  emoji=emoji, date=date_str, summary=ev["summary"])
-            )
-        return [BotResponse("".join(parts))]
+                data = json.loads(reply)
+            except (json.JSONDecodeError, TypeError):
+                data = result
+            rewrites = data.get("rewrites", [])
+            if not rewrites:
+                return [BotResponse("LLM returned no rewrites. Facts unchanged.")]
+
+            updated = 0
+            details = []
+            valid_ids = {f["id"] for f in batch}
+            for rw in rewrites:
+                fid = rw.get("id")
+                new_text = (rw.get("text") or "").strip()
+                if fid in valid_ids and new_text:
+                    await db_mod.update_fact_text(self.db_path, fid, new_text)
+                    old = next((f["text"] for f in batch if f["id"] == fid), "?")
+                    details.append(f"#{fid}: {old} → {new_text}")
+                    updated += 1
+
+            if not updated:
+                return [BotResponse("No facts were rewritten (LLM output didn't match).")]
+
+            msg = f"✏️ Rewrote {updated} fact{'s' if updated != 1 else ''}:\n\n"
+            msg += "\n".join(details[:10])
+            if len(details) > 10:
+                msg += f"\n...and {len(details) - 10} more."
+            return [BotResponse(msg)]
+
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("rewrite failed")
+            return [BotResponse("Could not rewrite facts right now. Try again later.")]

@@ -14,6 +14,7 @@ from typing import Any
 
 from pairtner.db import make_couple_id
 from pairtner.dashboard.store import NotFound
+from pairtner.storage.tagfmt import parse_fact_tags
 
 MAX_TIMELINE_EVENTS = 300
 _COUPLE_RE = re.compile(r"^(\d+):(\d+)$")
@@ -26,6 +27,11 @@ def _scalar(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> int:
 def _group(conn: sqlite3.Connection, table: str, col: str) -> dict[str, int]:
     # table / col are module constants, never user input.
     rows = conn.execute(f"SELECT {col}, COUNT(*) FROM {table} GROUP BY {col}")
+    return {r[0]: r[1] for r in rows}
+
+
+def _group_where(conn: sqlite3.Connection, table: str, col: str, where: str) -> dict[str, int]:
+    rows = conn.execute(f"SELECT {col}, COUNT(*) FROM {table} WHERE {where} GROUP BY {col}")
     return {r[0]: r[1] for r in rows}
 
 
@@ -57,11 +63,11 @@ def overview(conn: sqlite3.Connection) -> dict[str, Any]:
         "facts_active": _scalar(
             conn, "SELECT COUNT(*) FROM facts WHERE archived_at IS NULL"
         ),
-        "pending_by_status": _group(conn, "pending", "status"),
-        "batches_by_status": _group(conn, "pending_batch", "status"),
+        "pending_by_status": _group(conn, "relay_queue", "status"),
+        "batches_by_status": _group(conn, "relay_batch", "status"),
         "conflicts_by_status": _group(conn, "conflicts", "status"),
-        "user_goals_by_status": _group(conn, "user_goals", "status"),
-        "shared_goals_by_status": _group(conn, "shared_goals", "status"),
+        "user_goals_by_status": _group_where(conn, "goals", "status", "scope = 'personal'"),
+        "shared_goals_by_status": _group_where(conn, "goals", "status", "scope = 'shared'"),
         "usage_today": _scalar(
             conn, "SELECT SUM(count) FROM usage WHERE date = ?", (today,)
         ),
@@ -110,9 +116,9 @@ def user_activity(conn: sqlite3.Connection, show_raw: bool) -> list[dict[str, An
         "SELECT u.tg_id, u.name, u.partner_id, u.paused, u.created_at, "
         " (SELECT COUNT(*) FROM messages m WHERE m.user_id = u.tg_id) AS messages, "
         " (SELECT COUNT(*) FROM facts f WHERE f.owner_id = u.tg_id) AS facts, "
-        " (SELECT COUNT(*) FROM pending p WHERE p.sender_id = u.tg_id) AS relays_sent, "
-        " (SELECT COUNT(*) FROM pending p WHERE p.receiver_id = u.tg_id) AS relays_received, "
-        " (SELECT COUNT(*) FROM user_goals g WHERE g.user_id = u.tg_id) AS goals, "
+        " (SELECT COUNT(*) FROM relay_queue p WHERE p.sender_id = u.tg_id) AS relays_sent, "
+        " (SELECT COUNT(*) FROM relay_queue p WHERE p.receiver_id = u.tg_id) AS relays_received, "
+        " (SELECT COUNT(*) FROM goals g WHERE g.user_id = u.tg_id) AS goals, "
         " (SELECT MAX(datetime(m.created_at)) FROM messages m "
         "   WHERE m.user_id = u.tg_id) AS last_seen "
         "FROM users u ORDER BY messages DESC, u.tg_id"
@@ -132,7 +138,7 @@ def queue(conn: sqlite3.Connection, show_raw: bool) -> dict[str, list[dict[str, 
             "SELECT id, sender_id, receiver_id, status, send_after, created_at, "
             "length(COALESCE(edited_draft, draft)) AS draft_len, "
             "COALESCE(edited_draft, draft) AS draft "
-            "FROM pending WHERE status IN ('awaiting_approval', 'approved') "
+            "FROM relay_queue WHERE status IN ('awaiting_approval', 'approved') "
             "ORDER BY datetime(created_at)"
         )
     ]
@@ -142,9 +148,9 @@ def queue(conn: sqlite3.Connection, show_raw: bool) -> dict[str, list[dict[str, 
         dict(r)
         for r in conn.execute(
             "SELECT b.id, b.sender_id, b.receiver_id, b.status, b.send_after, "
-            "b.created_at, (SELECT COUNT(*) FROM pending_batch_items i "
+            "b.created_at, (SELECT COUNT(*) FROM relay_batch_items i "
             "  WHERE i.batch_id = b.id) AS items "
-            "FROM pending_batch b "
+            "FROM relay_batch b "
             "WHERE b.status IN ('accumulating', 'reviewing', 'approved') "
             "ORDER BY datetime(b.created_at)"
         )
@@ -168,7 +174,7 @@ def goals(conn: sqlite3.Connection, show_raw: bool) -> dict[str, list[dict[str, 
     user_goals = []
     for r in conn.execute(
         "SELECT id, user_id, text, status, progress, created_at "
-        "FROM user_goals ORDER BY datetime(created_at) DESC"
+        "FROM goals ORDER BY datetime(created_at) DESC"
     ):
         d = dict(r)
         d["text"] = _text(d["text"], show_raw)
@@ -177,13 +183,13 @@ def goals(conn: sqlite3.Connection, show_raw: bool) -> dict[str, list[dict[str, 
     shared = []
     for r in conn.execute(
         "SELECT id, couple_id, created_by, text, status, progress, created_at "
-        "FROM shared_goals ORDER BY datetime(created_at) DESC"
+        "FROM goals ORDER BY datetime(created_at) DESC"
     ):
         d = dict(r)
         d["text"] = _text(d["text"], show_raw)
         d["progress"] = _text(d["progress"], show_raw)
         shared.append(d)
-    return {"user_goals": user_goals, "shared_goals": shared}
+    return {"goals": user_goals, "goals": shared}
 
 
 def couples(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -207,8 +213,8 @@ def couples(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 "timeline_events": _scalar(
                     conn, "SELECT COUNT(*) FROM timeline_events WHERE couple_id=?", (cid,)
                 ),
-                "shared_goals": _scalar(
-                    conn, "SELECT COUNT(*) FROM shared_goals WHERE couple_id=?", (cid,)
+                "goals": _scalar(
+                    conn, "SELECT COUNT(*) FROM goals WHERE couple_id=?", (cid,)
                 ),
             }
         )
@@ -239,17 +245,17 @@ def user_timeline(
         ev.append(_event(r["at"], "message", f"{r['role']} message ({r['n']} chars)",
                          r["content"], show_raw))
     for r in conn.execute(
-        "SELECT visibility, category, text, datetime(created_at) AS at "
+        "SELECT visibility, tag, text, datetime(created_at) AS at "
         "FROM facts WHERE owner_id=? ORDER BY id DESC LIMIT ?",
         (user_id, MAX_TIMELINE_EVENTS),
     ):
         ev.append(_event(r["at"], "fact",
-                         f"{r['visibility']} fact ({r['category'] or 'uncategorised'})",
+                         f"{r['visibility']} fact ({', '.join(parse_fact_tags(r['tag'])) or 'untagged'})",
                          r["text"], show_raw))
     for r in conn.execute(
         "SELECT id, sender_id, receiver_id, status, "
         "COALESCE(edited_draft, draft) AS draft, datetime(created_at) AS at "
-        "FROM pending WHERE sender_id=? OR receiver_id=? ORDER BY id DESC LIMIT ?",
+        "FROM relay_queue WHERE sender_id=? OR receiver_id=? ORDER BY id DESC LIMIT ?",
         (user_id, user_id, MAX_TIMELINE_EVENTS),
     ):
         direction = "sent" if r["sender_id"] == user_id else "received"
@@ -257,7 +263,7 @@ def user_timeline(
                          f"relay #{r['id']} {direction} ({r['status']})",
                          r["draft"], show_raw))
     for r in conn.execute(
-        "SELECT status, text, datetime(created_at) AS at FROM user_goals "
+        "SELECT status, text, datetime(created_at) AS at FROM goals "
         "WHERE user_id=? ORDER BY id DESC LIMIT ?",
         (user_id, MAX_TIMELINE_EVENTS),
     ):
@@ -302,7 +308,7 @@ def couple_timeline(
     for r in conn.execute(
         "SELECT id, sender_id, receiver_id, status, "
         "COALESCE(edited_draft, draft) AS draft, datetime(created_at) AS at "
-        "FROM pending WHERE (sender_id=? AND receiver_id=?) "
+        "FROM relay_queue WHERE (sender_id=? AND receiver_id=?) "
         "OR (sender_id=? AND receiver_id=?) ORDER BY id DESC LIMIT ?",
         (a, b, b, a, MAX_TIMELINE_EVENTS),
     ):
@@ -311,7 +317,7 @@ def couple_timeline(
                          f"({r['status']})", r["draft"], show_raw))
     for r in conn.execute(
         "SELECT id, status, text, datetime(created_at) AS at "
-        "FROM shared_goals WHERE couple_id=?",
+        "FROM goals WHERE couple_id=?",
         (couple_id,),
     ):
         ev.append(_event(r["at"], "goal", f"shared goal #{r['id']} ({r['status']})",
@@ -423,7 +429,7 @@ def recent_activity(
                          r["content"], show_raw))
     for r in conn.execute(
         "SELECT id, sender_id, receiver_id, status, COALESCE(edited_draft, draft) AS draft, "
-        "datetime(created_at) AS at FROM pending ORDER BY id DESC LIMIT ?", (limit,)
+        "datetime(created_at) AS at FROM relay_queue ORDER BY id DESC LIMIT ?", (limit,)
     ):
         ev.append(_event(r["at"], "relay",
                          f"relay #{r['id']} {r['sender_id']} -> {r['receiver_id']} "

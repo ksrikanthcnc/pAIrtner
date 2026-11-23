@@ -50,12 +50,12 @@ async def _seed(db_path: str) -> None:
     await add_shared_goal(db_path, c12, 1, f"{RAW}-shared-goal-12")
 
     conn = sqlite3.connect(db_path)
-    conn.execute("INSERT INTO pending_batch (id, sender_id, receiver_id) VALUES (1, 1, 2)")
-    conn.execute("INSERT INTO pending_batch (id, sender_id, receiver_id) VALUES (2, 3, 4)")
-    conn.execute("INSERT INTO pending_batch_items (batch_id, draft) VALUES (1, ?)", (f"{RAW}-item-1",))
-    conn.execute("INSERT INTO pending_batch_items (batch_id, draft) VALUES (2, ?)", (f"{RAW}-item-2",))
-    conn.execute("INSERT INTO user_goals (user_id, text) VALUES (1, ?)", (f"{RAW}-goal-1",))
-    conn.execute("INSERT INTO user_goals (user_id, text) VALUES (3, ?)", (f"{RAW}-goal-3",))
+    conn.execute("INSERT INTO relay_batch (id, sender_id, receiver_id) VALUES (1, 1, 2)")
+    conn.execute("INSERT INTO relay_batch (id, sender_id, receiver_id) VALUES (2, 3, 4)")
+    conn.execute("INSERT INTO relay_batch_items (batch_id, draft) VALUES (1, ?)", (f"{RAW}-item-1",))
+    conn.execute("INSERT INTO relay_batch_items (batch_id, draft) VALUES (2, ?)", (f"{RAW}-item-2",))
+    conn.execute("INSERT INTO goals (scope, user_id, created_by, text) VALUES ('personal', 1, 1, ?)", (f"{RAW}-goal-1",))
+    conn.execute("INSERT INTO goals (scope, user_id, created_by, text) VALUES ('personal', 3, 3, ?)", (f"{RAW}-goal-3",))
     conn.execute(
         "INSERT INTO checkins (couple_id, week_start, partner_a_id, partner_a_answers, "
         "partner_b_id, summary) VALUES (?, '2026-01-05', 1, ?, 2, ?)",

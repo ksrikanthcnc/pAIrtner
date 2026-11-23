@@ -57,6 +57,9 @@ class Config:
     cooldown_minutes: int = 15
     db_path: str = "pairtner.db"
     heavy_daily_cap: int = 10
+    # Default mode for NEW users: False = 'couple', True = 'solo' (personal
+    # journal/coach; no partner features). Set via SOLO_MODE=true.
+    solo_mode: bool = False
     allowed_user_ids: frozenset[int] = field(default_factory=frozenset)
     admin_user_ids: frozenset[int] = field(default_factory=frozenset)
     search_two_pass_threshold: int = 200
@@ -67,17 +70,21 @@ class Config:
     llm_reasoning_effort: str = ""
     llm_model_heavy: list[str] = field(default_factory=list)
 
+    # Summary/consolidation model override (use stronger model for summaries)
+    summary_model: str = ""  # empty = use default model
+
     # New tunables (FEAT-001)
     rate_limit_per_minute: int = 10
     rate_limit_per_day: int = 200
     delivery_check_interval_seconds: int = 30
     review_before_send: bool = True
+    bot_name: str = "Eko"
     prompt_pack: str = "packs/default"
     default_voice: str = "casual_en"
     default_voice_intensity: float = 0.5
 
     # New tunables (FEAT-002)
-    fact_categories: list[str] = field(
+    fact_tags: list[str] = field(
         default_factory=lambda: [
             "relationship", "household", "emotional", "work", "health", "other",
         ]
@@ -170,6 +177,8 @@ class Config:
     # "medium" = mid models (qwen3:8b, gemma3:12b): default settings
     # "high" = large models (qwen3:27b, gemini-flash): larger batches, richer prompts
     model_capability: str = "medium"
+    # Pre-computed rolling summaries (one per level) preferred in the prompt.
+    rolling_summary_enabled: bool = True
     summary_batch_size: int = 0  # 0 = auto based on model_capability (low=10, med=20, high=40)
 
     # Voice auto-adaptation (FEAT-002 batch5)
@@ -304,6 +313,9 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
             os.getenv("COOLDOWN_MINUTES", str(yaml_cfg.get("cooldown_minutes", 15)))
         ),
         db_path=os.getenv("DB_PATH", "pairtner.db"),
+        solo_mode=_parse_bool(
+            os.environ.get("SOLO_MODE"), yaml_cfg.get("solo_mode", False),
+        ),
         heavy_daily_cap=int(
             os.getenv("HEAVY_DAILY_CAP", str(yaml_cfg.get("heavy_daily_cap", 10)))
         ),
@@ -340,6 +352,7 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
             os.environ.get("REVIEW_BEFORE_SEND"),
             yaml_cfg.get("review_before_send", True),
         ),
+        bot_name=os.getenv("BOT_NAME", str(yaml_cfg.get("bot_name", "Eko"))),
         prompt_pack=os.getenv(
             "PROMPT_PACK", yaml_cfg.get("prompt_pack", "packs/default")
         ),
@@ -352,8 +365,8 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
                 str(yaml_cfg.get("default_voice_intensity", 0.5)),
             )
         ),
-        fact_categories=yaml_cfg.get(
-            "fact_categories",
+        fact_tags=yaml_cfg.get(
+            "fact_tags",
             ["relationship", "household", "emotional", "work", "health", "other"],
         ),
         cooldown_behavior=os.getenv(
@@ -563,6 +576,10 @@ def load_config(yaml_path: str = "settings.yaml") -> Config:
         therapy_export_enabled=_parse_bool(
             os.environ.get("THERAPY_EXPORT_ENABLED"),
             yaml_cfg.get("therapy_export", {}).get("enabled", True),
+        ),
+        rolling_summary_enabled=_parse_bool(
+            os.environ.get("ROLLING_SUMMARY_ENABLED"),
+            yaml_cfg.get("rolling_summary", {}).get("enabled", True),
         ),
         search_fts_threshold=int(
             os.getenv(

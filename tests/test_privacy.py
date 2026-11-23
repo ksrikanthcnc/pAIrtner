@@ -93,7 +93,7 @@ async def test_no_send_without_approval(test_db, paired_users):
     and send_after in the past — never 'awaiting_approval'."""
     a_id, b_id = paired_users
 
-    # Create pending with awaiting_approval (default)
+    # Create relay_queue with awaiting_approval (default)
     await create_pending(test_db, a_id, b_id, "Please hear me out")
 
     deliverable = await get_deliverable(test_db)

@@ -6,11 +6,13 @@ via the :class:`TagsMixin` base class.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from pairtner import db as db_mod
 from pairtner import pack
+from pairtner.llm import get_reply_text
 from pairtner.features.conflict_detector import detect_conflict_opening
 from pairtner.core.dampening import get_dampening_instruction, resolve_dampening
 from pairtner.core.memory import _has_v2_columns as _is_v2_db
@@ -19,12 +21,17 @@ from pairtner.features.nudge_injector import (
     mark_nudges_delivered,
     maybe_inject_camouflage,
 )
+from pairtner.features.nudge_prefs import apply_nudge_request
+from pairtner.config import is_user_allowed
 from pairtner.i18n import t
 from pairtner.storage.schema_v2 import make_relationship_id
 from pairtner.core.profile_updater import process_llm_extras
 from pairtner.storage.helpers import _to_iso
+from pairtner.storage.facts import get_private_tags
+from pairtner.storage.tagfmt import parse_fact_tags
 from pairtner.core.prompts import (
     build_blunt_prompt,
+    apply_solo_persona,
     build_chat_prompt,
     build_chat_prompt_v2,
     build_goals_section,
@@ -37,6 +44,10 @@ from pairtner.core.prompts import (
 )
 
 from .models import BotResponse, InlineButton
+
+logger = logging.getLogger(__name__)
+
+MODEL_PREF_KEY = "llm_model"
 
 
 class TagsMixin:
@@ -85,6 +96,14 @@ class TagsMixin:
             self.db_path, user_id, self.config, has_blunt_tag=has_blunt_tag,
         )
         return voice_text, dampening_instruction
+
+    async def _get_existing_tags(self, user_id: int) -> list[str]:
+        """Tags already used by this user and their partner."""
+        user = await db_mod.get_user(self.db_path, user_id)
+        partner_id = user.get("partner_id") if user else None
+        raw = await db_mod.get_couple_tags(self.db_path, user_id, partner_id)
+        # Rows hold JSON arrays (new) or plain strings (legacy): flatten, dedupe.
+        return sorted({tg for r in raw for tg in parse_fact_tags(r)})
 
     async def _get_partner_summary(self, user_id: int) -> str | None:
         """Build the partner perception summary block for prompts."""
@@ -141,8 +160,8 @@ class TagsMixin:
         await process_llm_extras(self.db_path, user_id, result, self.config)
 
         reply = result["reply"]
-        if count:
-            reply += "\n\n" + self._format_fact_saved(lang, count)
+        # Don't append fact-saved notices to regular chat — it breaks conversational flow.
+        # The LLM's reply IS the conversation. Use /debug to see extractions.
         responses = [BotResponse(reply)]
         responses.extend(self._drain_contradictions())
         return responses
@@ -344,8 +363,6 @@ class TagsMixin:
         await process_llm_extras(self.db_path, user_id, result, self.config)
 
         reply_text = t(lang, "blunt_disclaimer") + "\n\n" + result["reply"]
-        if count:
-            reply_text += "\n\n" + self._format_fact_saved(lang, count)
         responses = [BotResponse(reply_text)]
         responses.extend(self._drain_contradictions())
         return responses
@@ -364,19 +381,36 @@ class TagsMixin:
     ) -> list[BotResponse]:
         """Process a plain message (no tag) — chat, then optionally offer relay."""
         lang = await self._get_lang(user_id)
-        v2 = await self._build_ctx_v2(user_id, text)
+        # "nudge me less" / "no nudges on weekends": apply the setting now; the
+        # LLM still extracts the same statement as a core fact below.
+        await apply_nudge_request(self.db_path, user_id, text)
+        solo = await self._is_solo(user_id)
+        # Solo users never use the couple context (partner facts, nudges).
+        v2 = None if solo else await self._build_ctx_v2(user_id, text)
         voice_text, damp_instr = await self._get_enriched_style(user_id)
         goals_text = await self._get_goals_text(user_id)
+        existing_tags = await self._get_existing_tags(user_id)
+        private_tags = await get_private_tags(self.db_path, user_id)
         rel_id: str | None = None
         if v2 is not None:
             composed, rel_id = v2
+            # Get partner name for context section headers
+            _usr = await db_mod.get_user(self.db_path, user_id)
+            _partner_name = ""
+            if _usr and _usr.get("partner_id"):
+                _partner = await db_mod.get_user(self.db_path, _usr["partner_id"])
+                _partner_name = (_partner or {}).get("name", "")
             system, content = build_chat_prompt_v2(
                 composed, text, voice_text=voice_text,
                 dampening_instruction=damp_instr, goals_text=goals_text,
+                existing_tags=existing_tags, private_tags=private_tags,
+                partner_name=_partner_name,
             )
         else:
             ctx = await self._build_ctx(user_id, current_message=text)
-            partner_summary = await self._get_partner_summary(user_id)
+            partner_summary = None if solo else await self._get_partner_summary(user_id)
+            if solo:
+                ctx.partner_name = None
             smart_ctx = await build_smart_context(
                 self.db_path, user_id, text, self.config,
             )
@@ -386,12 +420,15 @@ class TagsMixin:
                 partner_summary=partner_summary,
                 goals_text=goals_text,
                 smart_ctx=smart_ctx,
+                existing_tags=existing_tags, private_tags=private_tags,
             )
 
         # v2 DB: nudge suggestions (v1-context fallback only; the composed v2
         # context already carries them) + camouflage questions.
         injected_nudges: list[int] = []
-        if await _is_v2_db(self.db_path):
+        if solo:
+            system = apply_solo_persona(system)
+        elif await _is_v2_db(self.db_path):
             if rel_id is None:
                 _u = await db_mod.get_user(self.db_path, user_id)
                 rel_id_n = (
@@ -406,19 +443,27 @@ class TagsMixin:
                 system = await maybe_inject_camouflage(self.db_path, user_id, system, rel_id)
 
         api_key = await self._get_couple_api_key(user_id)
+        user_model = await self._get_user_model(user_id)
+        model_kw = {"model": user_model} if user_model else {}
         await db_mod.log_message(
             self.db_path, user_id, "user", text, relationship_id=rel_id,
         )
         if rel_id is not None:
             result = await self._generate_with_tools(
-                user_id, content, system, api_key, rel_id,
+                user_id, content, system, api_key, rel_id, **model_kw,
             )
         else:
             result = await self.llm.generate(
-                content, system, api_key_override=api_key,
+                content, system, api_key_override=api_key, **model_kw,
+            )
+        if result.get("_parse_failed"):
+            result = await self._retry_json_repair(
+                result, content, system, api_key,
             )
         await db_mod.log_message(
-            self.db_path, user_id, "assistant", result["reply"], relationship_id=rel_id,
+            self.db_path, user_id, "assistant",
+            result["reply"] if result["reply"].strip() else "💭",
+            relationship_id=rel_id,
         )
         if injected_nudges:
             await mark_nudges_delivered(self.db_path, injected_nudges)
@@ -430,10 +475,11 @@ class TagsMixin:
         )
 
         # Fire-and-forget: auto-update profiles from LLM extras
-        await process_llm_extras(self.db_path, user_id, result, self.config)
+        extras = {**result, "partner_themes": []} if solo else result
+        await process_llm_extras(self.db_path, user_id, extras, self.config)
 
-        # Conflict detection (FEAT-002)
-        if self.config.conflicts_enabled and self.config.conflicts_auto_detect:
+        # Conflict detection (FEAT-002) -- partner feature, skipped in solo
+        if not solo and self.config.conflicts_enabled and self.config.conflicts_auto_detect:
             _usr = await db_mod.get_user(self.db_path, user_id)
             if _usr and _usr.get("partner_id"):
                 couple_id = db_mod.make_couple_id(user_id, _usr["partner_id"])
@@ -444,11 +490,10 @@ class TagsMixin:
                     await db_mod.create_conflict(self.db_path, couple_id, theme)
 
         # Soft read receipts: mark relays sent TO this user as acknowledged
-        await self._acknowledge_relays(user_id)
+        if not solo:
+            await self._acknowledge_relays(user_id)
 
-        reply_text = result["reply"]
-        if count:
-            reply_text += "\n\n" + self._format_fact_saved(lang, count)
+        reply_text = get_reply_text(result, fallback="💭")
 
         if self._last_settings_confirmation:
             reply_text += "\n\n" + self._last_settings_confirmation
@@ -461,7 +506,8 @@ class TagsMixin:
 
         # If user is paired and LLM suggested a relay, offer save/relay choice
         user = await db_mod.get_user(self.db_path, user_id)
-        if user and user.get("partner_id") and result.get("relay_draft"):
+        if (not solo and user and user.get("partner_id")
+                and result.get("relay_draft")):
             # Check if user is in yolo mode (auto-send)
             relay_mode = await db_mod.get_user_preference(
                 self.db_path, user_id, "relay_mode", default="review",
@@ -490,6 +536,29 @@ class TagsMixin:
                 await self._maybe_run_analysis(user_id)
                 return responses
 
+            # Simple informational relays skip review and become auto-nudges.
+            # Default to "info" when urgency is not set (most relays are informational).
+            urgency = result.get("relay_urgency") or "info"
+            if urgency == "info":
+                partner_id = user["partner_id"]
+                await db_mod.add_fact(
+                    self.db_path, user_id, result["relay_draft"], "shared",
+                    kind="working",
+                    msg_source="bot",
+                    nudge_type="communication",
+                    nudge_suggestion=result["relay_draft"],
+                    nudge_target_id=partner_id,
+                    nudge_cooldown_h=0,
+                    nudge_status="pending",
+                    relationship_id=make_relationship_id(user_id, partner_id),
+                )
+                responses = [BotResponse(
+                    reply_text + "\n\n" + t(lang, "relay_auto_nudged"),
+                )]
+                responses.extend(self._drain_contradictions())
+                await self._maybe_run_analysis(user_id)
+                return responses
+
             choice_id = uuid.uuid4().hex[:8]
             self._relay_choices[choice_id] = {
                 "user_id": user_id,
@@ -513,6 +582,8 @@ class TagsMixin:
 
         responses = [BotResponse(reply_text)]
         responses.extend(self._drain_contradictions())
+        if solo:
+            return responses  # no relay feedback / partner analysis in solo
 
         # Feedback check: after relay delivery, ask sender for feedback
         feedback_responses = await self._check_feedback(user_id, lang)
@@ -525,9 +596,29 @@ class TagsMixin:
 
     MAX_TOOL_ROUNDS = 2
 
+    async def _retry_json_repair(
+        self, failed: dict, content: str, system: str, api_key: str | None,
+    ) -> dict:
+        """Retry ONCE after a JSON parse failure; fall back to the raw result."""
+        error = failed.get("_parse_error", "invalid JSON")
+        repair = (
+            f"{content}\n\nYour previous response was not valid JSON. "
+            f"Error: {error}. Return ONLY valid JSON with no markdown fences."
+        )
+        try:
+            retry = await self.llm.generate(
+                repair, system, api_key_override=api_key,
+            )
+        except Exception:  # noqa: BLE001 - any provider failure keeps raw fallback
+            logger.warning("JSON repair retry failed", exc_info=True)
+            return failed
+        if retry.get("_parse_failed"):
+            return failed
+        return retry
+
     async def _generate_with_tools(
         self, user_id: int, content: str, system: str,
-        api_key: str | None, rel_id: str | None,
+        api_key: str | None, rel_id: str | None, model: str | None = None,
     ) -> dict:
         """LLM call offering ``search_memory``; execute requested tools and
         re-call (max ``MAX_TOOL_ROUNDS`` rounds). Falls back to a plain call
@@ -543,14 +634,18 @@ class TagsMixin:
         supports_tools = "tools" in params or any(
             p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
         )
+        model_kw = {"model": model} if model else {}
         if not supports_tools:
-            return await self.llm.generate(content, system, api_key_override=api_key)
+            return await self.llm.generate(
+                content, system, api_key_override=api_key, **model_kw,
+            )
 
         rounds = 0
         while True:
             # After the round cap, withhold tools so the LLM must answer.
             offer = TOOL_DEFINITIONS if rounds < self.MAX_TOOL_ROUNDS else None
             kwargs = {"tools": offer} if offer else {}
+            kwargs.update(model_kw)
             result = await self.llm.generate(
                 content, system, api_key_override=api_key, **kwargs,
             )
@@ -718,8 +813,7 @@ class TagsMixin:
                 facts_lines = []
                 for op in ops:
                     if op.op == "add":
-                        vis_icon = {"private": "🔒", "nudge_eligible": "🔔",
-                                    "shareable": "👥"}.get(op.visibility, "❓")
+                        vis_icon = {"private": "🔒", "shared": "👥"}.get(op.visibility, "❓")
                         line = f"  {vis_icon} `{op.kind}` {op.text}"
                         if op.nudge_suggestion:
                             line += f"\n    → nudge: {op.nudge_suggestion}"
@@ -756,6 +850,53 @@ class TagsMixin:
 
         return [BotResponse("\n\n".join(parts))]
 
+    async def dryrun_extraction(self, user_id: int | None, text: str) -> dict:
+        """Structured dry run for the admin playground: prompts, raw LLM
+        response, parsed ops and the facts that WOULD be saved. Reads the DB
+        for context only; never writes."""
+        import dataclasses
+
+        from pairtner.core.memory import parse_memory_ops, parse_settings_ops
+        from pairtner.core.prompts import UserContext
+
+        if user_id is None:
+            ctx = UserContext()
+            system, content = build_chat_prompt(ctx, text)
+            api_key = None
+            fact_ids: set[int] = set()
+        else:
+            ctx = await self._build_ctx(user_id, current_message=text)
+            voice_text, damp_instr = await self._get_enriched_style(user_id)
+            smart_ctx = await build_smart_context(
+                self.db_path, user_id, text, self.config,
+            )
+            system, content = build_chat_prompt(
+                ctx, text, voice_text=voice_text,
+                dampening_instruction=damp_instr,
+                partner_summary=await self._get_partner_summary(user_id),
+                goals_text=await self._get_goals_text(user_id),
+                smart_ctx=smart_ctx,
+            )
+            api_key = await self._get_couple_api_key(user_id)
+            fact_ids = {f["id"] for f in await db_mod.get_active_facts(self.db_path, user_id)}
+
+        result = await self.llm.generate(content, system, api_key_override=api_key)
+        llm_response = dict(result)
+        ops = parse_memory_ops(llm_response.get("memory_ops", []), fact_ids, v2=True)
+        s_ops = parse_settings_ops(llm_response.get("settings_ops", []))
+        parsed_ops = [dataclasses.asdict(o) for o in ops]
+        return {
+            "system_prompt": system,
+            "user_content": content,
+            "llm_response": llm_response,
+            "parsed": {
+                "reply": llm_response.get("reply", ""),
+                "memory_ops": parsed_ops,
+                "settings_ops": [dataclasses.asdict(s) for s in s_ops],
+            },
+            "would_save": [o for o in parsed_ops if o["op"] == "add"],
+        }
+
     async def handle_dryrun(self, user_id: int, text: str | None) -> list[BotResponse]:
         """Handle /dryrun — full pipeline, no DB writes. Supports combined flags."""
         flags, model, message = self._parse_message_flags(text or "")
@@ -767,7 +908,13 @@ class TagsMixin:
         )
 
     async def handle_debug(self, user_id: int, text: str | None) -> list[BotResponse]:
-        """Handle /debug — full pipeline, no DB writes, show internals. Supports combined flags."""
+        """Handle /debug.
+
+        Without arguments: memory state report.  With a message: full pipeline,
+        no DB writes, show internals (supports combined flags).
+        """
+        if not (text or "").strip():
+            return await self.handle_memory_debug(user_id)
         flags, model, message = self._parse_message_flags(text or "")
         flags.add("debug")
         return await self._run_dryrun(
@@ -776,20 +923,75 @@ class TagsMixin:
             model_override=model,
         )
 
+    def _default_model_name(self) -> str:
+        cfg = self.config
+        return getattr(cfg, "llm_model_default", "") or getattr(cfg, "model_default", "") or "default"
+
+    async def _get_user_model(self, user_id: int) -> str | None:
+        """The user's preferred model (``llm_model`` preference) or None."""
+        val = await db_mod.get_user_preference(
+            self.db_path, user_id, MODEL_PREF_KEY, default=None,
+        )
+        return val or None
+
+    async def _set_user_model(self, user_id: int, model: str | None) -> None:
+        """Set the preferred model; None/empty clears the override."""
+        await db_mod.set_user_preference(
+            self.db_path, user_id, MODEL_PREF_KEY, model or "",
+        )
+
     async def handle_model(self, user_id: int, text: str | None) -> list[BotResponse]:
         """Handle /model <name> <message> — use a specific model for one message.
 
         This is a live message (DB writes happen), just with a different model.
         Combines with /dryrun and /debug if present in the remaining text.
         """
+        if not is_user_allowed(self.config, user_id):
+            return []
         if not text or not text.strip():
-            return [BotResponse("Usage: /model <model_name> <message>\n"
-                                "Example: /model gemma3:4b How are we doing?")]
+            current = await self._get_user_model(user_id)
+            default = self._default_model_name()
+            shown = f"<b>{current}</b> (yours)" if current else f"<b>{default}</b> (server default)"
+            # Show available providers
+            providers = getattr(self.llm, 'providers', None)
+            if providers is None:
+                # TracingLLM wraps the inner client
+                inner = getattr(self.llm, '_inner', self.llm)
+                providers = getattr(inner, 'providers', None)
+            provider_line = ""
+            if providers and len(providers) > 1:
+                provider_line = (
+                    "\n\n<b>Providers:</b> " + ", ".join(providers)
+                    + "\nUse prefix to switch: <code>/model gemini:flash-2</code> or <code>/model ollama:qwen3:8b</code>"
+                )
+            return [BotResponse(
+                f"🤖 Model: {shown}{provider_line}\n\n"
+                "/model &lt;name&gt; — use this model for all replies\n"
+                "/model reset — back to the server default\n"
+                "/model &lt;name&gt; &lt;message&gt; — one message only\n"
+                "/model gemini:&lt;name&gt; — switch to Gemini provider\n"
+                "/model ollama:&lt;name&gt; — switch to Ollama provider"
+            )]
         parts = text.strip().split(maxsplit=1)
         model_name = parts[0]
         message = parts[1] if len(parts) > 1 else ""
+        if model_name.lower() == "reset" and not message:
+            await self._set_user_model(user_id, None)
+            return [BotResponse(
+                f"🤖 Model reset to server default (<b>{self._default_model_name()}</b>)."
+            )]
         if not message:
-            return [BotResponse(f"Usage: /model {model_name} <message>")]
+            # Validate before setting persistent model preference
+            validate = getattr(self.llm, 'validate_model', None)
+            if validate is None:
+                inner = getattr(self.llm, '_inner', None)
+                validate = getattr(inner, 'validate_model', None) if inner else None
+            if validate:
+                err = await validate(model_name)
+                if err:
+                    return [BotResponse(f"❌ Cannot use <b>{model_name}</b>: {err}")]
+            await self._set_user_model(user_id, model_name)
+            return [BotResponse(f"🤖 Model set to <b>{model_name}</b>.")]
 
         # Check for /dryrun or /debug in the remaining message
         flags, nested_model, clean = self._parse_message_flags(message)

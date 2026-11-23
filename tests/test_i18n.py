@@ -34,8 +34,9 @@ class TestI18n:
     def test_help_text(self):
         result = t("en", "help")
         assert "/start" in result
-        assert "/tell" in result
-        assert "/mediate" in result
+        assert "/tell" not in result
+        assert "/mediate" not in result
+        assert "/share" in result
 
     def test_button_labels(self):
         assert "Approve" in t("en", "btn_approve")

@@ -2,8 +2,9 @@
 # These are read by the engine and inserted into prompts.
 # Edit to match your pack's voice and language.
 
-label_private_notes: "Your private notes"
-label_shared_notes: "Shared notes (visible to both of you)"
+label_private_notes: "Your notes"
+label_shared_notes: "What your partner shared with me"
+label_your_working: "Your recent thoughts and feelings"
 label_current_message: "Current message"
 label_current_message_blunt: "Message (respond with brutal honesty)"
 task_heading: "Task Instructions"

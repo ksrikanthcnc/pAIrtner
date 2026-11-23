@@ -96,6 +96,7 @@ def start_background_loops(
     tasks.append(spawn(memory_maintenance_loop(
         service.db_path,
         service.llm,
+        rolling_summary_enabled=getattr(config, "rolling_summary_enabled", True),
         interval=config.loops_memory_interval_seconds
         if hasattr(config, "loops_memory_interval_seconds")
         else 3600,

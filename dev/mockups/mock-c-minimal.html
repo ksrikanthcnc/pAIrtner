@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pAIrtner — Mock C: Minimal / WhatsApp-Like</title>
+<style>
+  :root { --bg: #111b21; --card: #1f2c33; --text: #e9edef; --muted: #8696a0; --accent: #00a884;
+    --accent-soft: #0b3d2e; --ok: #00a884; --warn: #d4a73a; --danger: #ea4335; --border: #2a3942;
+    font-family: -apple-system, system-ui, sans-serif; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #efeae2; --card: #fff; --text: #111b21; --muted: #667781; --accent: #008069;
+      --accent-soft: #d9fdd3; --ok: #008069; --warn: #d4a73a; --danger: #ea4335; --border: #d1d7db; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); min-height: 100vh; }
+  .topbar { background: var(--card); padding: 12px 16px; display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); display: flex;
+    align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 14px; }
+  .topbar .info { flex: 1; }
+  .topbar .name { font-size: 15px; font-weight: 500; }
+  .topbar .status { font-size: 12px; color: var(--muted); }
+  .sections { padding: 8px; }
+  .bubble { background: var(--card); margin: 4px 8px; padding: 10px 14px; border-radius: 8px;
+    border-top-left-radius: 0; max-width: 85%; position: relative; }
+  .bubble.right { margin-left: auto; border-top-left-radius: 8px; border-top-right-radius: 0;
+    background: var(--accent-soft); }
+  .bubble .sender { font-size: 11px; color: var(--accent); font-weight: 600; margin-bottom: 2px; }
+  .bubble .msg { font-size: 14px; line-height: 1.4; }
+  .bubble .time { font-size: 10px; color: var(--muted); text-align: right; margin-top: 4px; }
+  .divider { text-align: center; margin: 16px 0 8px; }
+  .divider span { background: var(--accent-soft); color: var(--text); font-size: 12px; padding: 4px 14px;
+    border-radius: 8px; font-weight: 500; }
+  .kb-section { margin: 12px 8px; }
+  .kb-section h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 8px; padding: 0 6px; }
+  .kb-row { background: var(--card); padding: 12px 14px; border-radius: 8px; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 10px; }
+  .kb-row .icon { font-size: 18px; }
+  .kb-row .content { flex: 1; }
+  .kb-row .label { font-size: 14px; }
+  .kb-row .detail { font-size: 12px; color: var(--muted); }
+  .kb-row .count { font-size: 13px; color: var(--muted); font-weight: 500; }
+  .kb-row .arrow { color: var(--muted); font-size: 14px; }
+  .insight-strip { background: var(--accent-soft); margin: 8px; padding: 12px 14px; border-radius: 8px;
+    display: flex; gap: 10px; align-items: flex-start; }
+  .insight-strip .bulb { font-size: 20px; }
+  .insight-strip .text { font-size: 13px; line-height: 1.4; }
+  .health-strip { margin: 8px; padding: 14px; background: var(--card); border-radius: 8px; }
+  .health-strip h4 { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .health-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .health-row .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .health-row .dot.g { background: var(--ok); }
+  .health-row .dot.y { background: var(--warn); }
+  .health-row .label { font-size: 13px; flex: 1; }
+  .health-row .val { font-size: 13px; font-weight: 500; }
+  nav { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--card);
+    border-top: 1px solid var(--border); padding: 6px 0 env(safe-area-inset-bottom); }
+  nav a { flex: 1; text-align: center; font-size: 10px; color: var(--muted); text-decoration: none; padding: 6px 0; }
+  nav a.active { color: var(--accent); }
+  nav a .icon { font-size: 22px; display: block; }
+  .pb { padding-bottom: 70px; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="avatar">AB</div>
+  <div class="info">
+    <div class="name">Alice & Bob</div>
+    <div class="status">8 facts · 6 topics · 23 messages</div>
+  </div>
+</div>
+
+<div class="sections pb">
+  <div class="insight-strip">
+    <div class="bulb">💡</div>
+    <div class="text">Bob's work deadline ends Friday. This weekend could be a good time to reconnect — he mentioned wanting to be more present.</div>
+  </div>
+
+  <div class="divider"><span>📊 Your Relationship</span></div>
+
+  <div class="health-strip">
+    <h4>HEALTH CHECK</h4>
+    <div class="health-row"><div class="dot g"></div><div class="label">Positive ratio</div><div class="val">4:1</div></div>
+    <div class="health-row"><div class="dot g"></div><div class="label">Communication</div><div class="val">Active</div></div>
+    <div class="health-row"><div class="dot y"></div><div class="label">Open conflicts</div><div class="val">1 winding down</div></div>
+    <div class="health-row"><div class="dot g"></div><div class="label">Last connection</div><div class="val">Yesterday</div></div>
+  </div>
+
+  <div class="divider"><span>🧠 Knowledge</span></div>
+
+  <div class="kb-section">
+    <h3>Core (permanent)</h3>
+    <div class="kb-row">
+      <div class="icon">👤</div>
+      <div class="content"><div class="label">Married 8 years, one child</div><div class="detail">identity</div></div>
+    </div>
+    <div class="kb-row">
+      <div class="icon">🎨</div>
+      <div class="content"><div class="label">Enjoys pottery class on Wednesdays</div><div class="detail">hobbies</div></div>
+    </div>
+  </div>
+
+  <div class="kb-section">
+    <h3>Recent (evolving)</h3>
+    <div class="kb-row">
+      <div class="icon">📅</div>
+      <div class="content"><div class="label">Planning date night for Saturday</div><div class="detail">plans · today</div></div>
+    </div>
+    <div class="kb-row">
+      <div class="icon">💬</div>
+      <div class="content"><div class="label">Had a meaningful hour-long talk</div><div class="detail">communication · 1d ago</div></div>
+    </div>
+    <div class="kb-row">
+      <div class="icon">💐</div>
+      <div class="content"><div class="label">Appreciated surprise flowers from Bob</div><div class="detail">appreciation · 2d ago</div></div>
+    </div>
+    <div class="kb-row">
+      <div class="icon">😓</div>
+      <div class="content"><div class="label">Overwhelmed handling kids solo</div><div class="detail">family · 3d ago</div></div>
+    </div>
+  </div>
+
+  <div class="kb-section">
+    <h3>Topics</h3>
+    <div class="kb-row">
+      <div class="icon">👨‍👩‍👦</div>
+      <div class="content"><div class="label">Family</div><div class="detail">2 facts, 1 private</div></div>
+      <div class="arrow">›</div>
+    </div>
+    <div class="kb-row">
+      <div class="icon">❤️</div>
+      <div class="content"><div class="label">Appreciation</div><div class="detail">1 fact</div></div>
+      <div class="arrow">›</div>
+    </div>
+    <div class="kb-row">
+      <div class="icon">💬</div>
+      <div class="content"><div class="label">Communication</div><div class="detail">1 fact</div></div>
+      <div class="arrow">›</div>
+    </div>
+    <div class="kb-row">
+      <div class="icon">💼</div>
+      <div class="content"><div class="label">Work</div><div class="detail">1 fact</div></div>
+      <div class="arrow">›</div>
+    </div>
+  </div>
+
+  <div class="divider"><span>📖 Timeline</span></div>
+
+  <div class="bubble">
+    <div class="sender">📌 Milestone</div>
+    <div class="msg">Planning first date night in months</div>
+    <div class="time">Today</div>
+  </div>
+  <div class="bubble right">
+    <div class="sender">✅ Resolution</div>
+    <div class="msg">Hour-long heart-to-heart conversation</div>
+    <div class="time">Yesterday</div>
+  </div>
+  <div class="bubble">
+    <div class="sender">💐 Nudge</div>
+    <div class="msg">Bob bought flowers for Alice</div>
+    <div class="time">2 days ago</div>
+  </div>
+  <div class="bubble right">
+    <div class="sender">⚠️ Conflict</div>
+    <div class="msg">Alice frustrated about solo parenting</div>
+    <div class="time">3 days ago</div>
+  </div>
+</div>
+
+<nav>
+  <a href="#"><span class="icon">💬</span>Chat</a>
+  <a href="#" class="active"><span class="icon">🏠</span>Home</a>
+  <a href="#"><span class="icon">🧠</span>Know</a>
+  <a href="#"><span class="icon">⚙️</span>More</a>
+</nav>
+</body>
+</html>

@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from pairtner import db as db_mod
 from pairtner import pack
 from pairtner.i18n import t
-from pairtner.llm import LLMClient
+from pairtner.llm import LLMClient, get_reply_text
 from pairtner.core.prompts import build_checkin_summary_prompt
 
 logger = logging.getLogger(__name__)
@@ -271,7 +271,7 @@ async def _generate_summary(
         a_answers, b_answers, shared_texts, goals=extra or None,
     )
     response = await llm.generate(user_content, system_prompt)
-    summary = response.get("reply", "")
+    summary = get_reply_text(response)
 
     if not summary:
         return

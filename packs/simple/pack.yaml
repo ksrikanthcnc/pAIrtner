@@ -1,0 +1,17 @@
+# Simple pack — for small models (4B parameters: gemma3:4b, qwen3.5:4b)
+# Stripped-down contract with fewer fields to reduce JSON errors.
+name: simple
+version: "1.0"
+engine_contract: 1
+inherits: default
+
+description: >
+  Simplified extraction contract for small local models.
+  Only reply + memory_ops, no relay, no mood detection, no patterns.
+  Works reliably with gemma3:4b and qwen3.5:4b on 4GB VRAM.
+
+budgets:
+  core_facts: 300
+  working_facts: 200
+  episodes: 100
+  summaries: 100

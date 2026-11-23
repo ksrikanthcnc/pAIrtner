@@ -24,24 +24,16 @@ class DispatchMixin:
             # Pairing
             "start": lambda: self.handle_start(uid, name),
             "join": lambda: self.handle_join(uid, name, arg),
-            # Core features
-            "tell": lambda: self.handle_tell(uid, arg),
-            "mediate": lambda: self.handle_mediate(uid, arg),
             # Memory
-            "whatdoyouknow": lambda: self.handle_whatdoyouknow(uid),
             "forget": lambda: self.handle_forget(uid, arg),
-            "review": lambda: self.handle_review(uid),
+            "share": lambda: self.handle_share(uid, arg),
+            "private": lambda: self.handle_private(uid, arg),
             "search": lambda: self.handle_search(uid, arg),
-            "remember": lambda: self.handle_remember(uid),
-            # Style: voice + mood unified
-            "style": lambda: self.handle_style(uid, arg),
             # Goals: personal + shared unified
             "goal": lambda: self.handle_goal(uid, arg),
             # Settings & config
             "settings": lambda: self.handle_settings(uid, arg),
             "mode": lambda: self.handle_mode(uid, arg),
-            "yolo": lambda: self.handle_yolo(uid, arg),
-            "lang": lambda: self.handle_lang(uid, arg),
             "setup": lambda: self.handle_setup(uid, arg),
             # Status & info
             "status": lambda: self.handle_status(uid),
@@ -52,13 +44,15 @@ class DispatchMixin:
             # Testing
             "dryrun": lambda: self.handle_dryrun(uid, arg),
             "debug": lambda: self.handle_debug(uid, arg),
+            "warnings": lambda: self.handle_warnings(uid),
             "model": lambda: self.handle_model(uid, arg),
+            "rewrite": lambda: self.handle_rewrite(uid, arg),
             # Relay control
+            "password": lambda: self.handle_password(uid, arg),
             "pause": lambda: self.handle_pause(uid),
             "resume": lambda: self.handle_resume(uid),
             # Advanced
-            "conflicts": lambda: self.handle_conflicts(uid),
-            "timeline": lambda: self.handle_timeline(uid, arg),
+            "topics": lambda: self.handle_topics(uid),
             # Onboarding skip
             "skip": lambda: self.handle_message(uid, name, "/skip"),
         }

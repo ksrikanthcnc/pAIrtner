@@ -1,552 +1,455 @@
-/* pAIrtner PWA client. All dynamic text goes through textContent or
+/* pAIrtner PWA shell: hash router, auth, api(), store, i18n.
+ * Views live in /components/*.js and each export init(container, ctx),
+ * show(), hide(), destroy(). All dynamic text goes through textContent or
  * PairtnerRender (render.js). No HTML sinks, no inline scripts. */
-(function () {
-  "use strict";
 
   var UI = {
     en: {
-      name: "Display name", invite: "Invite code", language: "Language",
-      signup: "Sign up", have_token: "I already have a token", token: "Token",
-      signin: "Sign in", rotate: "Rotate token", signout: "Sign out",
+      name: "Name", password: "Password", invite: "Invite code", language: "Language",
+      signup: "Log in", bad_login: "Wrong name or password. Set one with /password in Telegram.",
+      rotate: "Rotate token", signout: "Sign out",
       send: "Send", message: "Message", online: "online", offline: "offline, retrying",
       closed: "Registration is closed on this server.",
       bad_token: "That token was not accepted.",
       new_token: "New token (copy it now, it is shown once):",
       failed: "Could not send. Check your connection.",
-      attachment: "Download"
+      attachment: "Download",
+      nav_chat: "Chat", nav_data: "My Data", nav_memory: "Knowledge", nav_settings: "Settings", nav_admin: "Admin",
+      loading: "Loading...", load_failed: "Could not load this view."
     },
     te: {
-      name: "ప్రదర్శన పేరు", invite: "ఆహ్వాన కోడ్", language: "భాష",
-      signup: "సైన్ అప్", have_token: "నా దగ్గర ఇప్పటికే టోకెన్ ఉంది", token: "టోకెన్",
-      signin: "సైన్ ఇన్", rotate: "టోకెన్ మార్చు", signout: "సైన్ అవుట్",
+      name: "పేరు", password: "పాస్‌వర్డ్", invite: "ఆహ్వాన కోడ్", language: "భాష",
+      signup: "లాగిన్", bad_login: "పేరు లేదా పాస్‌వర్డ్ తప్పు. టెలిగ్రామ్‌లో /password తో సెట్ చేయండి.",
+      rotate: "టోకెన్ మార్చు", signout: "సైన్ అవుట్",
       send: "పంపు", message: "సందేశం", online: "ఆన్‌లైన్", offline: "ఆఫ్‌లైన్, మళ్లీ ప్రయత్నిస్తోంది",
       closed: "ఈ సర్వర్‌లో నమోదు మూసివేయబడింది.",
       bad_token: "ఆ టోకెన్ అంగీకరించబడలేదు.",
       new_token: "కొత్త టోకెన్ (ఇప్పుడే కాపీ చేయండి, ఒక్కసారి మాత్రమే కనిపిస్తుంది):",
       failed: "పంపలేకపోయాము. మీ కనెక్షన్‌ని తనిఖీ చేయండి.",
-      attachment: "డౌన్‌లోడ్"
+      attachment: "డౌన్‌లోడ్",
+      nav_chat: "చాట్", nav_data: "నా డేటా", nav_memory: "జ్ఞానం", nav_settings: "సెట్టింగ్‌లు", nav_admin: "అడ్మిన్",
+      loading: "లోడ్ అవుతోంది...", load_failed: "ఈ వీక్షణను లోడ్ చేయలేకపోయాము."
     }
   };
 
-  var params = new URLSearchParams(location.search);
-  var profile = (params.get("profile") || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32);
-  var prefix = "pairtner:" + (profile || "default") + ":";
-  var store = {
-    get: function (k) { return localStorage.getItem(prefix + k); },
-    set: function (k, v) { localStorage.setItem(prefix + k, v); },
-    del: function (k) { localStorage.removeItem(prefix + k); }
-  };
+var params = new URLSearchParams(location.search);
+var profile = (params.get("profile") || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32);
+/* Sandbox mode (duo dev page): API calls carry ?sandbox=<id> and the bearer
+ * token comes from the URL; storage is namespaced per sandbox. */
+var sandbox = (params.get("sandbox") || "").replace(/[^0-9a-zA-Z_-]/g, "").slice(0, 40);
+var prefix = "pairtner:" + (profile || "default") + ":" + (sandbox ? "sbx" + sandbox.slice(0, 8) + ":" : "");
+var store = {
+  get: function (k) { return localStorage.getItem(prefix + k); },
+  set: function (k, v) { localStorage.setItem(prefix + k, v); },
+  del: function (k) { localStorage.removeItem(prefix + k); }
+};
+/* The admin token is a shared secret: keep it for this browser session only. */
+var adminStore = {
+  get: function () { return sessionStorage.getItem(prefix + "admintoken"); },
+  set: function (v) { sessionStorage.setItem(prefix + "admintoken", v); },
+  del: function () { sessionStorage.removeItem(prefix + "admintoken"); }
+};
 
-  var $ = function (id) { return document.getElementById(id); };
-  var lang = store.get("lang") || ((navigator.language || "").indexOf("te") === 0 ? "te" : "en");
-  var meta = null;
-  var token = store.get("token");
-  var cursor = parseInt(store.get("cursor") || "0", 10) || 0;
-  var pollAbort = null;
-  var polling = false;
-
-  function tr(key) { return (UI[lang] && UI[lang][key]) || UI.en[key] || key; }
-
-  function applyLang() {
-    document.documentElement.lang = lang;
-    document.querySelectorAll("[data-i18n]").forEach(function (el) {
-      el.textContent = tr(el.getAttribute("data-i18n"));
-    });
-    document.querySelectorAll("[data-i18n-placeholder]").forEach(function (el) {
-      el.setAttribute("placeholder", tr(el.getAttribute("data-i18n-placeholder")));
-    });
+var $ = function (id) { return document.getElementById(id); };
+var lang = store.get("lang") || ((navigator.language || "").indexOf("te") === 0 ? "te" : "en");
+var meta = null;
+var token = store.get("token");
+if (sandbox && params.get("token")) {
+  token = params.get("token");
+  store.set("token", token);
+  if (window.history && history.replaceState) {
+    history.replaceState(null, "", location.pathname + "?profile=" + profile + "&sandbox=" + sandbox);
   }
+}
+var me = null;
+var adminToken = null;
 
-  function ApiError(status, code) {
-    this.status = status;
-    this.code = code;
-  }
+/* ---- i18n ---- */
 
-  function api(method, path, body, signal) {
-    var headers = {};
-    if (token) { headers.Authorization = "Bearer " + token; }
-    var init = { method: method, headers: headers, signal: signal };
-    if (body !== undefined) {
-      headers["Content-Type"] = "application/json";
-      init.body = JSON.stringify(body);
-    }
-    return fetch(path, init).then(function (res) {
-      return res.json().catch(function () { return {}; }).then(function (data) {
-        if (!res.ok) { throw new ApiError(res.status, data.error || "error"); }
-        return data;
-      });
-    });
-  }
+function tr(key) { return (UI[lang] && UI[lang][key]) || UI.en[key] || key; }
 
-  function show(screen) {
-    $("auth").hidden = screen !== "auth";
-    $("chat").hidden = screen !== "chat";
-  }
-
-  function authError(text) {
-    var el = $("auth-error");
-    el.textContent = text || "";
-    el.hidden = !text;
-  }
-
-  /* ---- chat rendering ---- */
-
-  function scrollDown() {
-    var log = $("log");
-    log.scrollTop = log.scrollHeight;
-  }
-
-  function addBubble(cls, msg) {
-    var div = document.createElement("div");
-    // Classify bot messages for visual styling
-    var text = typeof msg === "string" ? msg : (msg.text || "");
-    if (cls === "bot" || cls === "relay") {
-      var subtype = classifyMessage(text);
-      if (subtype) { cls += " " + subtype; }
-    }
-    div.className = "msg " + cls;
-    // Add timestamp to all live messages
-    if (cls.indexOf("typing") === -1) {
-      maybeAddDateDivider(new Date().toISOString());
-      var ts = document.createElement("span");
-      ts.className = "ts";
-      ts.textContent = formatTime(new Date().toISOString());
-      div.appendChild(ts);
-    }
-    if (typeof msg === "string") {
-      div.textContent = msg;
-    } else {
-      PairtnerRender.renderMarkup(msg.markup != null ? msg.markup : msg.text, div, document);
-      if (msg.buttons && msg.buttons.length) { div.appendChild(buttonRows(msg.buttons)); }
-      if (msg.document) { div.appendChild(docLink(msg.document)); }
-    }
-    $("log").appendChild(div);
-    scrollDown();
-    return div;
-  }
-
-  function buttonRows(rows) {
-    var wrap = document.createElement("div");
-    wrap.className = "btns";
-    rows.forEach(function (row) {
-      row.forEach(function (b) {
-        var btn = document.createElement("button");
-        btn.type = "button";
-        btn.textContent = b.text;
-        btn.addEventListener("click", function () { pressButton(wrap, b.data); });
-        wrap.appendChild(btn);
-      });
-    });
-    return wrap;
-  }
-
-  function disableRow(wrap) {
-    wrap.querySelectorAll("button").forEach(function (b) { b.disabled = true; });
-  }
-
-  function pressButton(wrap, data) {
-    disableRow(wrap);
-    api("POST", "/api/v1/callback", { data: data }).then(showReplies).catch(sendFailed);
-  }
-
-  function docLink(doc) {
-    var a = document.createElement("a");
-    a.className = "doc";
-    var blob = new Blob([doc.content], { type: "text/plain;charset=utf-8" });
-    a.href = URL.createObjectURL(blob);
-    a.download = doc.filename;
-    a.textContent = tr("attachment") + ": " + doc.filename;
-    return a;
-  }
-
-  function showReplies(data) {
-    (data.replies || []).forEach(function (m) { addBubble("bot", m); });
-  }
-
-  function sendFailed(err) {
-    if (err instanceof ApiError && err.status === 401) { signOut(); return; }
-    addBubble("bot err", tr("failed"));
-  }
-
-  function setStatus(key) {
-    var el = $("status");
-    if (key === "offline") {
-      el.textContent = "⚡ " + tr(key);
-      el.className = "status offline-badge";
-    } else {
-      el.textContent = (meta && meta.llm) ? meta.llm : tr(key);
-      el.className = "status";
-    }
-  }
-
-  /* ---- long poll ---- */
-
-  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-
-  function pollLoop() {
-    if (polling || !token) { return; }
-    polling = true;
-    var backoff = 1000;
-    function step() {
-      if (!token || document.hidden) { polling = false; return Promise.resolve(); }
-      pollAbort = new AbortController();
-      return api("GET", "/api/v1/events?wait=20&after=" + cursor, undefined, pollAbort.signal)
-        .then(function (data) {
-          backoff = 1000;
-          setStatus("online");
-          data.events.forEach(function (ev) {
-            if (ev.id > cursor) { addBubble("relay", ev.msg); }
-          });
-          if (data.cursor > cursor) {
-            cursor = data.cursor;
-            store.set("cursor", String(cursor));
-          }
-        })
-        .catch(function (err) {
-          if (err && err.name === "AbortError") { return null; }
-          if (err instanceof ApiError && err.status === 401) { signOut(); return null; }
-          setStatus("offline");
-          var wait = backoff;
-          backoff = Math.min(backoff * 2, 30000);
-          return sleep(wait);
-        })
-        .then(step);
-    }
-    step();
-  }
-
-  document.addEventListener("visibilitychange", function () {
-    if (document.hidden) {
-      if (pollAbort) { pollAbort.abort(); }
-    } else {
-      pollLoop();
-    }
+/* Components register their own strings: {en: {...}, te: {...}}. */
+function addStrings(dict) {
+  Object.keys(dict).forEach(function (code) {
+    UI[code] = Object.assign(UI[code] || {}, dict[code]);
   });
+}
 
-  /* ---- auth flow ---- */
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach(function (el) {
+    el.textContent = tr(el.getAttribute("data-i18n"));
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(function (el) {
+    el.setAttribute("placeholder", tr(el.getAttribute("data-i18n-placeholder")));
+  });
+}
 
-  function enterChat(name) {
-    $("who").textContent = name || "";
-    $("log").textContent = "";
-    if (meta && meta.llm) {
-      $("status").textContent = meta.llm;
-      $("status").title = "LLM provider";
-    }
-    show("chat");
-    applyLang();
-    loadHistory();
-    pollLoop();
+/* ---- theme (CSS variables; "auto" follows the OS) ---- */
+
+function applyTheme(mode) {
+  var root = document.documentElement;
+  if (mode === "light" || mode === "dark") { root.setAttribute("data-theme", mode); }
+  else { root.removeAttribute("data-theme"); }
+}
+applyTheme(store.get("theme") || "auto");
+
+/* ---- api ---- */
+
+function ApiError(status, code) {
+  this.status = status;
+  this.code = code;
+}
+
+function api(method, path, body, signal, extraHeaders) {
+  var headers = Object.assign({}, extraHeaders || {});
+  if (token) { headers.Authorization = "Bearer " + token; }
+  var init = { method: method, headers: headers, signal: signal };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(body);
   }
-
-  function loadHistory() {
-    // Load cached messages first (instant render)
-    var cached = JSON.parse(store.get("history") || "[]");
-    var lastId = 0;
-    if (cached.length) {
-      renderMessages(cached);
-      lastId = cached[cached.length - 1].id || 0;
-    }
-
-    // Fetch only new messages since last cached ID
-    var url = "/api/v1/history?limit=500";
-    if (lastId > 0) { url += "&offset_id=" + lastId; }
-    api("GET", url).then(function (data) {
-      var newMsgs = data.messages || [];
-      if (newMsgs.length) {
-        // If we had no cache, this is the full history
-        if (!lastId) {
-          cached = newMsgs;
-          renderMessages(newMsgs);
-        } else {
-          // Append delta to cache and render just the new ones
-          cached = cached.concat(newMsgs);
-          newMsgs.forEach(function (m) { renderOneMessage(m); });
-        }
-        // Cap cache at 1000 messages
-        if (cached.length > 1000) { cached = cached.slice(-1000); }
-        store.set("history", JSON.stringify(cached));
-      }
-      setStatus("online");
-    }).catch(function (err) {
-      if (err instanceof ApiError && err.status === 401) { signOut(); return; }
-      setStatus("offline");
-      // Still show cached messages if offline
-      if (cached.length && !$("log").children.length) { renderMessages(cached); }
+  if (sandbox && path.indexOf("/api/") === 0) {
+    path += (path.indexOf("?") < 0 ? "?" : "&") + "sandbox=" + sandbox;
+  }
+  return fetch(path, init).then(function (res) {
+    return res.json().catch(function () { return {}; }).then(function (data) {
+      if (!res.ok) { throw new ApiError(res.status, data.error || "error"); }
+      return data;
     });
+  });
+}
+
+function qs(obj) {
+  var p = new URLSearchParams();
+  Object.keys(obj).forEach(function (k) {
+    if (obj[k] !== undefined && obj[k] !== null && obj[k] !== "") { p.set(k, String(obj[k])); }
+  });
+  var s = p.toString();
+  return s ? "?" + s : "";
+}
+
+function formatTime(iso) {
+  try {
+    var d = new Date(iso);
+    var now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+    return d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " +
+      d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch (e) { return ""; }
+}
+
+/* ---- shared context handed to every component ---- */
+
+var ctx = {
+  api: api, ApiError: ApiError, qs: qs, store: store, tr: tr, addStrings: addStrings,
+  formatTime: formatTime, applyTheme: applyTheme,
+  getLang: function () { return lang; },
+  getMeta: function () { return meta; },
+  getMe: function () { return me; },
+  hasToken: function () { return !!token; },
+  isAdmin: function () { return !!adminToken; },
+  adminHeaders: function () { return adminToken ? { "X-Admin-Token": adminToken } : {}; },
+  setAdminToken: setAdminToken,
+  clearAdmin: clearAdmin,
+  setStatus: setStatus,
+  signOut: signOut,
+  loadModule: function (name) { return import(COMPONENTS[name]); }
+};
+
+/* ---- screens ---- */
+
+function show(screen) {
+  $("auth").hidden = screen !== "auth";
+  $("app").hidden = screen !== "app";
+}
+
+function authError(text) {
+  var el = $("auth-error");
+  el.textContent = text || "";
+  el.hidden = !text;
+}
+
+function setStatus(key) {
+  var el = $("status");
+  if (key === "offline") {
+    el.textContent = "⚡ " + tr(key);
+    el.className = "status offline-badge";
+  } else {
+    el.textContent = (meta && meta.llm) ? meta.llm : tr(key);
+    el.className = "status";
   }
+}
 
-  function renderMessages(messages) {
-    var log = $("log");
-    log.textContent = "";
-    _lastDateStr = "";  // Reset date divider tracking
-    messages.forEach(function (m) { renderOneMessage(m); });
-    scrollDown();
-  }
+/* ---- admin access (X-Admin-Token) ---- */
 
-  var _lastDateStr = "";
+function updateAdminUi() {
+  $("admin-badge").hidden = !adminToken;
+  $("nav-admin").hidden = !adminToken;
+}
 
-  function classifyMessage(text) {
-    // Classify bot messages into subtypes for visual styling
-    if (!text) { return ""; }
-    if (/^✅\s*Noted!|^✅\s*Saved\s+\d+|^✅\s*గమనించాను/i.test(text)) { return "note"; }
-    if (/^💡\s*Tip:|^💡\s*చిట్కా:/i.test(text)) { return "tip"; }
-    if (/^💌\s|^💌\s*A message from|^💌\s*మీ భాగస్వామి/i.test(text)) { return "relay"; }
-    return "";
-  }
+function setAdminToken(value) {
+  return api("GET", "/api/v1/admin/stats", undefined, undefined, { "X-Admin-Token": value })
+    .then(function () {
+      adminToken = value;
+      adminStore.set(value);
+      updateAdminUi();
+    });
+}
 
-  function maybeAddDateDivider(isoDate) {
-    if (!isoDate) { return; }
-    try {
-      var d = new Date(isoDate);
-      var dateStr = d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
-      if (dateStr !== _lastDateStr) {
-        _lastDateStr = dateStr;
-        var divider = document.createElement("div");
-        divider.className = "date-divider";
-        var today = new Date();
-        var yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        if (d.toDateString() === today.toDateString()) {
-          divider.textContent = "Today";
-        } else if (d.toDateString() === yesterday.toDateString()) {
-          divider.textContent = "Yesterday";
-        } else {
-          divider.textContent = dateStr;
-        }
-        $("log").appendChild(divider);
+function clearAdmin() {
+  adminToken = null;
+  adminStore.del();
+  updateAdminUi();
+  if (currentRoute().admin) { location.hash = "#dashboard"; }
+}
+
+/* ---- router ---- */
+
+var COMPONENTS = {
+  chat: "./components/chat.js",
+  dashboard: "./components/dashboard.js",
+  memory: "./components/memory.js",
+  settings: "./components/settings.js",
+  couple: "./components/couple.js",
+  admin: "./components/admin.js"
+};
+
+var ROUTES = {
+  "chat": { comp: "chat", tab: "chat" },
+  "dashboard": { comp: "dashboard", tab: "dashboard" },
+  "memory": { comp: "memory", tab: "memory" },
+  "dashboard/admin": { comp: "admin", tab: "admin", admin: true },
+  "settings": { comp: "settings", tab: "settings" }
+};
+
+var mounted = {};   /* component name -> {el, mod, ready} */
+var navSeq = 0;
+
+function currentRoute() {
+  var key = location.hash.replace(/^#\/?/, "").replace(/\/+$/, "") || "chat";
+  return ROUTES[key] || ROUTES.chat;
+}
+
+/* Load a component lazily and give it its own container. */
+function mount(name) {
+  if (mounted[name]) { return mounted[name].ready; }
+  var el = document.createElement("section");
+  el.className = "view view-" + name;
+  el.hidden = true;
+  $("views").appendChild(el);
+  var entry = { el: el, mod: null };
+  entry.ready = import(COMPONENTS[name]).then(function (mod) {
+    entry.mod = mod;
+    return mod.init(el, ctx);
+  }).then(function () { return entry; });
+  entry.ready.catch(function () {
+    delete mounted[name];
+    el.remove();
+  });
+  mounted[name] = entry;
+  return entry.ready;
+}
+
+function updateNav(tab) {
+  document.querySelectorAll("#bottom-nav a").forEach(function (a) {
+    var on = a.getAttribute("data-tab") === tab;
+    a.classList.toggle("active", on);
+    if (on) { a.setAttribute("aria-current", "page"); } else { a.removeAttribute("aria-current"); }
+  });
+}
+
+function render() {
+  if (!token || $("app").hidden) { return; }
+  var route = currentRoute();
+  if (route.admin && !adminToken) { location.hash = "#dashboard"; return; }
+  var seq = ++navSeq;
+  mount(route.comp).then(function (entry) {
+    if (seq !== navSeq) { return; }
+    Object.keys(mounted).forEach(function (n) {
+      var e = mounted[n];
+      if (n !== route.comp && e.mod && !e.el.hidden) {
+        e.el.hidden = true;
+        e.mod.hide();
       }
-    } catch (e) { /* ignore */ }
-  }
+    });
+    entry.el.hidden = false;
+    entry.mod.show();
+    updateNav(route.tab);
+  }).catch(function () {
+    if (seq !== navSeq) { return; }
+    var note = document.createElement("p");
+    note.className = "error pad";
+    note.textContent = tr("load_failed");
+    $("views").appendChild(note);
+  });
+}
 
-  function renderOneMessage(m) {
-    maybeAddDateDivider(m.created_at);
-    var cls = m.role === "user" ? "me" : "bot";
-    // Sub-classify bot messages
-    if (m.role !== "user") {
-      var subtype = classifyMessage(m.content);
-      if (subtype) { cls += " " + subtype; }
-    }
-    var div = document.createElement("div");
-    div.className = "msg " + cls;
-    if (m.id) { div.dataset.msgId = m.id; }
-    if (m.created_at) {
-      var ts = document.createElement("span");
-      ts.className = "ts";
-      ts.textContent = formatTime(m.created_at);
-      div.appendChild(ts);
-    }
-    var content = document.createElement("span");
-    PairtnerRender.renderMarkup(m.content, content, document);
-    div.appendChild(content);
-    // Long-press to delete (mobile-friendly)
-    if (m.id && m.role === "user") {
-      var timer = null;
-      div.addEventListener("pointerdown", function () {
-        timer = setTimeout(function () {
-          if (confirm("Delete this message?")) {
-            api("DELETE", "/api/v1/message", { id: m.id }).then(function () {
-              div.style.opacity = "0.3";
-              div.style.textDecoration = "line-through";
-              // Remove from local cache
-              var cached = JSON.parse(store.get("history") || "[]");
-              store.set("history", JSON.stringify(cached.filter(function (c) { return c.id !== m.id; })));
-            }).catch(function () { /* ignore delete failures */ });
-          }
-        }, 600);
-      });
-      div.addEventListener("pointerup", function () { clearTimeout(timer); });
-      div.addEventListener("pointerleave", function () { clearTimeout(timer); });
-    }
-    $("log").appendChild(div);
-  }
+window.addEventListener("hashchange", render);
 
-  function formatTime(iso) {
-    try {
-      var d = new Date(iso);
-      var now = new Date();
-      if (d.toDateString() === now.toDateString()) {
-        return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      }
-      return d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " +
-        d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    } catch (e) { return ""; }
-  }
+/* ---- auth flow ---- */
 
-  function signOut() {
-    if (pollAbort) { pollAbort.abort(); }
-    token = null;
-    cursor = 0;
-    store.del("token");
-    store.del("cursor");
-    store.del("history");
-    store.del("outbox");
-    $("menu").hidden = true;
+function enterApp(name, fresh) {
+  $("who").textContent = name || "";
+  show("app");
+  applyLang();
+  updateAdminUi();
+  return mount("chat").then(function (entry) {
+    entry.mod.start(fresh);
+    render();
+  });
+}
+
+function destroyAll() {
+  Object.keys(mounted).forEach(function (n) {
+    var e = mounted[n];
+    if (e.mod && e.mod.destroy) { e.mod.destroy(); }
+    e.el.remove();
+  });
+  mounted = {};
+  navSeq++;
+}
+
+function signOut() {
+  destroyAll();
+  token = null;
+  me = null;
+  adminToken = null;
+  adminStore.del();
+  store.del("token");
+  store.del("cursor");
+  store.del("history");
+  localStorage.removeItem("msgQueue");
+  $("menu").hidden = true;
+  updateAdminUi();
+  showAuth();
+}
+
+function finishLogin(newToken) {
+  token = newToken;
+  store.set("token", token);
+  store.set("lang", lang);
+  return api("GET", "/api/v1/me").then(function (data) {
+    me = data;
+    return enterApp(data.name, true);
+  });
+}
+
+function login(name, password) {
+  return api("POST", "/api/v1/login", { name: name, password: password })
+    .then(function (res) { return finishLogin(res.token); });
+}
+
+function register(name, invite, language) {
+  var body = { name: name, lang: language };
+  if (invite) { body.invite = invite; }
+  return api("POST", "/api/v1/register", body).then(function (res) {
+    return finishLogin(res.token);
+  });
+}
+
+function showAuth() {
+  show("auth");
+  applyLang();
+  authError("");
+  var pv = $("privacy"); pv.textContent = ""; if (meta) { PairtnerRender.renderMarkup(meta.privacy, pv, document); }
+  var sel = $("lang");
+  sel.textContent = "";
+  ((meta && meta.languages) || ["en", "te"]).forEach(function (code) {
+    var opt = document.createElement("option");
+    opt.value = code;
+    opt.textContent = code;
+    if (code === lang) { opt.selected = true; }
+    sel.appendChild(opt);
+  });
+}
+
+function autoRegister() {
+  var name = params.get("name");
+  if (profile && name && meta && meta.registration === "open") {
+    register(name, "", lang).catch(function () { showAuth(); });
+    return true;
+  }
+  if (profile && name && meta && meta.registration !== "open") {
     showAuth();
+    authError("Dev duo mode: set REST_REGISTRATION=open in .env to auto-register, or log in with password.");
+    return true;
   }
+  return false;
+}
 
-  function finishLogin(newToken) {
-    token = newToken;
-    store.set("token", token);
-    store.set("lang", lang);
-    return api("GET", "/api/v1/me").then(function (me) { enterChat(me.name); });
-  }
-
-  function register(name, invite, language) {
-    var body = { name: name, lang: language };
-    if (invite) { body.invite = invite; }
-    return api("POST", "/api/v1/register", body).then(function (res) {
-      return finishLogin(res.token);
-    });
-  }
-
-  function showAuth() {
-    show("auth");
+function bind() {
+  $("signup").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    lang = $("lang").value || lang;
     applyLang();
-    authError("");
-    var pv = $("privacy"); pv.textContent = ""; if (meta) { PairtnerRender.renderMarkup(meta.privacy, pv, document); }
-    $("invite-row").hidden = !(meta && meta.registration === "invite");
-    var sel = $("lang");
-    sel.textContent = "";
-    ((meta && meta.languages) || ["en", "te"]).forEach(function (code) {
-      var opt = document.createElement("option");
-      opt.value = code;
-      opt.textContent = code;
-      if (code === lang) { opt.selected = true; }
-      sel.appendChild(opt);
+    login($("name").value.trim(), $("password").value)
+      .catch(function (err) {
+        authError(err instanceof ApiError && err.status === 401
+          ? tr("bad_login") : (err.code || "error"));
+      });
+  });
+  $("lang").addEventListener("change", function () {
+    lang = $("lang").value;
+    applyLang();
+  });
+  $("menu-btn").addEventListener("click", function () { $("menu").hidden = !$("menu").hidden; });
+  $("signout").addEventListener("click", signOut);
+  $("rotate").addEventListener("click", function () {
+    api("POST", "/api/v1/token/rotate").then(function (res) {
+      token = res.token;
+      store.set("token", token);
+      $("menu").hidden = true;
+      return mount("chat").then(function (entry) {
+        entry.mod.addNotice(tr("new_token") + " " + res.token);
+      });
+    }).catch(function (err) {
+      if (err instanceof ApiError && err.status === 401) { signOut(); }
     });
-    if (meta && meta.registration === "closed") { authError(tr("closed")); }
+  });
+}
+
+function initMode() {
+  var m = /^\/(couple|solo)\//.exec(location.pathname);
+  if (!m) { return; }
+  localStorage.setItem("mode", m[1]);
+  var link = document.querySelector('link[rel="manifest"]');
+  if (link) { link.href = "/" + m[1] + "/manifest.json"; }
+}
+
+function restoreAdmin() {
+  var saved = adminStore.get();
+  if (!saved) { return Promise.resolve(); }
+  return setAdminToken(saved).catch(function () { adminStore.del(); });
+}
+
+function start() {
+  initMode();
+  applyLang();
+  bind();
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(function () { /* offline shell is optional */ });
   }
 
-  function autoRegister() {
-    var name = params.get("name");
-    if (profile && name && meta && meta.registration === "open") {
-      register(name, "", lang).catch(function () { showAuth(); });
-      return true;
-    }
-    return false;
-  }
-
-  function bind() {
-    $("signup").addEventListener("submit", function (ev) {
-      ev.preventDefault();
-      lang = $("lang").value || lang;
-      applyLang();
-      register($("name").value.trim(), $("invite").value.trim(), lang)
-        .catch(function (err) { authError(err.code || "error"); });
-    });
-    $("signin").addEventListener("submit", function (ev) {
-      ev.preventDefault();
-      finishLogin($("token").value.trim()).catch(function () {
-        token = null;
-        store.del("token");
-        authError(tr("bad_token"));
-      });
-    });
-    $("lang").addEventListener("change", function () {
-      lang = $("lang").value;
-      applyLang();
-    });
-    $("composer").addEventListener("submit", function (ev) {
-      ev.preventDefault();
-      var input = $("text");
-      var text = input.value.trim();
-      if (!text) { return; }
-      input.value = "";
-      input.style.height = "auto";
-      addBubble("me", text);
-      var typing = addBubble("bot typing", "●●●");
-      api("POST", "/api/v1/message", { text: text }).then(function (data) {
-        typing.remove();
-        showReplies(data);
-      }).catch(function (err) {
-        typing.remove();
-        if (!navigator.onLine) {
-          // Queue for later
-          var queue = JSON.parse(store.get("outbox") || "[]");
-          queue.push({ text: text, ts: new Date().toISOString() });
-          store.set("outbox", JSON.stringify(queue));
-          addBubble("bot err", "📴 Saved offline. Will send when reconnected.");
-        } else {
-          sendFailed(err);
-        }
-      });
-    });
-    // Shift+Enter = newline, Enter = send. Auto-resize textarea.
-    $("text").addEventListener("keydown", function (ev) {
-      if (ev.key === "Enter" && !ev.shiftKey) {
-        ev.preventDefault();
-        $("composer").dispatchEvent(new Event("submit"));
+  api("GET", "/api/v1/meta").then(function (m) { meta = m; }, function () { meta = null; })
+    .then(function () {
+      if (token) {
+        return api("GET", "/api/v1/me").then(
+          function (data) {
+            me = data;
+            return enterApp(data.name, false).then(restoreAdmin);
+          },
+          function (err) {
+            if (err instanceof ApiError && err.status === 401) { token = null; store.del("token"); showAuth(); }
+            else { return enterApp("", false).then(function () { setStatus("offline"); }); }
+            return null;
+          });
       }
+      if (!autoRegister()) { showAuth(); }
+      return null;
     });
-    $("text").addEventListener("input", function () {
-      this.style.height = "auto";
-      this.style.height = Math.min(this.scrollHeight, 120) + "px";
-    });
-    $("menu-btn").addEventListener("click", function () { $("menu").hidden = !$("menu").hidden; });
-    $("signout").addEventListener("click", signOut);
-    $("rotate").addEventListener("click", function () {
-      api("POST", "/api/v1/token/rotate").then(function (res) {
-        token = res.token;
-        store.set("token", token);
-        $("menu").hidden = true;
-        addBubble("bot", tr("new_token") + " " + res.token);
-      }).catch(sendFailed);
-    });
-  }
+}
 
-  function start() {
-    applyLang();
-    bind();
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(function () { /* offline shell is optional */ });
-    }
-
-    // Offline/online detection
-    window.addEventListener("online", function () {
-      setStatus("online");
-      drainOutbox();
-      pollLoop();
-    });
-    window.addEventListener("offline", function () {
-      setStatus("offline");
-    });
-
-    api("GET", "/api/v1/meta").then(function (m) { meta = m; }, function () { meta = null; })
-      .then(function () {
-        if (token) {
-          return api("GET", "/api/v1/me").then(
-            function (me) { enterChat(me.name); },
-            function (err) {
-              if (err instanceof ApiError && err.status === 401) { token = null; store.del("token"); showAuth(); }
-              else { enterChat(""); setStatus("offline"); }
-            });
-        }
-        if (!autoRegister()) { showAuth(); }
-        return null;
-      });
-  }
-
-  function drainOutbox() {
-    var queue = JSON.parse(store.get("outbox") || "[]");
-    if (!queue.length) { return; }
-    store.del("outbox");
-    var next = function (i) {
-      if (i >= queue.length) { return; }
-      api("POST", "/api/v1/message", { text: queue[i].text })
-        .then(function (data) {
-          showReplies(data);
-          next(i + 1);
-        })
-        .catch(function () {
-          // Re-queue remaining
-          var remaining = queue.slice(i);
-          store.set("outbox", JSON.stringify(remaining));
-          addBubble("bot err", "📴 " + remaining.length + " message(s) still queued.");
-        });
-    };
-    addBubble("bot", "📶 Sending " + queue.length + " queued message(s)...");
-    next(0);
-  }
-
-  start();
-})();
+start();
