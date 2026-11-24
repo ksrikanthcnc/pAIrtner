@@ -1,5 +1,7 @@
 # Secrets & data
 .env
+.env.*
+!.env.*.example
 *.db
 dev/deploy.env
 
