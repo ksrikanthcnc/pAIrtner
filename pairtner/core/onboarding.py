@@ -134,13 +134,19 @@ async def process_onboarding_answer(
     if profile["onboarding_done"]:
         return False, None
 
-    # /skip or any greeting-like message → just complete onboarding
+    # /skip or any short/greeting message → complete onboarding, start chatting
     clean = text.strip()
     if not clean:
         return True, t(lang, "onboard_welcome")
 
-    low = clean.lower()
-    if low == "/skip" or low in ("hi", "hey", "hello", "yo", "sup"):
+    low = clean.lower().rstrip("!.?,")
+    is_greeting = low in (
+        "hi", "hey", "hello", "yo", "sup", "hii", "hiii",
+        "hey there", "hi there", "hello there", "hola", "namaste",
+        "ok", "okay", "sure", "yes", "yep", "yeah", "ya",
+        "start", "go", "lets go", "let's go",
+    )
+    if low == "/skip" or is_greeting:
         await db_mod.update_user_profile(db_path, user_id, onboarding_done=1)
         await save_onboarding_as_facts(db_path, user_id)
         return True, t(lang, "onboard_complete")

@@ -51,6 +51,7 @@ class DispatchMixin:
             "password": lambda: self.handle_password(uid, arg),
             "pause": lambda: self.handle_pause(uid),
             "resume": lambda: self.handle_resume(uid),
+            "reset": lambda: self.handle_reset(uid, arg),
             # Advanced
             "topics": lambda: self.handle_topics(uid),
             # Onboarding skip

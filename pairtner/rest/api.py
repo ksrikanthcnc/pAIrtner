@@ -520,6 +520,10 @@ class RestApi:
                 uid = await db_mod.allocate_rest_user(
                     self.db_path, name, lang, REST_ID_BASE)
         token = await self._issue_token(uid)
+        # Set password if provided during registration
+        password = body.get("password")
+        if isinstance(password, str) and password.strip():
+            await db_mod.set_password(self.db_path, uid, password.strip())
         return _json(201, {"user_id": uid, "name": name, "token": token})
 
     async def _login(

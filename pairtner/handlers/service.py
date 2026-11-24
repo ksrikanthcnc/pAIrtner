@@ -27,7 +27,6 @@ from pairtner.i18n import t
 from pairtner.llm import LLMClient
 from pairtner.core.onboarding import (
     get_onboarding_question,
-    process_onboarding_answer,
     should_start_onboarding,
 )
 from pairtner.core.memory import (
@@ -83,7 +82,6 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         self._relay_choices: dict[str, dict[str, Any]] = {}
         self._forget_confirm: set[int] = set()
         self._visibility_confirm: dict[int, tuple[str, str]] = {}
-        self._password_pending: set[int] = set()
         self._batch_item_edit_state: dict[int, int] = {}
         self._pending_contradictions: list[BotResponse] = []
         self._last_saved_facts: list[str] = []
@@ -534,9 +532,13 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
         lang = user.get("lang") or "en"
 
         if user.get("mode") == "solo":
+            # Solo users skip onboarding entirely — just chat
+            await db_mod.ensure_user_profile(self.db_path, user_id)
+            await db_mod.update_user_profile(self.db_path, user_id, onboarding_done=1)
             return [BotResponse(
                 f"👋 Welcome{', ' + user_name if user_name else ''}! I'm your "
                 "personal journal and coach. Tell me what's on your mind.\n\n"
+                "💡 Tip: Set a password with /password to access chat from any browser.\n\n"
                 + self._disclaimer(lang) + "\n\n" + t(lang, "crisis_resources")
             )]
 
@@ -682,27 +684,14 @@ class BotService(DispatchMixin, TagsMixin, CommandsMixin, CallbacksMixin):
 
         await self._increment_rate_counters(user_id)
 
+        # Normal message handling continues below
         tags, clean = parse_tags(text)
 
-        # Onboarding intercept — if user has active onboarding, route there
+        # If onboarding wasn't done yet, mark it done now — first real message
+        # goes through normal chat, the LLM contract handles extraction.
         profile = await db_mod.get_user_profile(self.db_path, user_id)
         if profile and not profile["onboarding_done"]:
-            lang = await self._get_lang(user_id)
-            consumed, next_q = await process_onboarding_answer(
-                self.db_path, user_id, text, lang, llm=self.llm,
-            )
-            if consumed:
-                out = [BotResponse(next_q)] if next_q else []
-                return out
-
-        # Password step right after onboarding (skippable; /password works later)
-        if user_id in self._password_pending:
-            self._password_pending.discard(user_id)
-            candidate = text.strip()
-            if candidate and not candidate.startswith("/"):
-                lang = await self._get_lang(user_id)
-                await db_mod.set_password(self.db_path, user_id, candidate)
-                return [BotResponse(t(lang, "password_set"))]
+            await db_mod.update_user_profile(self.db_path, user_id, onboarding_done=1)
 
         # Sanitize input — strip injection patterns before LLM processing
         clean, stripped = sanitize_input(clean)

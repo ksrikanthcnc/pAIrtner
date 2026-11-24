@@ -54,7 +54,49 @@ uv run python -m pairtner
 docker compose up -d
 ```
 
-## How It Works — A Week with pAIrtner
+## How It Works
+
+```mermaid
+sequenceDiagram
+    participant A as Alice
+    participant B as Bot (pAIrtner)
+    participant P as Bob
+
+    Note over A,P: Day 1 — Pairing
+    A->>B: /start
+    B-->>A: Pairing code: A1B2C3
+    P->>B: /join A1B2C3
+    B-->>P: 🎉 Paired! Just chat naturally.
+    B-->>A: 🎉 Paired! Just chat naturally.
+
+    Note over A,P: Day 1–3 — Building Memory
+    A->>B: "Married 10 yrs, 2 kids, he works too much"
+    B->>B: LLM extracts → core facts + profile
+    B-->>A: "Got it, thanks for sharing!"
+    A->>B: "I feel invisible"
+    B->>B: Extract: "feels invisible" (working, shared)
+    B-->>A: Empathetic response (context-aware)
+
+    P->>B: "How's Alice feeling?"
+    Note right of B: Bob's prompt includes<br/>Alice's SHARED facts only
+    B-->>P: "I sense she needs more connection..."
+
+    Note over A,P: Day 5 — Relay
+    A->>B: "Tell Bob the dishes are driving me crazy"
+    B->>B: Dampening softens (0.7 = gentle)
+    B-->>A: "Gentler version: 'I feel overwhelmed<br/>with the dishes. Can we work it out?'"
+    A->>B: ✅ Approve
+    B-->>P: 💌 "Alice: I feel overwhelmed with the dishes..."
+
+    Note over A,P: Week 1 — Consolidation
+    B->>B: Maintenance: summarize week's facts<br/>Archive source facts → prompt shrinks
+    Note right of B: Rolling daily covers the gap<br/>until next period summary
+
+    Note over A,P: Months 1–3
+    B->>B: Weekly → Monthly → Quarterly summaries<br/>Progressive memory cascade
+```
+
+## A Week with pAIrtner — API Detail
 
 ```
 Day 1 — Pairing

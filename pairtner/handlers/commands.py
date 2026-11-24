@@ -238,6 +238,51 @@ class CommandsMixin:
         await db_mod.set_user_paused(self.db_path, user_id, False)
         return [BotResponse(t(lang, "resumed_confirm"))]
 
+    # ── /reset ────────────────────────────────────────────────────────────
+
+    async def handle_reset(
+        self, user_id: int, arg: str | None,
+    ) -> list[BotResponse]:
+        """Soft-reset: archive all facts and clear message history for this user."""
+        if not is_user_allowed(self.config, user_id):
+            return []
+        lang = await self._get_lang(user_id)
+
+        if not arg or arg.strip().lower() != "confirm":
+            return [BotResponse(
+                "⚠️ This will archive all your facts and clear your message history.\n"
+                "Your account and pairing stay intact.\n\n"
+                "Type <b>/reset confirm</b> to proceed."
+            )]
+
+        import aiosqlite
+        async with aiosqlite.connect(self.db_path) as db:
+            now = db_mod._now()
+            # Archive all facts
+            await db.execute(
+                "UPDATE facts SET archived_at = ?, status = 'archived' "
+                "WHERE owner_id = ? AND archived_at IS NULL",
+                (now, user_id),
+            )
+            # Soft-delete all messages
+            await db.execute(
+                "UPDATE messages SET deleted_at = ? "
+                "WHERE user_id = ? AND deleted_at IS NULL",
+                (now, user_id),
+            )
+            # Reset profile
+            await db.execute(
+                "UPDATE user_profiles SET onboarding_done = 0, onboarding_step = 0, "
+                "message_count = 0 WHERE user_id = ?",
+                (user_id,),
+            )
+            await db.commit()
+
+        return [BotResponse(
+            "🔄 Reset complete. Your facts are archived and messages cleared.\n"
+            "Your account and pairing are intact. Start fresh!"
+        )]
+
     # ── /setup ────────────────────────────────────────────────────────────
 
     async def handle_setup(
