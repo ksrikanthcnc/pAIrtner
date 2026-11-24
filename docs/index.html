@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pAIrtner — AI Relationship Companion</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
+<style>
+:root { --bg: #0f0f0f; --surface: #1a1a2e; --accent: #e94560; --text: #eee; --dim: #999; --green: #4ecca3; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+.hero { text-align: center; padding: 60px 20px 40px; max-width: 700px; }
+.hero h1 { font-size: 2.5em; margin-bottom: 8px; }
+.hero h1 span { color: var(--accent); }
+.hero p { color: var(--dim); font-size: 1.1em; line-height: 1.6; margin-bottom: 30px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; max-width: 700px; padding: 0 20px; width: 100%; }
+.card { background: var(--surface); border-radius: 12px; padding: 24px; border: 1px solid #2a2a4a; transition: transform 0.15s; }
+.card:hover { transform: translateY(-2px); }
+.card h3 { margin-bottom: 8px; font-size: 1.1em; }
+.card p { color: var(--dim); font-size: 0.9em; line-height: 1.5; margin-bottom: 16px; }
+.card a { display: inline-block; background: var(--accent); color: #fff; padding: 8px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 0.9em; }
+.card a:hover { opacity: 0.9; }
+.card a.ghost { background: transparent; border: 1px solid #444; color: var(--dim); }
+.features { max-width: 700px; padding: 40px 20px; width: 100%; }
+.features h2 { margin-bottom: 16px; font-size: 1.3em; }
+.features ul { list-style: none; }
+.features li { padding: 8px 0; color: var(--dim); font-size: 0.95em; border-bottom: 1px solid #1a1a2e; }
+.features li::before { content: "✦ "; color: var(--green); }
+footer { padding: 30px; color: #555; font-size: 0.8em; text-align: center; }
+footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>💕 <span>pAIrtner</span></h1>
+  <p>An AI relationship companion that remembers, understands, and helps couples
+     communicate better — with separate private memories for each partner and
+     gentle nudges that build connection over time.</p>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <h3>🧪 Try the Duo Demo</h3>
+    <p>See both sides of a conversation. Alice and Bob each talk to the same AI with
+       separate memories. Watch relays, nudges and memory extraction live.</p>
+    <a href="demo/">Launch Demo</a>
+  </div>
+  <div class="card">
+    <h3>📖 Source & Docs</h3>
+    <p>Self-hosted, privacy-first. Runs on Telegram + PWA with Gemini or any
+       OpenAI-compatible LLM (including local Ollama).</p>
+    <a href="https://github.com/ksrikanthcnc/pAIrtner" class="ghost">GitHub →</a>
+  </div>
+</div>
+
+<div class="features">
+  <h2>How it works</h2>
+  <ul>
+    <li>Each partner has a <b>private memory</b> — the AI remembers what matters to each person separately</li>
+    <li><b>Relay messages</b> between partners with configurable softening (dampening)</li>
+    <li><b>Gentle nudges</b> woven into natural conversation — no push notifications</li>
+    <li><b>Rolling summaries</b> — daily/weekly/monthly/quarterly context that grows with the relationship</li>
+    <li><b>Solo mode</b> (wAIldo) — personal journal and emotional coach, no partner needed</li>
+    <li><b>Voice learning</b> — the bot mirrors your natural communication style</li>
+    <li><b>Progressive communication training</b> — models healthier expression over time</li>
+    <li>PWA companion app with knowledge browser, debug tools, and admin dashboard</li>
+    <li>Runs anywhere: Docker, bare metal, or cloud. Your data stays on your server.</li>
+  </ul>
+</div>
+
+<footer>
+  Built by <a href="https://github.com/ksrikanthcnc">ksrikanthcnc</a> · 
+  <a href="https://github.com/ksrikanthcnc/pAIrtner">View source</a>
+</footer>
+
+</body>
+</html>
