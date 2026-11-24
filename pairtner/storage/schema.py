@@ -249,7 +249,6 @@ CREATE TABLE IF NOT EXISTS goals (
     updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_goals_user_status ON goals(user_id, status);
-CREATE INDEX IF NOT EXISTS idx_goals_couple ON goals(couple_id, status);
 
 -- Indexes for efficient querying
 CREATE INDEX IF NOT EXISTS idx_facts_owner_visibility
