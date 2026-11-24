@@ -927,13 +927,19 @@ class RestApi:
 
         # For persistent sandboxes, DB may already exist on disk from a previous run
         db_exists = os.path.exists(path)
+        solo = query.get("mode") == "solo"
         try:
             await db_mod.init_db(path)
             await migrate_to_v2(path)
             if not db_exists:
-                for uid, name in ((1, "Alice"), (2, "Bob")):
-                    await db_mod.create_user(path, uid, name, "en")
-                    await db_mod.set_password(path, uid, name.lower())
+                if solo:
+                    await db_mod.create_user(path, 1, "Me", "en")
+                    await db_mod.set_password(path, 1, "me")
+                    await db_mod.set_user_mode(path, 1, "solo")
+                else:
+                    for uid, name in ((1, "Alice"), (2, "Bob")):
+                        await db_mod.create_user(path, uid, name, "en")
+                        await db_mod.set_password(path, uid, name.lower())
                 # Users are NOT pre-paired — they go through /start + /join naturally
                 await migrate_to_v2(path)
             tokens = {}

@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- Solo mode test: single user, isolated sandbox DB, no partner features. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wAIldo — solo journal (sandbox)</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  body.solo { display: flex; flex-direction: column; height: 100vh; margin: 0; }
+  .solo-banner { background: #6c5ce7; color: #fff; padding: .5rem 1rem;
+    display: flex; align-items: center; gap: 1rem; font-size: .9rem; }
+  .solo-banner button { background: rgba(255,255,255,.2); border: none;
+    color: #fff; padding: .3rem .8rem; border-radius: 4px; cursor: pointer; }
+  .solo-banner button:hover { background: rgba(255,255,255,.35); }
+  .solo-frame { flex: 1; border: none; width: 100%; }
+</style>
+</head>
+<body class="solo">
+<div class="solo-banner">
+  🧘 Solo Journal Mode
+  <span id="solo-status">creating…</span>
+  <button type="button" id="solo-reset">Reset</button>
+</div>
+<iframe id="solo-frame" class="solo-frame" title="Solo"></iframe>
+<script type="module" src="/solo.js"></script>
+</body>
+</html>
