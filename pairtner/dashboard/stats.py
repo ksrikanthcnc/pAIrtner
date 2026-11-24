@@ -180,16 +180,7 @@ def goals(conn: sqlite3.Connection, show_raw: bool) -> dict[str, list[dict[str, 
         d["text"] = _text(d["text"], show_raw)
         d["progress"] = _text(d["progress"], show_raw)
         user_goals.append(d)
-    shared = []
-    for r in conn.execute(
-        "SELECT id, couple_id, created_by, text, status, progress, created_at "
-        "FROM goals ORDER BY datetime(created_at) DESC"
-    ):
-        d = dict(r)
-        d["text"] = _text(d["text"], show_raw)
-        d["progress"] = _text(d["progress"], show_raw)
-        shared.append(d)
-    return {"goals": user_goals, "goals": shared}
+    return {"goals": user_goals}
 
 
 def couples(conn: sqlite3.Connection) -> list[dict[str, Any]]:

@@ -164,14 +164,12 @@ class AgingResult:
 # Halflife in days per kind (core has infinite halflife = no decay)
 _HALFLIFE: dict[str, float] = {
     "core": float("inf"),
-    "episode": 180.0,
     "working": 21.0,
     "partner_view": 30.0,
 }
 
 _KIND_WEIGHT: dict[str, float] = {
     "core": 1.0,
-    "episode": 0.7,
     "working": 0.5,
     "partner_view": 0.4,
 }
@@ -617,8 +615,6 @@ class MemoryAPI:
             kind = r.get("kind") or "working"
             status = r.get("status") or "active"
             prefix = f"[{r['id']}]"
-            if kind == "episode":
-                prefix += " (episode)"
             suffix = f" [{status}]" if status != "active" else ""
             line = f"{prefix} {r['text']}{suffix}"
             words = len(line.split())

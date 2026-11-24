@@ -1,8 +1,11 @@
-"""Memory consolidation v2 — compress old memories into topic-based episodes.
+"""Memory consolidation — archive old resolved/outdated working facts.
 
-Runs weekly (or on-demand). Gathers resolved/outdated working facts,
-sends them to the LLM for thematic grouping and summarization, and
-creates episode entries. Source facts are archived after episode creation.
+Previously created 'episode' summaries from working facts; now the rolling
+summary system (``memory_maintenance.run_periodic_summaries``) handles
+summarization. This module only archives stale facts so they leave the prompt.
+
+Episodes that already exist in the DB are still readable but no new ones
+are created.
 """
 
 from __future__ import annotations
@@ -59,133 +62,34 @@ async def run_consolidation(
     window_start: str | None = None,
     window_end: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Consolidate resolved/outdated working facts into episodes.
+    """Archive resolved/outdated/stale working facts.
 
-    When *window_start* and *window_end* are given (ISO timestamps), only facts
-    whose ``updated_at`` (or ``created_at``) falls within that range are
-    considered.  This supports fixed-calendar-window consolidation.
+    Rolling summaries now handle summarization; this function only archives
+    stale facts so they leave the prompt context.  No episodes are created
+    and no LLM call is made.
 
-    Returns a list of created episode dicts.
+    Returns a list of archived fact dicts (for backward compat with callers
+    that inspect the result).
     """
     cfg = {**DEFAULT_CONFIG, **(config or {})}
-    episodes_created: list[dict[str, Any]] = []
 
-    # Find candidates: resolved/outdated working facts
     candidates = await _find_consolidation_candidates(
         db_path, user_id, cfg,
         window_start=window_start, window_end=window_end,
     )
-    if len(candidates) < cfg["min_memories_for_episode"]:
-        log.info(
-            "consolidation: user %s has %d candidates, need %d",
-            user_id, len(candidates), cfg["min_memories_for_episode"],
-        )
-        return episodes_created
+    if not candidates:
+        return []
 
-    # Build the user message with all candidate facts
-    fact_lines = []
+    archived: list[dict[str, Any]] = []
     for f in candidates:
-        fact_lines.append(f"[{f['id']}] ({f.get('status', 'active')}) {f['text']}")
-    user_msg = "Facts to consolidate:\n" + "\n".join(fact_lines)
+        await db_mod.archive_fact(db_path, f["id"])
+        archived.append({"id": f["id"], "text": f["text"], "source_ids": [f["id"]]})
 
-    # Call LLM for thematic grouping + summarization
-    try:
-        result = await llm.generate(
-            user_msg,
-            CONSOLIDATION_SYSTEM,
-            api_key_override=api_key_override,
-        )
-
-        # Parse the episodes from LLM response
-        raw_episodes = _parse_episodes(result)
-        if not raw_episodes:
-            log.info("consolidation: LLM returned no episodes for user %s", user_id)
-            return episodes_created
-
-        candidate_ids = {f["id"] for f in candidates}
-
-        for ep in raw_episodes:
-            text = ep.get("text", "").strip()
-            source_ids = ep.get("source_ids", [])
-            if not text or len(source_ids) < cfg["min_memories_for_episode"]:
-                continue
-
-            # Quality check: reject overly short summaries
-            if len(text.split()) < 8:
-                log.info("consolidation: skipping too-short episode: %r", text[:60])
-                continue
-
-            # Validate source_ids are from our candidates
-            valid_ids = [sid for sid in source_ids if sid in candidate_ids]
-            if len(valid_ids) < cfg["min_memories_for_episode"]:
-                continue
-
-            # Collect raw message IDs from source facts for provenance
-            raw_msg_ids: list[int] = []
-            for sid in valid_ids:
-                fact = next((f for f in candidates if f["id"] == sid), None)
-                if fact:
-                    # Get source_message_id or source_ids from the fact
-                    smid = fact.get("source_message_id")
-                    if smid:
-                        raw_msg_ids.append(smid)
-                    sids = fact.get("source_ids")
-                    if sids:
-                        try:
-                            raw_msg_ids.extend(json.loads(sids))
-                        except (json.JSONDecodeError, TypeError):
-                            pass
-
-            # Create the episode
-            episode_id = await db_mod.add_fact(
-                db_path, user_id, text, "private",
-                fact_type="stable",
-                source_ids=json.dumps(raw_msg_ids) if raw_msg_ids else None,
-                model=getattr(llm, '_last_model', None),
-                metadata=json.dumps({"level": "weekly"}),
-            )
-
-            # Set kind to episode
-            async with aiosqlite.connect(db_path) as db:
-                await db.execute(
-                    "UPDATE facts SET kind = 'episode', status = 'active' WHERE id = ?",
-                    (episode_id,),
-                )
-                await db.commit()
-
-            # Archive the source facts
-            for sid in valid_ids:
-                await db_mod.archive_fact(db_path, sid)
-
-            episodes_created.append({
-                "id": episode_id,
-                "text": text,
-                "source_count": len(valid_ids),
-                "source_ids": valid_ids,
-                "raw_msg_ids": raw_msg_ids,
-            })
-
-            log.info(
-                "consolidation: user %s — episode from %d facts: %s",
-                user_id, len(valid_ids), text[:80],
-            )
-
-        # Log coverage: what fraction of candidates were included in episodes
-        covered_ids = set()
-        for ep in episodes_created:
-            covered_ids.update(ep.get("source_ids", []))
-        coverage = len(covered_ids) / len(candidates) if candidates else 0
-        if coverage < 0.5 and len(candidates) >= 6:
-            log.warning(
-                "consolidation: low coverage for user %s — %d/%d facts (%d%%) "
-                "included in episodes. Consider adjusting min_memories_for_episode.",
-                user_id, len(covered_ids), len(candidates), int(coverage * 100),
-            )
-
-    except Exception:
-        log.exception("consolidation: failed for user %s", user_id)
-
-    return episodes_created
+    log.info(
+        "consolidation: user %s — archived %d stale facts (no episodes created)",
+        user_id, len(archived),
+    )
+    return archived
 
 
 def _parse_episodes(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -347,48 +251,13 @@ async def run_cascading_consolidation(
     user_id: int,
     config: dict[str, Any] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Run cascading consolidation: monthly (from weekly episodes) and
-    quarterly (from monthly episodes).
+    """No-op — cascading consolidation is replaced by rolling summaries.
 
-    Returns {"monthly": [...], "quarterly": [...]}.
+    Existing episodes in the DB are still readable but no new ones are created.
+    Returns empty results for backward compat.
     """
-    cfg = {**CASCADING_CONFIG, **(config or {})}
-    result: dict[str, list[dict[str, Any]]] = {"monthly": [], "quarterly": []}
-
-    # --- Monthly: consolidate old weekly episodes (30d-90d) ---
-    monthly_candidates = await _find_episode_candidates(
-        db_path, user_id, level="weekly", age_days=cfg["monthly_age_days"],
-        max_age_days=cfg.get("monthly_max_age_days"),
-    )
-    if len(monthly_candidates) >= cfg["min_episodes_for_cascade"]:
-        monthly_eps = await _consolidate_episodes(
-            db_path, user_id, monthly_candidates, llm,
-            system_prompt=MONTHLY_SYSTEM, target_level="monthly",
-            min_sources=cfg["min_episodes_for_cascade"],
-        )
-        result["monthly"] = monthly_eps
-        log.info(
-            "cascading: user %s — %d monthly episodes from %d weekly",
-            user_id, len(monthly_eps), len(monthly_candidates),
-        )
-
-    # --- Quarterly: consolidate old monthly episodes ---
-    quarterly_candidates = await _find_episode_candidates(
-        db_path, user_id, level="monthly", age_days=cfg["quarterly_age_days"],
-    )
-    if len(quarterly_candidates) >= cfg["min_episodes_for_cascade"]:
-        quarterly_eps = await _consolidate_episodes(
-            db_path, user_id, quarterly_candidates, llm,
-            system_prompt=QUARTERLY_SYSTEM, target_level="quarterly",
-            min_sources=cfg["min_episodes_for_cascade"],
-        )
-        result["quarterly"] = quarterly_eps
-        log.info(
-            "cascading: user %s — %d quarterly episodes from %d monthly",
-            user_id, len(quarterly_eps), len(quarterly_candidates),
-        )
-
-    return result
+    log.info("cascading consolidation skipped for user %s (replaced by rolling summaries)", user_id)
+    return {"monthly": [], "quarterly": []}
 
 
 async def _find_episode_candidates(

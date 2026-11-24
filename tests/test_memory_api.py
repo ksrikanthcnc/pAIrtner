@@ -84,13 +84,11 @@ class TestScoring:
         assert compute_relevance_score(active) > compute_relevance_score(resolved)
         assert compute_relevance_score(resolved) > compute_relevance_score(outdated)
 
-    def test_episode_and_working_equal_score(self):
-        """Kind weight removed in v2 — scoring is intensity × status × citations."""
-        episode = {"kind": "episode", "status": "active", "citation_count": 0,
+    def test_working_score(self):
+        """Working facts score based on intensity × status × citations."""
+        fact = {"kind": "working", "status": "active", "citation_count": 0,
                    "intensity": 0.5, "created_at": _now_iso()}
-        working = {"kind": "working", "status": "active", "citation_count": 0,
-                   "intensity": 0.5, "created_at": _now_iso()}
-        assert compute_relevance_score(episode) == compute_relevance_score(working)
+        assert compute_relevance_score(fact) > 0
 
     def test_age_in_days_empty(self):
         assert _age_in_days("") == 0.0

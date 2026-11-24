@@ -351,12 +351,8 @@ class DashboardApp:
             [[x["id"], x["couple_id"], x["theme"], x["status"], x["opened_at"],
               x["resolved_at"]] for x in conflicts],
         ) + "<h2>Shared goals</h2>" + table(
-            ["id", "couple", "text", "status", "progress"],
-            [[x["id"], x["couple_id"], x["text"], x["status"], x["progress"]]
-             for x in goals["goals"]],
-        ) + "<h2>User goals</h2>" + table(
             ["id", "user", "text", "status", "progress"],
-            [[x["id"], x["user_id"], x["text"], x["status"], x["progress"]]
+            [[x["id"], x.get("user_id", ""), x["text"], x["status"], x["progress"]]
              for x in goals["goals"]],
         )
         return self._page(ctx, "Couples", body, "/couples")

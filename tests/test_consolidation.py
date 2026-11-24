@@ -1,13 +1,13 @@
-"""Tests for memory consolidation v2 module."""
+"""Tests for memory consolidation — archive stale facts (no episodes)."""
 from __future__ import annotations
 
-import json
 import pytest
 from datetime import datetime, timezone, timedelta
 
 from pairtner import db as db_mod
 from pairtner.core.consolidation import (
     run_consolidation,
+    run_cascading_consolidation,
     _find_consolidation_candidates,
     DEFAULT_CONFIG,
 )
@@ -93,12 +93,12 @@ async def test_candidates_old_uncited_active(test_db):
 
 
 # ---------------------------------------------------------------------------
-# run_consolidation
+# run_consolidation (archives stale facts, no episodes, no LLM)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_consolidation_not_enough_candidates(test_db):
-    """Too few candidates -> no episodes created, no LLM call."""
+async def test_consolidation_archives_resolved(test_db):
+    """Resolved facts get archived, no LLM call needed."""
     await db_mod.ensure_user(test_db, 1001, "Alice")
     fid = await db_mod.add_fact(test_db, 1001, "Old fact", "private")
 
@@ -109,14 +109,20 @@ async def test_consolidation_not_enough_candidates(test_db):
 
     from tests.conftest import MockLLMClient
     llm = MockLLMClient()
-    episodes = await run_consolidation(test_db, llm, 1001)
-    assert len(episodes) == 0
+    archived = await run_consolidation(test_db, llm, 1001)
+    assert len(archived) == 1
+    assert archived[0]["id"] == fid
+    # No LLM call -- just archiving
     assert len(llm.calls) == 0
+
+    # Fact should be archived (not in active facts)
+    active = await db_mod.get_active_facts(test_db, 1001)
+    assert fid not in {f["id"] for f in active}
 
 
 @pytest.mark.asyncio
-async def test_consolidation_creates_episode(test_db):
-    """With enough resolved facts, creates an episode and archives sources."""
+async def test_consolidation_archives_multiple(test_db):
+    """Multiple resolved/outdated facts all get archived."""
     await db_mod.ensure_user(test_db, 1001, "Alice")
 
     fact_ids = []
@@ -130,59 +136,41 @@ async def test_consolidation_creates_episode(test_db):
             await db.execute("UPDATE facts SET status = 'resolved' WHERE id = ?", (fid,))
         await db.commit()
 
-    # Mock LLM returns a v2 consolidation response
     from tests.conftest import MockLLMClient
-    llm = MockLLMClient(responses=[{
-        "episodes": [{
-            "text": "Alice dealt with four resolved situations in this period.",
-            "source_ids": fact_ids,
-        }],
-    }])
+    llm = MockLLMClient()
+    archived = await run_consolidation(test_db, llm, 1001)
+    assert len(archived) == 4
 
-    episodes = await run_consolidation(test_db, llm, 1001)
-    assert len(episodes) == 1
-    assert episodes[0]["source_count"] == 4
-    assert "four resolved" in episodes[0]["text"]
-
-    # Source facts should be archived
+    # All should be gone from active facts
     active = await db_mod.get_active_facts(test_db, 1001)
     active_ids = {f["id"] for f in active}
     for fid in fact_ids:
-        assert fid not in active_ids, f"Source fact {fid} should be archived"
-
-    # Episode fact should exist and be active with kind=episode
-    episode_facts = [f for f in active if f.get("kind") == "episode"]
-    assert len(episode_facts) == 1
-    assert "four resolved" in episode_facts[0]["text"]
+        assert fid not in active_ids
 
 
 @pytest.mark.asyncio
-async def test_consolidation_multiple_episodes(test_db):
-    """LLM can return multiple topic-grouped episodes."""
+async def test_consolidation_no_candidates(test_db):
+    """No candidates -> empty result."""
     await db_mod.ensure_user(test_db, 1001, "Alice")
-
-    ids_a = []
-    ids_b = []
-    for i in range(3):
-        fid = await db_mod.add_fact(test_db, 1001, f"Work issue {i}", "private")
-        ids_a.append(fid)
-    for i in range(3):
-        fid = await db_mod.add_fact(test_db, 1001, f"Home issue {i}", "private")
-        ids_b.append(fid)
-
-    import aiosqlite
-    async with aiosqlite.connect(test_db) as db:
-        for fid in ids_a + ids_b:
-            await db.execute("UPDATE facts SET status = 'resolved' WHERE id = ?", (fid,))
-        await db.commit()
+    await db_mod.add_fact(test_db, 1001, "Active recent fact", "private")
 
     from tests.conftest import MockLLMClient
-    llm = MockLLMClient(responses=[{
-        "episodes": [
-            {"text": "Alice dealt with several work stress issues during this period, including deadlines and conflicts.", "source_ids": ids_a},
-            {"text": "Home maintenance tasks accumulated and caused some frustration between the partners.", "source_ids": ids_b},
-        ],
-    }])
+    llm = MockLLMClient()
+    result = await run_consolidation(test_db, llm, 1001)
+    assert result == []
 
-    episodes = await run_consolidation(test_db, llm, 1001)
-    assert len(episodes) == 2
+
+# ---------------------------------------------------------------------------
+# run_cascading_consolidation (no-op, replaced by rolling summaries)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_cascading_is_noop(test_db):
+    """Cascading consolidation returns empty -- replaced by rolling summaries."""
+    await db_mod.ensure_user(test_db, 1001, "Alice")
+
+    from tests.conftest import MockLLMClient
+    llm = MockLLMClient()
+    result = await run_cascading_consolidation(test_db, llm, 1001)
+    assert result == {"monthly": [], "quarterly": []}
+    assert len(llm.calls) == 0
